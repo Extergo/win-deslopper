@@ -15,6 +15,8 @@ The current build is deliberately non-destructive. It presents mock component in
 
 The preview catalogue currently discusses OneDrive, Copilot, and Windows promotional content. These entries are examples, not live detections or removal promises.
 
+See `ROADMAP.md` for the proposed sequence from preview hardening through read-only inspection, compatibility planning, rollback design, and carefully scoped future operations.
+
 ## Safety and gaming compatibility
 
 Stable systems matter more than aggressive debloating. Future Windows operations must use supported mechanisms, determine compatibility first, explain impact, capture original state, verify results, and provide rollback. Gaming, anti-cheat, Xbox, and Game Pass compatibility must be tested rather than assumed.
