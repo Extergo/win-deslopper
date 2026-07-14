@@ -1,0 +1,34 @@
+import { Button, VerticalBox } from "std-widgets.slint";
+
+export component AppWindow inherits Window {
+    title: "Deslopper";
+    preferred-width: 900px;
+    preferred-height: 600px;
+
+    in-out property <string> status-text: "Ready";
+
+    callback inspect-system();
+
+    VerticalBox {
+        padding: 24px;
+        spacing: 16px;
+
+        Text {
+            text: "Deslopper";
+            font-size: 32px;
+            font-weight: 700;
+        }
+
+        Text {
+            text: root.status-text;
+        }
+
+        Button {
+            text: "Inspect system";
+
+            clicked => {
+                root.inspect-system();
+            }
+        }
+    }
+}
