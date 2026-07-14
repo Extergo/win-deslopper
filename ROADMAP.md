@@ -20,6 +20,8 @@ The current application provides a polished, non-destructive shell with:
 
 **Goal:** Make the existing preview a dependable development baseline before introducing Windows-specific code.
 
+The active implementation brief for the next agent is `NEXT_AGENT.md`.
+
 Planned work:
 
 - Add GitHub Actions for formatting, Clippy with warnings denied, and tests.
@@ -156,4 +158,3 @@ Marketplace, accounts, payments, downloads, and extension execution are not part
 - Do not add backend dependencies for functionality that can safely work locally.
 - Do not weaken gaming, anti-cheat, Xbox, Game Pass, or Windows security compatibility to increase removal coverage.
 - Keep milestones small enough that safety claims can be tested rather than assumed.
-
