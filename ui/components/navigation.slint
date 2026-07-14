@@ -1,0 +1,147 @@
+import { MaterialTheme } from "../theme/material-theme.slint";
+
+component NavigationItem inherits Rectangle {
+    in property <string> label;
+    in property <string> icon-label;
+    in property <bool> selected;
+    callback activated;
+
+    height: 56px;
+    border-radius: MaterialTheme.radius-pill;
+    background: root.selected ? MaterialTheme.primary-container : touch.has-hover ? MaterialTheme.surface-tonal : transparent;
+    border-width: focus.has-focus ? 2px : 0px;
+    border-color: MaterialTheme.primary;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-checked: root.selected;
+    accessible-action-default => { root.activated(); }
+    forward-focus: focus;
+
+    animate background { duration: MaterialTheme.motion-fast; }
+
+    HorizontalLayout {
+        padding-left: MaterialTheme.space-md;
+        padding-right: MaterialTheme.space-md;
+        spacing: MaterialTheme.space-sm;
+
+        Rectangle {
+            width: 32px;
+            height: 32px;
+            horizontal-stretch: 0;
+            border-radius: 16px;
+            background: root.selected ? MaterialTheme.primary : MaterialTheme.surface-tonal;
+
+            Text {
+                text: root.icon-label;
+                color: root.selected ? MaterialTheme.on-primary : MaterialTheme.secondary-text;
+                font-size: MaterialTheme.type-supporting;
+                font-weight: 750;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        Text {
+            text: root.label;
+            color: MaterialTheme.text;
+            font-size: MaterialTheme.type-body;
+            font-weight: root.selected ? 700 : 500;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea { clicked => { root.activated(); } }
+    focus := FocusScope {
+        width: 0px;
+        key-pressed(event) => {
+            if (event.text == " " || event.text == "\n") {
+                root.activated();
+                return accept;
+            }
+            return reject;
+        }
+    }
+}
+
+export component Navigation inherits Rectangle {
+    in property <int> selected-section;
+    callback navigate(int);
+
+    width: 224px;
+    background: MaterialTheme.surface;
+
+    VerticalLayout {
+        padding: MaterialTheme.space-md;
+        spacing: MaterialTheme.space-xs;
+
+        HorizontalLayout {
+            height: 72px;
+            padding-left: MaterialTheme.space-xs;
+            spacing: MaterialTheme.space-sm;
+
+            Rectangle {
+                width: 42px;
+                height: 42px;
+                horizontal-stretch: 0;
+                border-radius: 14px;
+                background: MaterialTheme.primary;
+
+                Text {
+                    text: "D";
+                    color: MaterialTheme.on-primary;
+                    font-size: MaterialTheme.type-section;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+
+            VerticalLayout {
+                alignment: center;
+                spacing: 1px;
+                Text { text: "Deslopper"; color: MaterialTheme.text; font-size: 19px; font-weight: 750; }
+                Text { text: "UI preview"; color: MaterialTheme.secondary-text; font-size: MaterialTheme.type-label; }
+            }
+        }
+
+        Text {
+            height: 32px;
+            text: "WORKSPACE";
+            color: MaterialTheme.secondary-text;
+            font-size: MaterialTheme.type-label;
+            font-weight: 700;
+            letter-spacing: 1px;
+            vertical-alignment: center;
+        }
+
+        NavigationItem {
+            label: "Windows Cleanup";
+            icon-label: "W";
+            selected: root.selected-section == 0;
+            activated => { root.navigate(0); }
+        }
+
+        NavigationItem {
+            label: "Extensions";
+            icon-label: "+";
+            selected: root.selected-section == 1;
+            activated => { root.navigate(1); }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        Rectangle {
+            height: 94px;
+            vertical-stretch: 0;
+            border-radius: MaterialTheme.radius-card;
+            background: MaterialTheme.surface-tonal;
+
+            VerticalLayout {
+                padding: MaterialTheme.space-md;
+                spacing: MaterialTheme.space-xs;
+                Text { text: "Preview mode"; color: MaterialTheme.primary; font-size: MaterialTheme.type-supporting; font-weight: 700; }
+                Text { text: "No administrator access\nis requested."; color: MaterialTheme.secondary-text; font-size: MaterialTheme.type-label; }
+            }
+        }
+    }
+}

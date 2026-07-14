@@ -1,0 +1,97 @@
+import { MaterialTheme } from "../theme/material-theme.slint";
+
+component PreviewChip inherits Rectangle {
+    in property <string> label;
+    height: 34px;
+    border-radius: MaterialTheme.radius-pill;
+    background: MaterialTheme.surface-tonal;
+    border-width: 1px;
+    border-color: MaterialTheme.outline;
+    Text { text: root.label; color: MaterialTheme.secondary-text; font-size: MaterialTheme.type-label; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; }
+}
+
+export component ComingSoon inherits Rectangle {
+    background: MaterialTheme.background;
+
+    VerticalLayout {
+        padding: MaterialTheme.space-xl;
+        spacing: MaterialTheme.space-lg;
+
+        Text { text: "Extensions"; color: MaterialTheme.text; font-size: MaterialTheme.type-title; font-weight: 760; }
+        Text {
+            text: "Optional Windows experiences, without bloating the core application.";
+            color: MaterialTheme.secondary-text;
+            font-size: MaterialTheme.type-body;
+        }
+
+        Rectangle {
+            vertical-stretch: 1;
+            border-radius: 28px;
+            background: MaterialTheme.surface;
+            border-width: 1px;
+            border-color: MaterialTheme.outline;
+
+            VerticalLayout {
+                padding: MaterialTheme.space-xl;
+                spacing: MaterialTheme.space-lg;
+                alignment: center;
+
+                Rectangle {
+                    width: 154px;
+                    height: 154px;
+                    border-radius: 77px;
+                    background: MaterialTheme.primary-container;
+
+                    Rectangle {
+                        width: 72px;
+                        height: 72px;
+                        x: 41px;
+                        y: 41px;
+                        border-radius: 22px;
+                        background: MaterialTheme.primary;
+
+                        Text { text: "+"; color: MaterialTheme.on-primary; font-size: 42px; font-weight: 400; horizontal-alignment: center; vertical-alignment: center; }
+                    }
+
+                    Rectangle { width: 24px; height: 24px; x: 12px; y: 28px; border-radius: 12px; background: MaterialTheme.warning-container; }
+                    Rectangle { width: 18px; height: 18px; x: 126px; y: 102px; border-radius: 9px; background: MaterialTheme.success-container; }
+                }
+
+                Text { text: "A careful extension system is coming later"; color: MaterialTheme.text; font-size: MaterialTheme.type-section; font-weight: 730; horizontal-alignment: center; }
+                Text {
+                    width: 620px;
+                    text: "Extensions will let Deslopper add optional Windows experiences without bloating the core application. The extension system is not available in this preview.";
+                    color: MaterialTheme.secondary-text;
+                    font-size: MaterialTheme.type-supporting;
+                    wrap: word-wrap;
+                    horizontal-alignment: center;
+                }
+
+                HorizontalLayout {
+                    height: 34px;
+                    spacing: MaterialTheme.space-xs;
+                    alignment: center;
+                    PreviewChip { width: 142px; label: "Start menu replacements"; }
+                    PreviewChip { width: 114px; label: "Wallpaper engines"; }
+                    PreviewChip { width: 108px; label: "Desktop utilities"; }
+                }
+
+                HorizontalLayout {
+                    height: 34px;
+                    spacing: MaterialTheme.space-xs;
+                    alignment: center;
+                    PreviewChip { width: 112px; label: "System monitoring"; }
+                    PreviewChip { width: 112px; label: "Productivity tools"; }
+                }
+
+                Rectangle {
+                    width: 250px;
+                    height: 38px;
+                    border-radius: MaterialTheme.radius-pill;
+                    background: MaterialTheme.surface-tonal;
+                    Text { text: "COMING IN A FUTURE MILESTONE"; color: MaterialTheme.primary; font-size: MaterialTheme.type-label; font-weight: 750; horizontal-alignment: center; vertical-alignment: center; }
+                }
+            }
+        }
+    }
+}

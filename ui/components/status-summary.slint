@@ -1,0 +1,35 @@
+import { MaterialTheme } from "../theme/material-theme.slint";
+
+component SummaryItem inherits Rectangle {
+    in property <string> value;
+    in property <string> label;
+    in property <bool> emphasized: false;
+
+    border-radius: MaterialTheme.radius-control;
+    min-width: 0px;
+    background: root.emphasized ? MaterialTheme.primary-container : MaterialTheme.surface;
+    border-width: 1px;
+    border-color: root.emphasized ? MaterialTheme.primary-container : MaterialTheme.outline;
+
+    VerticalLayout {
+        padding-left: MaterialTheme.space-md;
+        padding-right: MaterialTheme.space-md;
+        alignment: center;
+        spacing: MaterialTheme.space-xxs;
+        Text { text: root.value; color: root.emphasized ? MaterialTheme.primary : MaterialTheme.text; font-size: 18px; font-weight: 750; min-width: 0px; }
+        Text { text: root.label; color: MaterialTheme.secondary-text; font-size: MaterialTheme.type-label; overflow: elide; min-width: 0px; }
+    }
+}
+
+export component StatusSummary inherits HorizontalLayout {
+    in property <int> catalogue-count;
+    in property <int> planned-count;
+
+    height: 82px;
+    min-width: 0px;
+    vertical-stretch: 0;
+    spacing: MaterialTheme.space-sm;
+
+    SummaryItem { min-width: 0px; horizontal-stretch: 1; value: root.catalogue-count; label: "components in catalogue"; }
+    SummaryItem { min-width: 0px; horizontal-stretch: 1; value: root.planned-count; label: "planned changes"; emphasized: root.planned-count > 0; }
+}

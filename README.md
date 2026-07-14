@@ -2,47 +2,29 @@
 
 **Windows without the slop.**
 
-Deslopper is a small Windows app that sits in your system tray and keeps Windows the way *you* want it.
+Deslopper is a safety-focused Windows management application built in Rust and Slint. Its long-term goal is to help people review optional Windows components and make supported, reversible changes without relying on opaque scripts or aggressive debloating.
 
-Think of it as **Ninite, but for Windows itself.**
+## Current milestone: UI preview
 
-Instead of running random PowerShell scripts after every fresh install or major Windows update, Deslopper automatically removes the things you don't want and keeps them from coming back.
+The current build is deliberately non-destructive. It presents mock component information and lets users assemble a local preview plan, but it does not inspect or modify Windows.
 
-### What can it remove?
+- Windows Cleanup mock catalogue with local search and category filters
+- UI-only planned-change review flow
+- Extensions coming-soon screen
+- No elevation, network access, shell execution, plugin execution, telemetry, authentication, payments, backend, or real Windows operations
 
-* OneDrive
-* Copilot
-* Start Menu Bing Search
-* Ads & recommendations
-* Edge promotions
-* Maps
-* Telemetry (where possible)
-* Other Windows annoyances
+The preview catalogue currently discusses OneDrive, Copilot, and Windows promotional content. These entries are examples, not live detections or removal promises.
 
-Everything is optional. You decide what stays and what goes.
+## Safety and gaming compatibility
 
-### Gaming comes first
+Stable systems matter more than aggressive debloating. Future Windows operations must use supported mechanisms, determine compatibility first, explain impact, capture original state, verify results, and provide rollback. Gaming, anti-cheat, Xbox, and Game Pass compatibility must be tested rather than assumed.
 
-A lot of debloat tools break anti-cheat, Xbox services, or Game Pass because they remove Windows components too aggressively.
+## Development
 
-Deslopper is built with gamers in mind. Safe defaults are the priority so you can clean up Windows without breaking the games you actually want to play.
+Run locally with:
 
-### Why not just use a script?
+```powershell
+cargo run
+```
 
-Scripts work, but Windows updates love putting everything back.
-
-Most people don't want to spend an hour searching GitHub, opening PowerShell, and re-running tweaks every few months.
-
-Install Deslopper once, choose your settings, and let it handle the rest.
-
-### Built properly
-
-* 🦀 Written entirely in Rust
-* ⚡ Native and lightweight
-* 🔒 Memory safe
-* 🎮 Gaming focused
-* ❤️ Open source and built in public
-
-Our goal is simple.
-
-Make Windows work like a usable operating system again.
+Contributors and coding agents must begin with `AGENTS.md`. The project architecture and safety posture are defined in `ARCHITECTURE.md` and `SECURITY.md`.
