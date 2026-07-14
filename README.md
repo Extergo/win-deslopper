@@ -1,157 +1,48 @@
 # Deslopper
 
-**Windows, without the slop.**
+**Windows without the slop.**
 
-Deslopper is a lightweight Windows utility that quietly lives in your system tray and keeps Windows clean from the things you never asked for.
+Deslopper is a small Windows app that sits in your system tray and keeps Windows the way *you* want it.
 
-Think of it as **Ninite for Windows itself**.
+Think of it as **Ninite, but for Windows itself.**
 
-Instead of manually running dozens of PowerShell scripts after every fresh install—or every time Microsoft decides to put everything back—Deslopper continuously keeps your system the way *you* configured it.
+Instead of running random PowerShell scripts after every fresh install or major Windows update, Deslopper automatically removes the things you don't want and keeps them from coming back.
 
-No registry hunting. No copy-pasting random GitHub scripts. No wondering if the next Windows update will undo everything.
+### What can it remove?
 
----
-
-## Why?
-
-Modern Windows ships with features that many users simply don't want:
-
-* OneDrive integration
-* Copilot
-* Start Menu Bing search
-* Ads & recommendations
-* Edge promotions & previews
-* Maps
-* Consumer experiences
-* Telemetry (where safely configurable)
-* Various Windows "helpful" experiences
-
-Today your options are usually:
-
-* Run a huge PowerShell script from GitHub
-* Spend hours clicking through Group Policy and Registry Editor
-* Re-run everything after every major Windows update
-
-That isn't a great experience.
-
-Deslopper automates it.
-
----
-
-## Gaming First
-
-Our first priority is **gamers**.
-
-Many existing debloat scripts aggressively remove Windows components, often breaking:
-
-* Anti-cheat systems
-* Xbox services
-* Game Pass
-* Windows Gaming features
-* Store dependencies
-
-Deslopper takes a different approach.
-
-Every tweak is categorized and tested, allowing you to remove the things you don't want **without sacrificing compatibility**.
-
-The default configuration is designed to remain friendly with modern anti-cheat systems and Xbox gaming components.
-
----
-
-## You're Still In Control
-
-Deslopper isn't about forcing opinions.
-
-Every component can be enabled or disabled individually.
-
-Want to remove OneDrive but keep Edge?
-
-Go ahead.
-
-Want Copilot gone but keep telemetry?
-
-That's fine too.
-
-You choose what your Windows installation looks like.
-
----
-
-## Survives Windows Updates
-
-The biggest problem with existing debloat tools isn't removing the bloat.
-
-It's **keeping it removed**.
-
-Major Windows updates frequently restore:
-
-* Copilot
 * OneDrive
-* Bing Search
-* Recommended content
-* Consumer experiences
-* Various Microsoft defaults
+* Copilot
+* Start Menu Bing Search
+* Ads & recommendations
+* Edge promotions
+* Maps
+* Telemetry (where possible)
+* Other Windows annoyances
 
-Deslopper continuously monitors your configuration and automatically reapplies your chosen settings whenever Windows resets them.
+Everything is optional. You decide what stays and what goes.
 
-Configure it once.
+### Gaming comes first
 
-Forget about it.
+A lot of debloat tools break anti-cheat, Xbox services, or Game Pass because they remove Windows components too aggressively.
 
----
+Deslopper is built with gamers in mind. Safe defaults are the priority so you can clean up Windows without breaking the games you actually want to play.
 
-## Built Properly
+### Why not just use a script?
 
-This isn't another collection of PowerShell scripts wrapped in a GUI.
+Scripts work, but Windows updates love putting everything back.
 
-Deslopper is built as a native Windows application from the ground up.
+Most people don't want to spend an hour searching GitHub, opening PowerShell, and re-running tweaks every few months.
+
+Install Deslopper once, choose your settings, and let it handle the rest.
+
+### Built properly
 
 * 🦀 Written entirely in Rust
-* ⚡ Native performance
-* 🧠 Low memory footprint
+* ⚡ Native and lightweight
 * 🔒 Memory safe
-* 🎮 Designed around gaming compatibility
-* 🪶 Runs quietly in the system tray
+* 🎮 Gaming focused
+* ❤️ Open source and built in public
 
----
+Our goal is simple.
 
-## Open Source
-
-Deslopper is developed entirely in the open.
-
-We're building it publicly with contributors from across the systems programming community, including people experienced in:
-
-* Operating systems
-* Windows internals
-* Systems programming
-* Rust
-* Native desktop development
-
-Every change is reviewable.
-
-Every decision is transparent.
-
----
-
-## Philosophy
-
-Windows should work for **you**—not the other way around.
-
-Deslopper doesn't try to replace Windows.
-
-It simply removes the noise.
-
-Install Windows.
-
-Install Deslopper.
-
-Choose what you want.
-
-Get back to gaming, developing, or working.
-
-No scripts.
-
-No registry hacks.
-
-No reinstall rituals after every Windows update.
-
-Just Windows.. without the slop.
+Make Windows work like a usable operating system again.
