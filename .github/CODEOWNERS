@@ -1,0 +1,16 @@
+# Replace @deslopper-maintainers before enabling branch protection.
+# The placeholder intentionally does not name a potentially nonexistent account.
+
+# Sensitive areas requiring explicit maintainer review once an owner is configured:
+/src/windows/
+/src/privileged/
+/src/plugins/
+/src/update/
+/src/backend/
+/src/security/
+/docs/windows-safety-model.md
+/SECURITY.md
+/ARCHITECTURE.md
+/.deslopper/policy.toml
+/Cargo.toml
+/Cargo.lock

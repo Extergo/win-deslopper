@@ -1,0 +1,23 @@
+project = "Deslopper"
+milestone = "ui-preview"
+
+allow_real_windows_inspection = false
+allow_windows_mutation = false
+allow_elevation = false
+allow_network_access = false
+allow_backend = false
+allow_authentication = false
+allow_payments = false
+allow_telemetry = false
+allow_plugin_execution = false
+allow_shell_execution = false
+allow_unsafe_rust = false
+
+quality_gates = [
+    "cargo fmt --check",
+    "cargo check",
+    "cargo clippy --all-targets --all-features -- -D warnings",
+    "cargo test",
+    "cargo run",
+]
+

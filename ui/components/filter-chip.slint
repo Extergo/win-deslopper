@@ -1,0 +1,57 @@
+import { MaterialTheme } from "../theme/material-theme.slint";
+
+export component FilterChip inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected;
+    callback activated;
+
+    min-width: 64px;
+    height: 40px;
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    border-radius: MaterialTheme.radius-pill;
+    background: root.selected ? MaterialTheme.primary-container : touch.has-hover ? MaterialTheme.surface-tonal : MaterialTheme.surface;
+    border-width: focus.has-focus ? 2px : 1px;
+    border-color: focus.has-focus ? MaterialTheme.primary : root.selected ? MaterialTheme.primary : MaterialTheme.outline;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-checked: root.selected;
+    accessible-action-default => { root.activated(); }
+    forward-focus: focus;
+
+    animate background { duration: MaterialTheme.motion-fast; }
+
+    HorizontalLayout {
+        padding-left: MaterialTheme.space-md;
+        padding-right: MaterialTheme.space-md;
+        spacing: MaterialTheme.space-xs;
+        alignment: center;
+
+        if root.selected: Text {
+            text: "✓";
+            color: MaterialTheme.primary;
+            font-size: MaterialTheme.type-supporting;
+            font-weight: 700;
+        }
+
+        Text {
+            text: root.label;
+            color: MaterialTheme.text;
+            font-size: MaterialTheme.type-supporting;
+            font-weight: root.selected ? 650 : 500;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea { clicked => { root.activated(); } }
+    focus := FocusScope {
+        width: 0px;
+        key-pressed(event) => {
+            if (event.text == " " || event.text == "\n") {
+                root.activated();
+                return accept;
+            }
+            return reject;
+        }
+    }
+}
