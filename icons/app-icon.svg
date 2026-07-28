@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title">
+  <title id="title">Deslopper D</title>
+  <rect width="1024" height="1024" rx="224" fill="#425b91" />
+  <path
+    d="M326 270v484M342 270h158c151 0 246 91 246 242S651 754 500 754H342"
+    fill="none"
+    stroke="#ffffff"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    stroke-width="108"
+  />
+</svg>

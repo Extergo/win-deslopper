@@ -18,14 +18,15 @@ Before editing anything, read these files completely:
 10. `docs/dependency-policy.md`
 11. `docs/testing-strategy.md`
 
-Inspect `Cargo.toml`, the current Rust/Slint boundaries, existing tests, Git status, and current GitHub configuration before proposing changes.
+Inspect `Cargo.toml`, `package.json`, the current Rust/Tauri/SvelteKit boundaries, both lockfiles, existing tests, Git status, and current GitHub configuration before proposing changes.
 
 ## Current state
 
 - The `ui-preview` milestone is complete.
-- The application contains a polished mock catalogue, local filters/search, a preview plan, a mock review flow, and an Extensions coming-soon screen.
+- The application contains a polished Tauri/SvelteKit mock catalogue, local filters/search, a preview plan, a mock review flow, and an Extensions coming-soon screen.
+- Rust owns all catalogue and application state. Svelte uses two local Tauri commands: one view read and one typed action dispatch.
 - All catalogue results and actions are mock-only.
-- Five Rust unit tests cover search, filtering, planning, review state, and enum display mappings.
+- Eight Rust unit tests cover search, filtering, planning, review state, action validation, presentation mapping, and enum display mappings. Four Vitest tests cover the frontend IPC contract and error messaging.
 - There is no real Windows inspection, mutation, elevation, networking, backend, persistence, telemetry, authentication, payment, or plugin execution.
 - `.deslopper/policy.toml` intentionally prohibits all of those capabilities.
 
@@ -44,11 +45,17 @@ Create `.github/workflows/ci.yml` with:
 - least-privilege workflow permissions (`contents: read`);
 - a concurrency group that cancels superseded runs for the same branch or pull request;
 - a stable Rust toolchain with `rustfmt` and `clippy` available;
+- a compatible Node.js toolchain with npm's lockfile install mode;
 - these commands, without weakening or replacing them:
+  - `npm ci`
   - `cargo fmt --check`
   - `cargo check`
   - `cargo clippy --all-targets --all-features -- -D warnings`
   - `cargo test`
+  - `npm run check`
+  - `npm run lint`
+  - `npm test`
+  - `npm run build`
 
 Update `docs/testing-strategy.md` and `docs/development-workflow.md` so they accurately describe the new automated pull-request gate. Keep local commands authoritative and required.
 
@@ -57,7 +64,7 @@ Update `docs/testing-strategy.md` and `docs/development-workflow.md` so they acc
 - Do not change application behaviour or UI in this work package.
 - Do not change `.deslopper/policy.toml`.
 - Do not start read-only Windows inspection; that is a separately approved future milestone.
-- Do not add or update Rust crates.
+- Do not add or update Rust crates or npm packages.
 - Do not add application runtime shell execution, networking, elevation, or Windows APIs.
 - Do not add repository secrets, tokens, signing material, publishing, releases, deployment, or package upload steps.
 - Do not use `continue-on-error` for required checks.
@@ -68,12 +75,12 @@ Update `docs/testing-strategy.md` and `docs/development-workflow.md` so they acc
 ### Acceptance criteria
 
 - The workflow is valid GitHub Actions YAML.
-- It runs only the four existing non-interactive quality gates listed above.
-- It uses Windows and stable Rust.
+- It runs only the existing non-interactive quality gates listed above.
+- It uses Windows, stable Rust, and the supported Node/npm toolchain.
 - It has least-privilege permissions and concurrency control.
 - No application dependency or capability changes.
 - Relevant governance documentation matches the workflow.
-- All four commands pass locally before committing.
+- All non-interactive commands pass locally before committing.
 - `git diff --check` passes.
 - The final report lists every file and command, and distinguishes local validation from GitHub-hosted validation.
 
@@ -95,7 +102,7 @@ Stop and ask a maintainer before doing any of the following:
 2. Review existing GitHub files and the dependency policy.
 3. Draft the smallest compliant workflow.
 4. Update testing and workflow documentation.
-5. Run all four local quality gates.
+5. Run all local non-interactive quality gates.
 6. Run `git diff --check` and review the complete diff.
 7. Commit with a conventional message such as `ci: add Windows quality gates`.
 8. Report that GitHub-hosted execution remains unverified until the pushed workflow completes.

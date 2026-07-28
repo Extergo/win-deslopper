@@ -8,7 +8,7 @@ Safety and security rules, architectural boundaries, and `.deslopper/policy.toml
 
 **Status:** Complete
 
-The current application provides a polished, non-destructive shell with:
+The current application provides a polished, non-destructive Tauri/SvelteKit shell with Rust-owned state and:
 
 - a mock catalogue for OneDrive, Windows Copilot, and promotional content;
 - local search and category filtering;
@@ -27,7 +27,7 @@ Planned work:
 - Add GitHub Actions for formatting, Clippy with warnings denied, and tests.
 - Replace CODEOWNERS placeholders with real maintainers before enabling branch protection.
 - Add a project licence and define supported Windows versions and architectures.
-- Add practical UI state tests and a repeatable visual-review process.
+- Expand practical UI state tests and formalise the repeatable visual-review process.
 - Test keyboard navigation, resizing, and standard Windows scaling levels.
 - Validate the catalogue language with users and document supported terminology.
 
@@ -52,7 +52,7 @@ Before implementation:
 Planned architecture:
 
 - Introduce a narrow inspection interface below application orchestration.
-- Keep domain models independent of Slint and Windows implementation details.
+- Keep domain models independent of Tauri, SvelteKit, presentation models, and Windows implementation details.
 - Retain a fake provider for deterministic tests and development.
 - Start with one component, preferably OneDrive, before expanding the catalogue.
 

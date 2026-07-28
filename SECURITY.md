@@ -19,6 +19,8 @@ Deslopper is intended to manage security-sensitive local state. Its threat model
 
 The `ui-preview` milestone contains no real inspection, privileged operation, Windows mutation, plugin execution, backend, update, or telemetry path. Its catalogue and plan are local mock state only.
 
+The current Tauri shell embeds static SvelteKit assets and exposes only `get_app_view` and `dispatch_app_action`. Those commands can read or change in-memory preview state only. The main-window capability grants no core plugin permissions, unused Tauri commands are removed from builds, global Tauri injection is disabled, and a restrictive content security policy permits local assets plus Tauri's local IPC origin. No filesystem, shell, network, updater, persistence, or external-URL plugin is installed.
+
 ## Reporting
 
 Until a dedicated security address is published, do not disclose a suspected vulnerability publicly. Open a private repository security advisory or contact the project maintainers through the repository's private owner channel. Maintainers must acknowledge receipt, assess affected versions, coordinate remediation and disclosure, and never request secrets or exploit data in a public issue.

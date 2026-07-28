@@ -8,3 +8,5 @@ Avoid unrelated refactors during feature work. Obtain separate explicit mileston
 
 Reports list all files and commands, distinguish automated from procedural enforcement, disclose failed/skipped checks, and never claim visual or platform validation that did not occur.
 
+After `npm ci`, frontend work runs `npm run check`, `npm run lint`, `npm test`, and `npm run build`. Desktop integration work also runs `npm run tauri -- build --debug --no-bundle` and launches `npm run tauri -- dev` or the built executable for an interactive Windows review. These supplement rather than replace the Rust gates.
+

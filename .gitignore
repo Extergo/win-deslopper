@@ -1,1 +1,7 @@
 /target
+/node_modules
+/frontend/.svelte-kit
+/frontend/build
+/gen/schemas
+/coverage
+*.log
