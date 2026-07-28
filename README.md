@@ -23,15 +23,15 @@ Stable systems matter more than aggressive debloating. Future Windows operations
 
 ## Development
 
-Prerequisites are stable Rust, Node.js 22.12 or newer, npm, and the Microsoft WebView2 runtime provided by supported Windows installations.
+Prerequisites are stable Rust, Bun 1.3.14, and the Microsoft WebView2 runtime provided by supported Windows installations.
 
 Install the locked frontend toolchain and run locally with:
 
 ```powershell
-npm ci
-npm run tauri -- dev
+bun install --frozen-lockfile
+bun run tauri dev
 ```
 
-Useful validation commands are `npm run check`, `npm run lint`, `npm test`, `npm run build`, and the Rust gates documented in `.deslopper/policy.toml`. `npm run tauri -- build --debug --no-bundle` verifies that the production SvelteKit assets embed into the Windows executable without producing an installer.
+Useful validation commands are `bun run check`, `bun run lint`, `bun run test`, `bun run build`, and the Rust gates documented in `.deslopper/policy.toml`. `bun run tauri build --debug --no-bundle` verifies that the production SvelteKit assets embed into the Windows executable without producing an installer.
 
 Contributors and coding agents must begin with `AGENTS.md`. The project architecture and safety posture are defined in `ARCHITECTURE.md` and `SECURITY.md`.

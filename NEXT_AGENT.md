@@ -45,17 +45,17 @@ Create `.github/workflows/ci.yml` with:
 - least-privilege workflow permissions (`contents: read`);
 - a concurrency group that cancels superseded runs for the same branch or pull request;
 - a stable Rust toolchain with `rustfmt` and `clippy` available;
-- a compatible Node.js toolchain with npm's lockfile install mode;
+- Bun 1.3.14 with the lockfile-frozen install mode;
 - these commands, without weakening or replacing them:
-  - `npm ci`
+  - `bun install --frozen-lockfile`
   - `cargo fmt --check`
   - `cargo check`
   - `cargo clippy --all-targets --all-features -- -D warnings`
   - `cargo test`
-  - `npm run check`
-  - `npm run lint`
-  - `npm test`
-  - `npm run build`
+  - `bun run check`
+  - `bun run lint`
+  - `bun run test`
+  - `bun run build`
 
 Update `docs/testing-strategy.md` and `docs/development-workflow.md` so they accurately describe the new automated pull-request gate. Keep local commands authoritative and required.
 
@@ -64,7 +64,7 @@ Update `docs/testing-strategy.md` and `docs/development-workflow.md` so they acc
 - Do not change application behaviour or UI in this work package.
 - Do not change `.deslopper/policy.toml`.
 - Do not start read-only Windows inspection; that is a separately approved future milestone.
-- Do not add or update Rust crates or npm packages.
+- Do not add or update Rust crates or JavaScript packages.
 - Do not add application runtime shell execution, networking, elevation, or Windows APIs.
 - Do not add repository secrets, tokens, signing material, publishing, releases, deployment, or package upload steps.
 - Do not use `continue-on-error` for required checks.
@@ -76,7 +76,7 @@ Update `docs/testing-strategy.md` and `docs/development-workflow.md` so they acc
 
 - The workflow is valid GitHub Actions YAML.
 - It runs only the existing non-interactive quality gates listed above.
-- It uses Windows, stable Rust, and the supported Node/npm toolchain.
+- It uses Windows, stable Rust, and the supported Bun toolchain.
 - It has least-privilege permissions and concurrency control.
 - No application dependency or capability changes.
 - Relevant governance documentation matches the workflow.

@@ -11,5 +11,5 @@
 - Add focused tests for non-trivial domain and state logic; do not couple tests to irrelevant private details.
 - Use clear descriptive file, module, type, and function names.
 
-Required Rust gates are `cargo fmt --check`, `cargo check`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo test`. Required frontend gates are `npm run check`, `npm run lint`, `npm test`, and `npm run build`. Never weaken lint configuration because generated or poorly structured code warns.
+Required Rust gates are `cargo fmt --check`, `cargo check`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo test`. Required frontend gates are `bun install --frozen-lockfile`, `bun run check`, `bun run lint`, `bun run test`, and `bun run build`. Never weaken lint configuration because generated or poorly structured code warns.
 

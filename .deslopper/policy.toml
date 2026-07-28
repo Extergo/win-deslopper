@@ -14,15 +14,16 @@ allow_shell_execution = false
 allow_unsafe_rust = false
 
 quality_gates = [
+    "bun install --frozen-lockfile",
     "cargo fmt --check",
     "cargo check",
     "cargo clippy --all-targets --all-features -- -D warnings",
     "cargo test",
-    "npm run check",
-    "npm run lint",
-    "npm test",
-    "npm run build",
-    "npm run tauri -- build --debug --no-bundle",
-    "npm run tauri -- dev",
+    "bun run check",
+    "bun run lint",
+    "bun run test",
+    "bun run build",
+    "bun run tauri build --debug --no-bundle",
+    "bun run tauri dev",
 ]
 
