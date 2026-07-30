@@ -10,19 +10,19 @@ pub enum ComponentId {
 }
 
 impl ComponentId {
-    pub fn index(self) -> i32 {
+    pub fn key(self) -> &'static str {
         match self {
-            Self::OneDrive => 0,
-            Self::Copilot => 1,
-            Self::PromotionalContent => 2,
+            Self::OneDrive => "onedrive",
+            Self::Copilot => "copilot",
+            Self::PromotionalContent => "promotional_content",
         }
     }
 
-    pub fn from_index(index: i32) -> Option<Self> {
-        match index {
-            0 => Some(Self::OneDrive),
-            1 => Some(Self::Copilot),
-            2 => Some(Self::PromotionalContent),
+    pub fn from_key(key: &str) -> Option<Self> {
+        match key {
+            "onedrive" => Some(Self::OneDrive),
+            "copilot" => Some(Self::Copilot),
+            "promotional_content" => Some(Self::PromotionalContent),
             _ => None,
         }
     }
@@ -101,21 +101,22 @@ pub enum CatalogueFilter {
 }
 
 impl CatalogueFilter {
-    pub fn index(self) -> i32 {
+    pub fn key(self) -> &'static str {
         match self {
-            Self::All => 0,
-            Self::Cloud => 1,
-            Self::Ai => 2,
-            Self::Promotions => 3,
+            Self::All => "all",
+            Self::Cloud => "cloud",
+            Self::Ai => "ai",
+            Self::Promotions => "promotions",
         }
     }
 
-    pub fn from_index(index: i32) -> Self {
-        match index {
-            1 => Self::Cloud,
-            2 => Self::Ai,
-            3 => Self::Promotions,
-            _ => Self::All,
+    pub fn from_key(key: &str) -> Option<Self> {
+        match key {
+            "all" => Some(Self::All),
+            "cloud" => Some(Self::Cloud),
+            "ai" => Some(Self::Ai),
+            "promotions" => Some(Self::Promotions),
+            _ => None,
         }
     }
 
@@ -136,18 +137,18 @@ pub enum NavigationDestination {
 }
 
 impl NavigationDestination {
-    pub fn index(self) -> i32 {
+    pub fn key(self) -> &'static str {
         match self {
-            Self::WindowsCleanup => 0,
-            Self::Extensions => 1,
+            Self::WindowsCleanup => "windows_cleanup",
+            Self::Extensions => "extensions",
         }
     }
 
-    pub fn from_index(index: i32) -> Self {
-        if index == 1 {
-            Self::Extensions
-        } else {
-            Self::WindowsCleanup
+    pub fn from_key(key: &str) -> Option<Self> {
+        match key {
+            "windows_cleanup" => Some(Self::WindowsCleanup),
+            "extensions" => Some(Self::Extensions),
+            _ => None,
         }
     }
 }
@@ -368,6 +369,18 @@ mod tests {
         assert_eq!(
             CompatibilityState::VariesByBuildAndRegion.label(),
             "Varies by build and region"
+        );
+        assert_eq!(
+            ComponentId::from_key(ComponentId::OneDrive.key()),
+            Some(ComponentId::OneDrive)
+        );
+        assert_eq!(
+            CatalogueFilter::from_key(CatalogueFilter::Promotions.key()),
+            Some(CatalogueFilter::Promotions)
+        );
+        assert_eq!(
+            NavigationDestination::from_key(NavigationDestination::Extensions.key()),
+            Some(NavigationDestination::Extensions)
         );
     }
 }

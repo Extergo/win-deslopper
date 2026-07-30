@@ -18,5 +18,5 @@ Follow `docs/development-workflow.md`. Avoid unrelated refactors. Pull requests 
 
 Propose dependencies using the record required by `docs/dependency-policy.md`. Propose substantial architecture changes by adding a decision entry to `docs/decision-log.md` before implementation. Update code and documentation together whenever behaviour or architecture changes.
 
-Before review, run the commands in `.deslopper/policy.toml` and complete the pull-request template. Never weaken a check to obtain a green result.
+Before review, run the Rust and frontend commands in `.deslopper/policy.toml`, complete the pull-request template, and perform the interactive Tauri launch check for visible changes. Never weaken a check to obtain a green result.
 

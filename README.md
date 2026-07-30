@@ -2,7 +2,7 @@
 
 **Windows without the slop.**
 
-Deslopper is a safety-focused Windows management application built in Rust and Slint. Its long-term goal is to help people review optional Windows components and make supported, reversible changes without relying on opaque scripts or aggressive debloating.
+Deslopper is a safety-focused Windows management application built with Rust, Tauri, and SvelteKit. Its long-term goal is to help people review optional Windows components and make supported, reversible changes without relying on opaque scripts or aggressive debloating.
 
 ## Current milestone: UI preview
 
@@ -23,10 +23,15 @@ Stable systems matter more than aggressive debloating. Future Windows operations
 
 ## Development
 
-Run locally with:
+Prerequisites are stable Rust, Bun 1.3.14, and the Microsoft WebView2 runtime provided by supported Windows installations.
+
+Install the locked frontend toolchain and run locally with:
 
 ```powershell
-cargo run
+bun install --frozen-lockfile
+bun run tauri dev
 ```
+
+Useful validation commands are `bun run check`, `bun run lint`, `bun run test`, `bun run build`, and the Rust gates documented in `.deslopper/policy.toml`. `bun run tauri build --debug --no-bundle` verifies that the production SvelteKit assets embed into the Windows executable without producing an installer.
 
 Contributors and coding agents must begin with `AGENTS.md`. The project architecture and safety posture are defined in `ARCHITECTURE.md` and `SECURITY.md`.
