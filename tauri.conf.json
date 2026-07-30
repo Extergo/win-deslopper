@@ -1,0 +1,46 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Deslopper",
+  "version": "0.1.0",
+  "identifier": "com.deslopper.desktop",
+  "build": {
+    "beforeDevCommand": "bun run dev",
+    "beforeBuildCommand": "bun run build",
+    "devUrl": "http://127.0.0.1:1420",
+    "frontendDist": "frontend/build",
+    "removeUnusedCommands": true
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Deslopper",
+        "width": 1120,
+        "height": 760,
+        "minWidth": 900,
+        "minHeight": 620,
+        "center": true,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "capabilities": ["main-window"],
+      "csp": {
+        "default-src": "'self'",
+        "connect-src": "ipc: http://ipc.localhost",
+        "font-src": "'self'",
+        "img-src": "'self' asset: http://asset.localhost data:",
+        "script-src": "'self'",
+        "style-src": "'self'"
+      },
+      "dangerousDisableAssetCspModification": false,
+      "freezePrototype": true
+    },
+    "withGlobalTauri": false
+  },
+  "bundle": {
+    "active": true,
+    "icon": ["icons/icon.ico"]
+  }
+}

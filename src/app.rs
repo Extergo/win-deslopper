@@ -1,93 +1,162 @@
-//! UI callback wiring and local application-state orchestration.
+//! Tauri command wiring and local application-state orchestration.
 
-use std::{cell::RefCell, rc::Rc};
+use std::sync::Mutex;
 
-use slint::ComponentHandle;
+use serde::{Deserialize, Serialize};
+use tauri::State;
 
 use crate::{
-    AppWindow,
     model::{AppState, CatalogueFilter, ComponentId, NavigationDestination},
-    ui_bridge,
+    presentation::AppView,
 };
 
-pub fn run() -> Result<(), slint::PlatformError> {
-    let window = AppWindow::new()?;
-    let state = Rc::new(RefCell::new(AppState::new()));
+pub struct ManagedAppState(Mutex<AppState>);
 
-    refresh(&window, &state.borrow());
-    wire_callbacks(&window, &state);
-
-    window.run()
+impl ManagedAppState {
+    fn new() -> Self {
+        Self(Mutex::new(AppState::new()))
+    }
 }
 
-fn refresh(window: &AppWindow, state: &AppState) {
-    window.set_cleanup_items(ui_bridge::visible_items(state));
-    window.set_planned_items(ui_bridge::planned_items(state));
-    window.set_catalogue_count(state.catalogue_len() as i32);
-    window.set_planned_count(state.planned_count() as i32);
-    window.set_selected_filter(state.filter().index());
-    window.set_selected_section(state.destination().index());
-    window.set_review_open(state.is_review_open());
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(
+    tag = "type",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
+pub enum AppAction {
+    SearchChanged { query: String },
+    FilterChanged { filter: String },
+    TogglePlanned { component_id: String },
+    Navigate { destination: String },
+    OpenReview,
+    CloseReview,
 }
 
-fn wire_callbacks(window: &AppWindow, state: &Rc<RefCell<AppState>>) {
-    let window_weak = window.as_weak();
-    let shared_state = Rc::clone(state);
-    window.on_search_changed(move |query| {
-        shared_state.borrow_mut().set_query(query.as_str());
-        if let Some(window) = window_weak.upgrade() {
-            refresh(&window, &shared_state.borrow());
-        }
-    });
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommandError {
+    code: &'static str,
+    message: String,
+}
 
-    let window_weak = window.as_weak();
-    let shared_state = Rc::clone(state);
-    window.on_filter_changed(move |index| {
-        shared_state
-            .borrow_mut()
-            .set_filter(CatalogueFilter::from_index(index));
-        if let Some(window) = window_weak.upgrade() {
-            refresh(&window, &shared_state.borrow());
+impl CommandError {
+    fn invalid_action(message: impl Into<String>) -> Self {
+        Self {
+            code: "invalid_action",
+            message: message.into(),
         }
-    });
+    }
 
-    let window_weak = window.as_weak();
-    let shared_state = Rc::clone(state);
-    window.on_toggle_plan(move |index| {
-        if let Some(id) = ComponentId::from_index(index) {
-            shared_state.borrow_mut().toggle_planned(id);
-            if let Some(window) = window_weak.upgrade() {
-                refresh(&window, &shared_state.borrow());
-            }
+    fn state_unavailable() -> Self {
+        Self {
+            code: "state_unavailable",
+            message: "The local preview state is temporarily unavailable.".to_owned(),
         }
-    });
+    }
+}
 
-    let window_weak = window.as_weak();
-    let shared_state = Rc::clone(state);
-    window.on_navigate(move |index| {
-        shared_state
-            .borrow_mut()
-            .set_destination(NavigationDestination::from_index(index));
-        if let Some(window) = window_weak.upgrade() {
-            refresh(&window, &shared_state.borrow());
-        }
-    });
+#[tauri::command]
+pub fn get_app_view(state: State<'_, ManagedAppState>) -> Result<AppView, CommandError> {
+    let state = state
+        .0
+        .lock()
+        .map_err(|_| CommandError::state_unavailable())?;
+    Ok(AppView::from(&*state))
+}
 
-    let window_weak = window.as_weak();
-    let shared_state = Rc::clone(state);
-    window.on_open_review(move || {
-        shared_state.borrow_mut().open_review();
-        if let Some(window) = window_weak.upgrade() {
-            refresh(&window, &shared_state.borrow());
-        }
-    });
+#[tauri::command]
+pub fn dispatch_app_action(
+    action: AppAction,
+    state: State<'_, ManagedAppState>,
+) -> Result<AppView, CommandError> {
+    let mut state = state
+        .0
+        .lock()
+        .map_err(|_| CommandError::state_unavailable())?;
+    apply_action(&mut state, action)?;
+    Ok(AppView::from(&*state))
+}
 
-    let window_weak = window.as_weak();
-    let shared_state = Rc::clone(state);
-    window.on_close_review(move || {
-        shared_state.borrow_mut().close_review();
-        if let Some(window) = window_weak.upgrade() {
-            refresh(&window, &shared_state.borrow());
+fn apply_action(state: &mut AppState, action: AppAction) -> Result<(), CommandError> {
+    match action {
+        AppAction::SearchChanged { query } => state.set_query(query),
+        AppAction::FilterChanged { filter } => {
+            let filter = CatalogueFilter::from_key(&filter).ok_or_else(|| {
+                CommandError::invalid_action(format!("Unknown catalogue filter: {filter}"))
+            })?;
+            state.set_filter(filter);
         }
-    });
+        AppAction::TogglePlanned { component_id } => {
+            let component_id = ComponentId::from_key(&component_id).ok_or_else(|| {
+                CommandError::invalid_action(format!("Unknown component: {component_id}"))
+            })?;
+            state.toggle_planned(component_id);
+        }
+        AppAction::Navigate { destination } => {
+            let destination = NavigationDestination::from_key(&destination).ok_or_else(|| {
+                CommandError::invalid_action(format!(
+                    "Unknown navigation destination: {destination}"
+                ))
+            })?;
+            state.set_destination(destination);
+        }
+        AppAction::OpenReview => state.open_review(),
+        AppAction::CloseReview => state.close_review(),
+    }
+
+    Ok(())
+}
+
+pub fn run() -> tauri::Result<()> {
+    tauri::Builder::default()
+        .manage(ManagedAppState::new())
+        .invoke_handler(tauri::generate_handler![get_app_view, dispatch_app_action])
+        .run(tauri::generate_context!())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn actions_update_rust_owned_preview_state() {
+        let mut state = AppState::new();
+
+        apply_action(
+            &mut state,
+            AppAction::SearchChanged {
+                query: "copilot".to_owned(),
+            },
+        )
+        .expect("valid search action should be accepted");
+        assert_eq!(state.visible_components().len(), 1);
+
+        apply_action(
+            &mut state,
+            AppAction::TogglePlanned {
+                component_id: "copilot".to_owned(),
+            },
+        )
+        .expect("known component should be accepted");
+        assert_eq!(state.planned_count(), 1);
+
+        apply_action(&mut state, AppAction::OpenReview).expect("review action should be accepted");
+        assert!(state.is_review_open());
+    }
+
+    #[test]
+    fn invalid_transport_values_are_rejected() {
+        let mut state = AppState::new();
+        let error = apply_action(
+            &mut state,
+            AppAction::FilterChanged {
+                filter: "everything".to_owned(),
+            },
+        )
+        .expect_err("unknown filters must be rejected");
+
+        assert_eq!(error.code, "invalid_action");
+        assert_eq!(state.filter(), CatalogueFilter::All);
+    }
 }

@@ -2,10 +2,8 @@
 
 mod app;
 mod model;
-mod ui_bridge;
+mod presentation;
 
-slint::include_modules!();
-
-fn main() -> Result<(), slint::PlatformError> {
+fn main() -> tauri::Result<()> {
     app::run()
 }
