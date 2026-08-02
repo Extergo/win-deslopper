@@ -5,3 +5,27 @@
 /gen/schemas
 /coverage
 *.log
+/.deslopper/local/
+/validation/inbox/
+
+# Machine-local state and credentials
+.env
+.env.*
+!.env.example
+*.db
+*.sqlite
+*.sqlite3
+store.json
+*.pem
+*.key
+*.pfx
+*.p12
+*.dmp
+
+# Virtual-machine media and checkpoints
+*.vhd
+*.vhdx
+*.vmdk
+*.ova
+*.ovf
+*.iso

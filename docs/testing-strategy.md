@@ -1,6 +1,27 @@
 # Testing strategy
 
-The project uses fast Rust unit tests for domain rules, transport validation, presentation mapping, and state transitions. Vitest covers the TypeScript-to-Tauri command contract and frontend error handling. Svelte checking, ESLint, Prettier, a production static build, a complete debug Tauri build, and screenshot/visual review cover the presentation integration. Future real operations additionally require Windows integration tests across supported builds, editions, architectures, and regions; virtual-machine and rollback tests; elevation-boundary tests; plugin isolation; update-signature verification; offline and corrupted-state cases; failed-operation recovery; and anti-cheat/gaming compatibility where relevant.
+Rust tests cover lifecycle ordering and counts, cancellation during shared AppX inventory, double cancellation, fresh inspection after cancellation, query sharing, permission-limited package scope, exact identity migration, multi-package aggregation, authority alternatives, applicability by edition/build/servicing prerequisite, drift classification and causes, schema creation and v1→v2 upgrade, unsupported newer schema, package/lifecycle round-trip, desired revisions, alpha JSON salvage, import rollback, and privacy redaction.
 
-For `ui-preview`, Rust tests cover catalogue searching, category filtering, adding and removing planned IDs, planned-count calculation, transport actions, view-model mapping, and enum-to-display mapping. Frontend tests assert the two-command IPC contract without bypassing Rust ownership. Test observable behaviour, not incidental private structure. Rust formatting/check/Clippy/tests, `bun run check`, `bun run lint`, `bun run test`, `bun run build`, a debug Tauri build, application launch, resizing, keyboard focus, standard Windows scaling, and visual inspection form the release gate.
+Vitest covers the typed command contract, progress subscription, cancel action, history/timeline/package routing, desired-state validation/save payloads, permission-limited display state, and safe error presentation. Svelte checking, ESLint, Prettier, static production build, Rust formatting/check/Clippy/tests, debug Tauri build, interactive launch, and visual review remain release gates.
 
+`validation/fixtures` contains deterministic redacted Windows captures. `validation::tests::every_checked_in_vm_fixture_matches_current_detectors` loads every bundle, replays production parsers/detectors, and fails on expected-state regression. `tools/validate-vm-fixtures.ps1` produces a human-readable report. Fixture coverage never replaces manual VM verification of OS UI, policy provenance, OneDrive client state, and non-elevated permission behavior.
+
+The required Windows 11 matrix covers Home, Pro, and Enterprise/Evaluation on 24H2 and 25H2; local, Microsoft, domain, and MDM account/authority contexts; OneDrive present/configured/absent; post-feature-update and post-Store-update states; current-user and provisioning removal; and permission-limited standard-user inspection. Windows 10 is optional legacy observation only.
+
+Mutation-alpha tests run separately with `cargo test --features mutation-alpha`.
+They cover closed requests, gates, the exact registry, source/context rejection,
+apply failure, verified apply, exact rollback, durable history, cancellation, and
+interrupted-write recovery. Synthetic mutation fixtures replay state only and
+must state that no live write occurred. Fault injection is Rust-test-only.
+
+Live-validation hardening tests cover the separate gate, development-host
+refusal, scenario/machine/checkpoint/database mismatch, validation maturity,
+rejected handlers, three-dimensional visual outcomes, sign-in-pending state,
+Settings disagreement, shell-ignore and reversion outcomes, evidence
+redaction/duplicates, and cross-build comparison. Checked-in live evidence is
+validated for closed operation IDs and redaction; an empty evidence directory
+truthfully means zero completed live runs.
+
+`tools/scan-mutation-boundary.ps1` rejects generic registry/process surfaces and
+prohibited Windows operations. Live apply/rollback testing follows
+`docs/vm-mutation-protocol.md`; CI never performs mutation.
