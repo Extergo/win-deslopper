@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Deslopper fixed guest live-validation scenario",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "scenarioId",
+    "expectedMachineId",
+    "expectedEdition",
+    "expectedBuild",
+    "expectedUpdateBuildRevision",
+    "checkpointId",
+    "accountClass",
+    "managementContext"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "scenarioId": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+    "expectedMachineId": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "expectedEdition": { "type": "string", "minLength": 1 },
+    "expectedBuild": { "type": "integer", "minimum": 22000 },
+    "expectedUpdateBuildRevision": { "type": ["integer", "null"], "minimum": 0 },
+    "checkpointId": { "type": "string", "pattern": "^[a-zA-Z0-9._-]+$" },
+    "accountClass": { "enum": ["local", "microsoft", "domain", "work", "standard-user"] },
+    "managementContext": { "enum": ["none", "local-policy", "domain", "mdm"] }
+  },
+  "additionalProperties": false
+}

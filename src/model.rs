@@ -133,6 +133,8 @@ impl CatalogueFilter {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NavigationDestination {
     WindowsCleanup,
+    InspectionHistory,
+    DriftHistory,
     Extensions,
 }
 
@@ -140,6 +142,8 @@ impl NavigationDestination {
     pub fn key(self) -> &'static str {
         match self {
             Self::WindowsCleanup => "windows_cleanup",
+            Self::InspectionHistory => "inspection_history",
+            Self::DriftHistory => "drift_history",
             Self::Extensions => "extensions",
         }
     }
@@ -147,6 +151,8 @@ impl NavigationDestination {
     pub fn from_key(key: &str) -> Option<Self> {
         match key {
             "windows_cleanup" => Some(Self::WindowsCleanup),
+            "inspection_history" => Some(Self::InspectionHistory),
+            "drift_history" => Some(Self::DriftHistory),
             "extensions" => Some(Self::Extensions),
             _ => None,
         }

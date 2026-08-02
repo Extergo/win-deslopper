@@ -1,0 +1,27 @@
+{
+  "fixtureSchemaVersion": 1,
+  "scenarioId": "win11-pro-24h2-clean-local",
+  "osEdition": "Professional",
+  "osBuild": 26100,
+  "queries": {
+    "platform_inventory": { "ProductName": "Windows 11 Pro", "Edition": "Professional", "Build": 26100, "DisplayVersion": "24H2", "UBR": 1000, "Architecture": "64-bit", "DeviceName": null, "DomainJoined": false, "Windows11": true },
+    "appx_current_user": [
+      { "Name": "Microsoft.Copilot", "PackageFamilyName": "Microsoft.Copilot_8wekyb3d8bbwe", "PackageFullName": "Microsoft.Copilot_1.0.0.0_x64__8wekyb3d8bbwe", "Version": "1.0.0.0", "Architecture": "X64", "PublisherId": "8wekyb3d8bbwe", "IsFramework": false, "IsResourcePackage": false, "InstallLocation": "<present>", "NonRemovable": false }
+    ],
+    "appx_all_users": [
+      { "Name": "Microsoft.Copilot", "PackageFamilyName": "Microsoft.Copilot_8wekyb3d8bbwe", "PackageFullName": "Microsoft.Copilot_1.0.0.0_x64__8wekyb3d8bbwe", "Version": "1.0.0.0", "Architecture": "X64", "PublisherId": "8wekyb3d8bbwe", "IsFramework": false, "IsResourcePackage": false, "InstallLocation": "<present>", "NonRemovable": false }
+    ],
+    "appx_provisioned": [],
+    "management_context": { "DomainJoined": false, "WorkplaceJoined": false, "MdmEnrollmentCount": 0, "MdmPolicyProviderCount": 0, "DomainGpoHistoryCount": 0, "LocalPolicyStorePresent": true },
+    "policy_registry": { "Widgets": 1, "ConsumerExperiences": null, "Welcome": null, "Tips": null, "LockScreen": null, "StartRecommendations": null, "NotificationSuggestions": null, "SettingsSuggestions": null, "SearchWeb": 1, "SearchHighlights": 0 },
+    "user_preferences": { "Welcome": 0, "Tips": 0, "LockScreen": 0, "NotificationSuggestions": 0, "SettingsSuggestions": 0, "TaskbarWidgets": 1, "TaskbarSearch": 0 },
+    "one_drive_metadata": { "Installed": false, "Version": null, "Running": false, "Startup": false, "Personal": false, "Work": false, "SyncRootCount": 0, "DesktopRedirected": false, "DocumentsRedirected": false, "PicturesRedirected": false, "KfmPolicy": false, "FilesOnDemandPolicy": null, "FilesOnDemandValues": [], "FilesOnDemandEvidenceComplete": true }
+  },
+  "expected": [
+    { "componentId": "consumer_copilot", "detectorStatus": "successful", "applicabilityStatus": "applicable", "packageCompleteness": "complete", "authority": "windows_servicing" },
+    { "componentId": "consumer_experiences", "detectorStatus": "unknown", "applicabilityStatus": "partially_applicable", "packageCompleteness": "not_applicable", "authority": "unknown" },
+    { "componentId": "widgets_platform", "detectorStatus": "successful", "applicabilityStatus": "applicable", "packageCompleteness": "not_applicable", "authority": "local_policy" },
+    { "componentId": "onedrive", "detectorStatus": "successful", "applicabilityStatus": "applicable", "packageCompleteness": "not_applicable", "authority": "user" }
+  ],
+  "knownLimitations": ["No domain or MDM authority in this fixture", "OneDrive is intentionally absent"]
+}

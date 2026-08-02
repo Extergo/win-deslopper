@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Deslopper redacted mutation scenario",
+  "type": "object",
+  "required": [
+    "fixtureSchemaVersion",
+    "scenarioId",
+    "operationId",
+    "osEdition",
+    "osBuild",
+    "accountType",
+    "preState",
+    "target",
+    "postState",
+    "rollbackState",
+    "authority",
+    "applicability",
+    "handlerVersion",
+    "expectedTransitions",
+    "expectedVerificationResult",
+    "liveMutationPerformed"
+  ],
+  "properties": {
+    "fixtureSchemaVersion": { "const": 1 },
+    "scenarioId": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+    "operationId": {
+      "enum": [
+        "set_taskbar_widgets_visibility",
+        "set_taskbar_task_view_visibility",
+        "set_taskbar_show_desktop_enabled"
+      ]
+    },
+    "osEdition": { "type": "string" },
+    "osBuild": { "type": "integer" },
+    "accountType": { "type": "string" },
+    "preState": { "type": "object" },
+    "target": { "enum": ["enabled", "disabled"] },
+    "postState": { "type": "object" },
+    "rollbackState": { "type": "object" },
+    "authority": { "type": "string" },
+    "applicability": { "type": "string" },
+    "handlerVersion": { "type": "string" },
+    "expectedTransitions": { "type": "array", "items": { "type": "string" } },
+    "expectedVerificationResult": { "type": "string" },
+    "liveMutationPerformed": { "type": "boolean" },
+    "knownLimitations": { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": false
+}

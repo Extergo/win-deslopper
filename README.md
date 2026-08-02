@@ -2,36 +2,52 @@
 
 **Windows without the slop.**
 
-Deslopper is a safety-focused Windows management application built with Rust, Tauri, and SvelteKit. Its long-term goal is to help people review optional Windows components and make supported, reversible changes without relying on opaque scripts or aggressive debloating.
+Deslopper is a safety-focused Rust/Tauri/SvelteKit Windows manager. Ordinary
+builds provide a completed 20-component read-only inspection beta with bounded
+queries, applicability/authority evidence, SQLite history, desired states,
+drift, privacy redaction, and VM fixture replay.
 
-## Current milestone: UI preview
+## Internal mutation broker alpha
 
-The current build is deliberately non-destructive. It presents mock component information and lets users assemble a local preview plan, but it does not inspect or modify Windows.
+An optional internal feature proves the inspect → plan → revalidate → approve →
+apply → verify → audit → exact rollback lifecycle for three current-user
+taskbar presentation settings: Widgets button, Task View button, and Show
+Desktop corner. Search mode and Search Highlights were not implemented because
+official research did not establish suitable stable unelevated current-user
+setters; see `docs/mutation-broker-alpha.md`.
 
-- Windows Cleanup mock catalogue with local search and category filters
-- UI-only planned-change review flow
-- Extensions coming-soon screen
-- No elevation, network access, shell execution, plugin execution, telemetry, authentication, payments, backend, or real Windows operations
-
-The preview catalogue currently discusses OneDrive, Copilot, and Windows promotional content. These entries are examples, not live detections or removal promises.
-
-See `ROADMAP.md` for the proposed sequence from preview hardening through read-only inspection, compatibility planning, rollback design, and carefully scoped future operations.
-
-## Safety and gaming compatibility
-
-Stable systems matter more than aggressive debloating. Future Windows operations must use supported mechanisms, determine compatibility first, explain impact, capture original state, verify results, and provide rollback. Gaming, anti-cheat, Xbox, and Game Pass compatibility must be tested rather than assumed.
-
-## Development
-
-Prerequisites are stable Rust, Bun 1.3.14, and the Microsoft WebView2 runtime provided by supported Windows installations.
-
-Install the locked frontend toolchain and run locally with:
+Mutation requires all of:
 
 ```powershell
-bun install --frozen-lockfile
-bun run tauri dev
+cargo run --features mutation-alpha -- --enable-mutation-alpha
 ```
 
-Useful validation commands are `bun run check`, `bun run lint`, `bun run test`, `bun run build`, and the Rust gates documented in `.deslopper/policy.toml`. `bun run tauri build --debug --no-bundle` verifies that the production SvelteKit assets embed into the Windows executable without producing an installer.
+It also requires a debug/internal build, in-app warning acknowledgement, a
+fresh completed inspection, and a valid expiring machine-bound plan. Normal
+builds compile without the broker, expose no mutation Tauri commands, and render
+no mutation controls. There is no elevation, Apply All, automatic repair,
+package removal, service/task management, arbitrary shell, or generic registry
+setter.
 
-Contributors and coding agents must begin with `AGENTS.md`. The project architecture and safety posture are defined in `ARCHITECTURE.md` and `SECURITY.md`.
+Live execution additionally requires `--enable-live-validation`, a fixed local
+scenario manifest, expected machine/checkpoint arguments, guest-owned database,
+and development-host denylist. The UI labels all three handlers “Internal alpha
+- not live validated.” No live evidence currently exists; all thirteen matrix
+scenarios are not provisioned. See `docs/live-validation-environment.md`.
+
+No handler is production-ready, no approved disposable target currently exists,
+and production mutation must remain disabled until the required live matrix
+passes. The next intended validation environment is a spare laptop after it
+clones the private checkpoint and is independently backed up, fingerprinted,
+reviewed, and explicitly approved; it is not approved merely by being a laptop.
+
+## Development and validation
+
+Prerequisites are stable Rust, Bun 1.3.14, and WebView2. Run the quality gates
+from `.deslopper/policy.toml`. `tools/validate-vm-fixtures.ps1` replays redacted
+read-only captures. `tools/scan-mutation-boundary.ps1` enforces the executable
+mutation boundary. Live mutation validation is permitted only in disposable
+Windows VMs and is not claimed by synthetic fixtures.
+
+Start with `AGENTS.md`; `ARCHITECTURE.md`, `SECURITY.md`, and the mutation threat
+model are authoritative.

@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Local approved disposable Windows validation VM inventory",
+  "type": "object",
+  "required": ["schemaVersion", "vms"],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "vms": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "scenarioId",
+          "vmName",
+          "generation",
+          "checkpointName",
+          "expectedMachineId",
+          "expectedEdition",
+          "expectedBuildFamily",
+          "accountClass",
+          "domainJoined",
+          "mdmEnrolled",
+          "disposable",
+          "approvedOperations",
+          "approvedTargetStates",
+          "evidenceExportLocation",
+          "checkpointRestoreProcedure"
+        ],
+        "properties": {
+          "scenarioId": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+          "vmName": { "type": "string", "minLength": 1 },
+          "generation": { "enum": [1, 2] },
+          "checkpointName": { "type": "string", "pattern": "^[a-zA-Z0-9._-]+$" },
+          "expectedMachineId": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "expectedEdition": { "type": "string", "minLength": 1 },
+          "expectedBuildFamily": { "enum": ["24H2", "25H2"] },
+          "accountClass": {
+            "enum": [
+              "local-administrator",
+              "microsoft-account-administrator",
+              "domain-administrator",
+              "mdm-administrator",
+              "standard-user"
+            ]
+          },
+          "domainJoined": { "type": "boolean" },
+          "mdmEnrolled": { "type": "boolean" },
+          "disposable": { "const": true },
+          "approvedOperations": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 3,
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "set_widgets_visibility",
+                "set_task_view_visibility",
+                "set_show_desktop_corner"
+              ]
+            }
+          },
+          "approvedTargetStates": {
+            "type": "object",
+            "required": [
+              "set_widgets_visibility",
+              "set_task_view_visibility",
+              "set_show_desktop_corner"
+            ],
+            "properties": {
+              "set_widgets_visibility": { "$ref": "#/$defs/targetStates" },
+              "set_task_view_visibility": { "$ref": "#/$defs/targetStates" },
+              "set_show_desktop_corner": { "$ref": "#/$defs/targetStates" }
+            },
+            "additionalProperties": false
+          },
+          "evidenceExportLocation": { "type": "string", "minLength": 1 },
+          "checkpointRestoreProcedure": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "$defs": {
+    "targetStates": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": { "enum": ["enabled", "disabled"] }
+    }
+  },
+  "additionalProperties": false
+}

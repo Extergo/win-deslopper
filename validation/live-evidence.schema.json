@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Deslopper redacted live mutation evidence",
+  "type": "object",
+  "required": [
+    "evidenceSchemaVersion",
+    "scenarioId",
+    "vmIdentityHash",
+    "edition",
+    "build",
+    "operationId",
+    "initialRepresentation",
+    "target",
+    "postApplyRepresentation",
+    "visualVerification",
+    "visualOutcome",
+    "transactionTransitions",
+    "planHash",
+    "preStateHash",
+    "postStateHash",
+    "verificationStatus",
+    "finalResult"
+  ],
+  "properties": {
+    "evidenceSchemaVersion": { "const": 1 },
+    "scenarioId": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+    "vmIdentityHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "edition": { "type": "string" },
+    "build": { "type": "integer" },
+    "updateBuildRevision": { "type": ["integer", "null"] },
+    "operationId": {
+      "enum": [
+        "set_taskbar_widgets_visibility",
+        "set_taskbar_task_view_visibility",
+        "set_taskbar_show_desktop_enabled"
+      ]
+    },
+    "target": { "enum": ["enabled", "disabled"] },
+    "visualOutcome": {
+      "enum": [
+        "fully_verified",
+        "representation_and_detector_verified_visual_pending",
+        "settings_ui_disagrees",
+        "stored_value_ignored_by_shell",
+        "policy_overrode_value",
+        "reverted_after_sign_in",
+        "detection_uncertain",
+        "not_completed"
+      ]
+    },
+    "finalResult": {
+      "enum": ["passed", "passed_with_limitations", "failed", "blocked", "handler_removed"]
+    }
+  },
+  "additionalProperties": true
+}

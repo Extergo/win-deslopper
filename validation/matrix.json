@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 2,
+  "baseline": "Windows 11",
+  "targets": [
+    { "id": "win11-home-24h2-clean-local", "edition": "Home", "build": "24H2", "account": "local", "domain": false, "mdm": false, "oneDrive": "unconfigured", "mutationStatus": "not_provisioned" },
+    { "id": "win11-pro-24h2-clean-local", "edition": "Pro", "build": "24H2", "account": "local", "domain": false, "mdm": false, "oneDrive": "absent", "mutationStatus": "not_provisioned" },
+    { "id": "win11-enterprise-24h2", "edition": "Enterprise Evaluation", "build": "24H2", "account": "local", "domain": false, "mdm": false, "oneDrive": "unconfigured", "mutationStatus": "not_provisioned" },
+    { "id": "win11-home-25h2-microsoft-account", "edition": "Home", "build": "25H2", "account": "microsoft", "domain": false, "mdm": false, "oneDrive": "configured", "mutationStatus": "not_provisioned" },
+    { "id": "win11-pro-25h2", "edition": "Pro", "build": "25H2", "account": "local", "domain": false, "mdm": false, "oneDrive": "unconfigured", "mutationStatus": "not_provisioned" },
+    { "id": "win11-enterprise-25h2", "edition": "Enterprise Evaluation", "build": "25H2", "account": "local", "domain": false, "mdm": false, "oneDrive": "unconfigured", "mutationStatus": "not_provisioned" },
+    { "id": "domain-joined-pro", "edition": "Pro", "build": "24H2 or 25H2", "account": "domain", "domain": true, "mdm": false, "oneDrive": "configured", "mutationStatus": "not_provisioned" },
+    { "id": "mdm-enrolled-enterprise", "edition": "Enterprise", "build": "24H2 or 25H2", "account": "work", "domain": false, "mdm": true, "oneDrive": "configured", "mutationStatus": "not_provisioned" },
+    { "id": "post-feature-update", "edition": "Pro", "build": "24H2 to 25H2", "account": "local", "domain": false, "mdm": false, "oneDrive": "unconfigured", "mutationStatus": "not_provisioned" },
+    { "id": "post-store-updates", "edition": "Pro", "build": "24H2", "account": "local", "domain": false, "mdm": false, "oneDrive": "unconfigured", "mutationStatus": "not_provisioned" },
+    { "id": "package-current-user-removed", "edition": "Pro", "build": "24H2", "account": "local", "domain": false, "mdm": false, "oneDrive": "unconfigured", "mutationStatus": "not_provisioned" },
+    { "id": "package-provisioning-removed", "edition": "Enterprise", "build": "24H2", "account": "local", "domain": false, "mdm": false, "oneDrive": "unconfigured", "mutationStatus": "not_provisioned" },
+    { "id": "permission-limited-standard-user", "edition": "Home", "build": "24H2", "account": "local", "domain": false, "mdm": false, "oneDrive": "unconfigured", "mutationStatus": "not_provisioned" }
+  ],
+  "requiredAssertions": ["component applicability", "package registration and provisioning", "policy and preference precedence", "authority and confidence", "detector confidence", "known limitations", "manual verification steps"]
+}

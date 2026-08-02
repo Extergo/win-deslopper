@@ -52,3 +52,31 @@ Each decision below is accepted for the current architecture. Replacements must 
 - **Security boundary:** Only the main local window receives the core Tauri capability. Custom IPC can read or change in-memory preview state only. It cannot inspect or modify Windows, execute commands, persist data, elevate, authenticate, make payments, load plugins, collect telemetry, or contact a backend.
 - **Alternatives:** Keeping Slint did not satisfy the requested migration. A hosted or server-rendered frontend would introduce an unnecessary runtime network boundary. Exposing broad Tauri plugins or moving domain state into TypeScript would weaken the current safety and architecture boundaries.
 
+## D-007 — Read-only inspection beta boundary
+
+- **Status:** Accepted
+- **Date:** 2026-08-01
+- **Context:** The accepted inspection alpha needed lifecycle control, honest partiality, historical comparison, structured applicability, and repeatable Windows validation before privileged design could begin.
+- **Decision:** Keep Windows discovery in fixed Rust-owned query definitions; execute shared queries once with timeout, output, parser, and cancellation contracts; persist normalized lifecycle, component, package, desired-revision, and drift records in versioned SQLite; expose typed Tauri APIs and progress events; keep VM capture developer-only.
+- **Consequences:** The main process performs real read-only PowerShell inspection without elevation. Failed, cancelled, timed-out, permission-limited, unsupported, and absent states remain distinct. Svelte does not duplicate Windows rules. SQLite corruption is preserved and surfaced rather than recreated.
+- **Security boundary:** There is no operation executor, Windows writer, arbitrary shell endpoint, elevation manifest, privileged helper, or hidden mutation command. Preview plans explicitly report `executorEnabled: false`.
+- **Alternatives:** Polling the entire dashboard, Boolean absence, fuzzy package matching, frontend applicability tables, and unbounded child processes were rejected.
+
+## D-008 — Feature-gated mutation broker alpha
+
+- **Status:** Accepted for internal alpha only
+- **Date:** 2026-08-02
+- **Context:** Prove the safety lifecycle with a minimal reversible operation set without weakening the normal read-only release.
+- **Decision:** Compile mutation only behind `mutation-alpha`; also require debug build, CLI opt-in, warning acknowledgement, fresh inspection, an expiring SHA-256-bound one-use plan, and explicit approval. Implement only fixed current-user Widgets, Task View, and Show Desktop handlers.
+- **Substitution:** Search mode lacks a documented stable current-user setter, while Search Highlights is documented device policy. Task View and Show Desktop are documented unelevated substitutes.
+- **Consequences:** SQLite v3 journals plans, transactions, steps, captures, rollback, and recovery. Optional `sha2` and `winreg` dependencies are reviewed. Real VM evidence remains mandatory.
+- **Rejected:** Generic registry APIs, PowerShell actions, elevation, machine policy writes, VM detection as a security boundary, Apply All, automatic repair, and silent crash retry.
+
+## D-009 - Live validation uses the normal broker with fail-closed guest identity
+
+- **Status:** Accepted for internal validation
+- **Date:** 2026-08-02
+- **Context:** Live handler proof must never turn the development host or a merely detected VM into an eligible target.
+- **Decision:** Keep the feature-gated application as the only guest runner. Add a separate live flag, fixed ignored manifest, exact scenario/machine/checkpoint, edition/build/UBR, guest-owned database, local development-host denylist, and visible environment banner. Keep VM detection informational. Host Hyper-V tooling reads an ignored explicit VM inventory, requires confirmation for state changes, and cannot invoke mutation. Evidence combines durable broker facts with closed manual visual states and label-only screenshots.
+- **Consequences:** All three handlers remain `SyntheticTested` and visibly not live validated. No unavailable target counts as passed. Normal builds remain unchanged and read-only.
+- **Rejected:** Direct handler test paths, VM detection as authorization, automatic VM creation/download, automatic acknowledgement, host mutation, arbitrary evidence paths, and treating registry reread as visual proof.
