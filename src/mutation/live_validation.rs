@@ -595,6 +595,13 @@ fn is_sha256(value: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
+fn is_git_commit_id(value: &str) -> bool {
+    matches!(value.len(), 40 | 64)
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
 fn valid_development_host_denylist(value: &DevelopmentHostDenylist) -> bool {
     value.schema_version == 1
         && !value.development_host_fingerprints.is_empty()
@@ -632,7 +639,7 @@ fn target_approval_is_complete(value: &ValidationTargetApproval, now_epoch_ms: u
         && value.record_kind == TargetRecordKind::Approval
         && value.approval_status == TargetApprovalStatus::Approved
         && is_sha256(&value.hashed_machine_identity)
-        && is_sha256(&value.source_checkpoint_commit)
+        && is_git_commit_id(&value.source_checkpoint_commit)
         && !value.account_class.trim().is_empty()
         && operations == required_operations
         && states_complete
@@ -1210,6 +1217,18 @@ mod tests {
     }
 
     #[test]
+    fn source_checkpoint_accepts_git_sha1_or_sha256_but_nothing_else() {
+        let now = current_epoch_ms();
+        let mut approval = valid_target_approval(ValidationTargetType::PhysicalLaptop);
+        approval.source_checkpoint_commit = "a".repeat(40);
+        assert!(target_approval_is_complete(&approval, now));
+        approval.source_checkpoint_commit = "a".repeat(39);
+        assert!(!target_approval_is_complete(&approval, now));
+        approval.source_checkpoint_commit = "g".repeat(40);
+        assert!(!target_approval_is_complete(&approval, now));
+    }
+
+    #[test]
     fn development_host_denylist_must_be_nonempty_valid_and_distinct() {
         let empty = DevelopmentHostDenylist {
             schema_version: 1,
@@ -1340,6 +1359,39 @@ mod tests {
         assert_eq!(preparation[0]["approvalStatus"], "not_approved");
         assert_eq!(preparation[0]["mutationStatus"], "mutation_not_attempted");
         assert_eq!(preparation[0]["countsAsCompletedMutationTarget"], false);
+    }
+
+    #[test]
+    fn preparation_schema_preserves_all_user_confirmation_states() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("validation")
+            .join("approved-validation-targets.schema.json");
+        let value: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let confirmations =
+            &value["properties"]["preparationStatus"]["properties"]["userConfirmations"];
+        let required = confirmations["required"].as_array().unwrap();
+        for field in [
+            "importantPersonalData",
+            "allImportantDataBackedUp",
+            "expendable",
+            "reinstallAccepted",
+            "recoveryMediaAvailable",
+            "alternateComputerAvailable",
+            "externalDriveAvailable",
+            "dedicatedLocalTestAccountAllowed",
+            "futureBitlockerRecoveryKeyVerification",
+        ] {
+            assert!(required.iter().any(|candidate| candidate == field));
+        }
+        assert_eq!(
+            value["allOf"][0]["then"]["required"][0],
+            "preparationStatus"
+        );
+        assert_eq!(
+            value["properties"]["preparationStatus"]["properties"]["mutationStillProhibited"]["const"],
+            true
+        );
     }
 
     fn test_bundle(build: u32, plan_hash: &str) -> LiveEvidenceBundle {

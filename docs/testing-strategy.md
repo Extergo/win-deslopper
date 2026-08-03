@@ -36,6 +36,13 @@ wrong type/build/identity. Virtual-machine approval and the legacy VM inventory
 schema remain supported. The physical preparation matrix row never contributes
 to completed live-mutation counts.
 
+Preparation-schema coverage requires structured states for all nine user-only
+recovery confirmations, restart verification, redacted recovery audit summary,
+toolchain state, missing development-host protection, and the invariant that
+mutation remains prohibited. Identity-export and denylist-validator parser
+self-tests prove hash-only output plus empty, malformed, and target-equal
+rejection without displaying an identity.
+
 `tools/scan-mutation-boundary.ps1` rejects generic registry/process surfaces and
 prohibited Windows operations. Live apply/rollback testing follows
 `docs/vm-mutation-protocol.md`; CI never performs mutation.

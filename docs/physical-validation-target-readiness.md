@@ -24,6 +24,14 @@ normal app preserved both saved runs and the completed counts. The loader now
 uses persisted `started_at`, rather than `completed_at`, as the snapshot start
 time so the 31,449 ms duration also remains authoritative after restart.
 
+After the laptop restart and management-query correction, exactly one further
+normal feature-off inspection was run. Inspection
+`inspection-1785763235399-1` completed all 20 detectors in 26,777 ms: 9
+successful, 11 unknown, 0 failed, 0 cancelled, 14 warnings, and 0 errors. It
+contained no partial observations. Closing and reopening the normal app
+preserved all three saved runs; the newest history row retained its duration,
+counts, build 26200 Professional, and Domain/Workplace/MDM `no` summary.
+
 The normal UI exposed no mutation controls. The normal build still compiles no
 mutation module and registers no mutation commands. Deslopper remained
 unelevated and displayed no UAC prompt.
@@ -57,13 +65,20 @@ serials, or account identity.
 The 2026-08-03 audit found Windows RE enabled, a recovery partition present,
 and an obvious built-in recovery route. The operating-system volume was fully
 decrypted: 0% encrypted, BitLocker protection off, and no encryption method.
-CBS and Windows Update reboot flags were clear. The existing pending-file-
-rename queue means Windows still reports a restart pending.
+CBS RebootPending, Windows Update RebootRequired, pending file renames, pending
+computer rename, pending domain join, and the Windows Update COM reboot flag
+were all clear. `SessionsPending` contains completed CBS session history only:
+its top-level counters are zero and each retained child session is complete.
+The final restart-pending state is therefore clear.
 
-Recovery readiness remains `not_ready`. The tool cannot confirm important-data
-status, backup completion, expendability, reinstall acceptance, recovery-media
-availability, access to another media-creation device or external drive, or
-permission to create a later dedicated local test account.
+The user subsequently confirmed there is no important personal data, so backup
+is not applicable; the laptop is expendable; reinstall is acceptable; approved
+Windows USB media, another working computer, and an external drive are
+available; and a dedicated local test account may be created later. BitLocker
+has never been used and is not planned; the audit independently found the OS
+volume fully decrypted. Core recovery conditions are ready, but the repository
+classification stays `not_ready` while original development-host protection is
+missing.
 
 ## Preparation versus approval
 
@@ -94,8 +109,11 @@ is `preparation_incomplete`, `recovery_not_ready`, `not_approved`, and
 `mutation_not_attempted`. The physical preparation row in
 `validation/matrix.json` does not count as a completed mutation target.
 
-The inspection reported MDM evidence even though the separate direct domain,
-Entra workplace, and MDM checks did not find enrollment. That discrepancy is
-recorded in the ignored draft and must be resolved before any approval; the
-preparation record does not convert either observation into an authoritative
-management classification.
+The earlier MDM result was a detector false positive. Three provider-backed
+Enrollment registry records contained only metadata: `dsregcmd` reported no
+Azure AD, enterprise, domain, or workplace join; no matching OMADM account,
+EnterpriseMgmt task, or MDM certificate thumbprint existed. The management
+query now keeps the metadata count separate and classifies MDM only when an
+enrollment record is corroborated by one of those active artifacts. The
+post-restart inspection reports MDM false and attributes zero component states
+to MDM. No raw enrollment identifiers are persisted.

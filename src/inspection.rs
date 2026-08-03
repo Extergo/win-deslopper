@@ -264,7 +264,7 @@ fn powershell_script(query_id: QueryId) -> &'static str {
             r#"$ErrorActionPreference='Stop';@(Get-AppxProvisionedPackage -Online|Select-Object DisplayName,PackageName,Version,Architecture,PublisherId,ResourceId)|ConvertTo-Json -Depth 5 -Compress"#
         }
         QueryId::ManagementContext => {
-            r#"$ErrorActionPreference='SilentlyContinue';$cs=Get-CimInstance Win32_ComputerSystem;$work=@(Get-ChildItem 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\WorkplaceJoin\JoinInfo');$enroll=@(Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Enrollments'|Where-Object{(Get-ItemProperty $_.PSPath).ProviderID});$providers=@(Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\PolicyManager\Providers');$history=@(Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Group Policy\History' -Recurse|ForEach-Object{Get-ItemProperty $_.PSPath}|Where-Object{$_.DSPath -like 'LDAP://*'});[pscustomobject]@{DomainJoined=[bool]$cs.PartOfDomain;WorkplaceJoined=($work.Count -gt 0);MdmEnrollmentCount=$enroll.Count;MdmPolicyProviderCount=$providers.Count;DomainGpoHistoryCount=$history.Count;LocalPolicyStorePresent=(Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Group Policy')}|ConvertTo-Json -Compress"#
+            r#"$ErrorActionPreference='SilentlyContinue';$cs=Get-CimInstance Win32_ComputerSystem;$work=@(Get-ChildItem 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\WorkplaceJoin\JoinInfo');$metadata=@(Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Enrollments'|ForEach-Object{$p=Get-ItemProperty $_.PSPath;if($p.ProviderID){[pscustomobject]@{Id=$_.PSChildName;Properties=$p}}});$enroll=@($metadata|Where-Object{$id=$_.Id;$p=$_.Properties;$account=Test-Path "HKLM:\SOFTWARE\Microsoft\Provisioning\OMADM\Accounts\$id";$task=Test-Path "$env:windir\System32\Tasks\Microsoft\Windows\EnterpriseMgmt\$id";$certificate=-not[string]::IsNullOrWhiteSpace([string]$p.DMPCertThumbPrint);$account -or $task -or $certificate});$providers=@(Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\PolicyManager\Providers');$history=@(Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Group Policy\History' -Recurse|ForEach-Object{Get-ItemProperty $_.PSPath}|Where-Object{$_.DSPath -like 'LDAP://*'});[pscustomobject]@{DomainJoined=[bool]$cs.PartOfDomain;WorkplaceJoined=($work.Count -gt 0);MdmEnrollmentCount=$enroll.Count;MdmEnrollmentMetadataCount=$metadata.Count;MdmPolicyProviderCount=$providers.Count;DomainGpoHistoryCount=$history.Count;LocalPolicyStorePresent=(Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Group Policy')}|ConvertTo-Json -Compress"#
         }
         QueryId::PolicyRegistry => {
             r#"$ErrorActionPreference='SilentlyContinue';function V($p,$n){try{Get-ItemPropertyValue -LiteralPath $p -Name $n -ErrorAction Stop}catch{$null}};[pscustomobject]@{Widgets=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Dsh' 'AllowNewsAndInterests');ConsumerExperiences=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent' 'DisableWindowsConsumerFeatures');Welcome=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent' 'DisableWindowsSpotlightWindowsWelcomeExperience');Tips=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent' 'DisableSoftLanding');LockScreen=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent' 'ConfigureWindowsSpotlight');StartRecommendations=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Explorer' 'HideRecommendedSection');NotificationSuggestions=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent' 'DisableWindowsSpotlightOnActionCenter');SettingsSuggestions=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent' 'DisableWindowsSpotlightOnSettings');SearchWeb=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search' 'DisableWebSearch');SearchHighlights=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search' 'EnableDynamicContentInWSB')}|ConvertTo-Json -Compress"#
@@ -1958,6 +1958,36 @@ mod tests {
             false,
         );
         assert_ne!(work_only.authority, Authority::Mdm);
+    }
+
+    #[test]
+    fn bare_enrollment_metadata_without_active_corroboration_is_not_mdm() {
+        let attribution = management_attribution(
+            &authority_context(serde_json::json!({
+                "LocalPolicyStorePresent": false,
+                "DomainGpoHistoryCount": 0,
+                "MdmEnrollmentCount": 0,
+                "MdmEnrollmentMetadataCount": 3,
+                "MdmPolicyProviderCount": 15
+            })),
+            true,
+            false,
+        );
+        assert_eq!(attribution.authority, Authority::LocalPolicy);
+        assert_eq!(attribution.confidence, AuthorityConfidence::Weak);
+        assert!(!attribution.exact_source_proven);
+        assert!(attribution.alternatives.contains(&Authority::Mdm));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn management_query_requires_active_mdm_corroboration() {
+        let script = powershell_script(QueryId::ManagementContext);
+        assert!(script.contains("MdmEnrollmentMetadataCount=$metadata.Count"));
+        assert!(script.contains("Provisioning\\OMADM\\Accounts"));
+        assert!(script.contains("Windows\\EnterpriseMgmt"));
+        assert!(script.contains("DMPCertThumbPrint"));
+        assert!(!script.contains("MdmEnrollmentCount=$metadata.Count"));
     }
 
     #[test]

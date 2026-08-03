@@ -86,7 +86,7 @@ if (
     $target.windowsEdition -ne $currentVersion.EditionID -or
     [uint32]$target.windowsBuild -ne [uint32]$currentVersion.CurrentBuild -or
     [uint32]$target.windowsUbr -ne [uint32]$currentVersion.UBR -or
-    $target.sourceCheckpointCommit -notmatch '^[a-f0-9]{64}$' -or
+    $target.sourceCheckpointCommit -notmatch '^(?:[a-f0-9]{40}|[a-f0-9]{64})$' -or
     $target.developmentHostProtectionState -ne 'present_distinct' -or
     $target.recoveryReadiness -notin @('ready', 'ready_with_warnings') -or
     [string]::IsNullOrWhiteSpace([string]$target.explicitUserApprovalTimestamp) -or
