@@ -34,6 +34,12 @@ Known legacy-to-successor changes are package identity migration drift, not rein
 
 Policy values, user preferences, local policy evidence, domain GPO history, enrollment metadata, PolicyManager provider evidence, effective state, authority, confidence, alternatives, and exact-source proof are separate. Domain membership alone never proves Domain GPO. A work account alone never proves MDM. When the exact setting source cannot be tied to resultant policy, the UI says inferred and lists alternatives.
 
+Enrollment metadata alone also never proves active MDM. The fixed management
+query records its count separately and increments the MDM enrollment count only
+when the same enrollment is corroborated by a matching OMADM account, a
+matching EnterpriseMgmt scheduled-task path, or a non-empty MDM certificate
+thumbprint. Identifiers used for that in-memory comparison are not serialized.
+
 Authority confidence is Confirmed, Strong, Moderate, Weak, or Unknown. Conflicting policy/preference evidence remains visible; policy-derived state takes precedence only where the structured applicability rule supports that policy.
 
 ## Applicability and OneDrive

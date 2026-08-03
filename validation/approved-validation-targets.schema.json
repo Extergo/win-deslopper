@@ -60,7 +60,7 @@
       },
       "additionalProperties": false
     },
-    "sourceCheckpointCommit": { "$ref": "#/$defs/hash" },
+    "sourceCheckpointCommit": { "$ref": "#/$defs/gitCommit" },
     "handlerVersions": {
       "type": "object",
       "required": [
@@ -137,6 +137,22 @@
     "expendableConfirmed": { "type": "boolean" },
     "preparationStatus": {
       "type": "object",
+      "required": [
+        "readOnlyStatus",
+        "preparationStatus",
+        "recoveryStatus",
+        "mutationStatus",
+        "pendingRestartReported",
+        "restartVerificationState",
+        "recoveryAuditSummary",
+        "userConfirmations",
+        "toolchainReadiness",
+        "preparedAtUtc",
+        "sourceBranch",
+        "developmentHostHashState",
+        "dedicatedTestAccountPlanState",
+        "mutationStillProhibited"
+      ],
       "properties": {
         "readOnlyStatus": { "enum": ["not_run", "read_only_validated"] },
         "preparationStatus": { "enum": ["preparation_incomplete", "preparation_complete"] },
@@ -158,6 +174,68 @@
         "historyPersistenceVerified": { "type": "boolean" },
         "recoveryAuditPerformed": { "type": "boolean" },
         "pendingRestartReported": { "type": "boolean" },
+        "restartVerificationState": { "enum": ["clear", "pending", "unknown"] },
+        "completedCbsSessionHistoryPresent": { "type": "boolean" },
+        "recoveryAuditSummary": {
+          "type": "object",
+          "required": [
+            "winreState",
+            "recoveryLocationPresent",
+            "recoveryRouteAvailable",
+            "encryptionState",
+            "encryptionPercentage",
+            "protectionState",
+            "encryptionMethod",
+            "restartPending",
+            "noKeyMaterialAccessed"
+          ],
+          "properties": {
+            "winreState": { "enum": ["enabled", "disabled", "unknown"] },
+            "recoveryLocationPresent": { "type": "boolean" },
+            "recoveryRouteAvailable": { "type": "boolean" },
+            "encryptionState": { "enum": ["fully_decrypted", "encrypted", "unknown"] },
+            "encryptionPercentage": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+            "protectionState": { "enum": ["on", "off", "suspended", "unknown"] },
+            "encryptionMethod": { "type": "string", "minLength": 1 },
+            "restartPending": { "type": "boolean" },
+            "noKeyMaterialAccessed": { "const": true }
+          },
+          "additionalProperties": false
+        },
+        "userConfirmations": {
+          "type": "object",
+          "required": [
+            "importantPersonalData",
+            "allImportantDataBackedUp",
+            "expendable",
+            "reinstallAccepted",
+            "recoveryMediaAvailable",
+            "alternateComputerAvailable",
+            "externalDriveAvailable",
+            "dedicatedLocalTestAccountAllowed",
+            "futureBitlockerRecoveryKeyVerification"
+          ],
+          "properties": {
+            "importantPersonalData": { "enum": ["yes", "no"] },
+            "allImportantDataBackedUp": { "enum": ["yes", "no", "not_applicable"] },
+            "expendable": { "type": "boolean" },
+            "reinstallAccepted": { "type": "boolean" },
+            "recoveryMediaAvailable": { "type": "boolean" },
+            "alternateComputerAvailable": { "type": "boolean" },
+            "externalDriveAvailable": { "type": "boolean" },
+            "dedicatedLocalTestAccountAllowed": { "type": "boolean" },
+            "futureBitlockerRecoveryKeyVerification": { "enum": ["yes", "no"] }
+          },
+          "additionalProperties": false
+        },
+        "toolchainReadiness": { "enum": ["ready", "not_ready", "unknown"] },
+        "preparedAtUtc": { "type": "string", "format": "date-time" },
+        "sourceBranch": { "type": "string", "minLength": 1 },
+        "developmentHostHashState": { "enum": ["missing", "present_distinct", "matches_target"] },
+        "dedicatedTestAccountPlanState": { "enum": ["not_prepared", "prepared"] },
+        "mutationStillProhibited": { "const": true },
+        "managementAuthority": { "enum": ["none_proven", "weakly_inferred", "unknown", "active_mdm"] },
+        "managementConfidence": { "enum": ["confirmed", "strong", "moderate", "weak", "unknown"] },
         "inspectionManagementDiscrepancy": { "type": ["string", "null"] }
       },
       "additionalProperties": false
@@ -167,6 +245,7 @@
     {
       "if": { "properties": { "recordKind": { "const": "preparation" } } },
       "then": {
+        "required": ["preparationStatus"],
         "properties": {
           "approvalStatus": { "const": "pending" },
           "explicitUserApprovalTimestamp": { "type": "null" }
@@ -218,6 +297,7 @@
   ],
   "$defs": {
     "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "gitCommit": { "type": "string", "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$" },
     "operation": {
       "enum": [
         "set_taskbar_widgets_visibility",

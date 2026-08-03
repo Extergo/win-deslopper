@@ -1,6 +1,6 @@
 # Deslopper VM fixture validation report
 
-Generated: 2026-08-03T07:59:19Z
+Generated: 2026-08-03T13:34:27Z
 
 - Result: Passed
 - Checked-in fixture bundles: 1

@@ -7,6 +7,36 @@ The application fails closed when the denylist is absent or invalid.
 An empty denylist is invalid; it is never equivalent to development-host
 protection.
 
+## Development-host identity transfer
+
+Run the fixed export only on the original development PC:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\Export-DeslopperValidationIdentity.ps1
+```
+
+It creates ignored `.deslopper/local/validation-identity-export.json` with
+exactly this shape and no hostname, username, serial, or other source value:
+
+```json
+{
+  "schemaVersion": 1,
+  "developmentHostFingerprints": ["<64 lowercase hexadecimal hash>"]
+}
+```
+
+Transfer that file privately to the validation laptop without pasting the hash
+into chat. Store it only as
+`.deslopper/local/development-host-denylist.json`, then run:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\Test-DeslopperDevelopmentHostDenylist.ps1
+```
+
+The validator displays no hash. It rejects a missing, empty, malformed,
+duplicate, or extra-field denylist and rejects equality with the current target
+identity. Both files remain ignored and must never be committed or pushed.
+
 Every live target also requires ignored
 `.deslopper/local/approved-validation-target.json`, validated against
 `validation/approved-validation-targets.schema.json`. This is distinct from a
