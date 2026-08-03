@@ -35,19 +35,26 @@ and development-host denylist. The UI labels all three handlers “Internal alph
 - not live validated.” No live evidence currently exists; all thirteen matrix
 scenarios are not provisioned. See `docs/live-validation-environment.md`.
 
-No handler is production-ready, no approved disposable target currently exists,
+No handler is production-ready, no approved validation target currently exists,
 and production mutation must remain disabled until the required live matrix
 passes. The next intended validation environment is a spare laptop after it
 clones the private checkpoint and is independently backed up, fingerprinted,
 reviewed, and explicitly approved; it is not approved merely by being a laptop.
+
+The first physical-laptop read-only preparation pass is documented in
+`docs/physical-validation-target-readiness.md`. Live progress and persisted
+history were verified after a minimal Tauri event-listen correction; OneDrive
+detection now tolerates a missing startup value. Recovery remains not ready and
+mutation remains prohibited.
 
 ## Development and validation
 
 Prerequisites are stable Rust, Bun 1.3.14, and WebView2. Run the quality gates
 from `.deslopper/policy.toml`. `tools/validate-vm-fixtures.ps1` replays redacted
 read-only captures. `tools/scan-mutation-boundary.ps1` enforces the executable
-mutation boundary. Live mutation validation is permitted only in disposable
-Windows VMs and is not claimed by synthetic fixtures.
+mutation boundary. Live mutation validation is permitted only on an explicitly
+approved, expendable validation target with complete recovery evidence; it is
+not claimed by synthetic fixtures or read-only preparation.
 
 Start with `AGENTS.md`; `ARCHITECTURE.md`, `SECURITY.md`, and the mutation threat
 model are authoritative.

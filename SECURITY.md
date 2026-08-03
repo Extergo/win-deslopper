@@ -14,7 +14,9 @@ crashes, rollback conflict, and misleading success.
   permission-aware. Deslopper may terminate only its own read-only child.
 - SQLite evidence is redacted. It excludes profile paths, SIDs, identities,
   emails, filenames, OneDrive roots, tokens, and recovery material.
-- Tauri grants no shell, filesystem, network, updater, or external-URL plugin.
+- Tauri grants the normal window only the event listen/unlisten lifecycle used
+  for backend inspection progress. It grants no frontend event emission,
+  shell, filesystem, network, updater, or external-URL plugin.
 - Normal builds have no mutation module or mutation command registration, no
   elevation manifest, `runas`, helper, service, backend, telemetry, or plugin
   execution.
@@ -47,6 +49,10 @@ See `docs/mutation-threat-model.md` for the full analysis.
 
 The environment banner and VM heuristic provide visibility only. Eligibility
 comes from explicit scenario identity, platform, database, and denylist checks.
+Live eligibility also requires a separate ignored, approved, unexpired generic
+validation-target record. Physical targets fail closed unless stricter recovery
+and user-approval fields are complete. Preparation records never authorize
+mutation.
 The threat boundary does not include a compromised same-user account with
 arbitrary code execution. Live evidence contains typed manual assertions and
 must be reviewed; it is not cryptographically attested visual proof.

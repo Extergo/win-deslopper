@@ -273,7 +273,7 @@ fn powershell_script(query_id: QueryId) -> &'static str {
             r#"$ErrorActionPreference='SilentlyContinue';function V($p,$n){try{Get-ItemPropertyValue -LiteralPath $p -Name $n -ErrorAction Stop}catch{$null}};$cd='HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager';[pscustomobject]@{Welcome=(V $cd 'SubscribedContent-310093Enabled');Tips=(V $cd 'SoftLandingEnabled');LockScreen=(V $cd 'RotatingLockScreenOverlayEnabled');NotificationSuggestions=(V $cd 'SubscribedContent-338389Enabled');SettingsSuggestions=(V $cd 'SubscribedContent-338393Enabled');TaskbarWidgets=(V 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' 'TaskbarDa');TaskbarSearch=(V 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Search' 'SearchboxTaskbarMode')}|ConvertTo-Json -Compress"#
         }
         QueryId::OneDriveMetadata => {
-            r#"$ErrorActionPreference='SilentlyContinue';$paths=@("$env:LOCALAPPDATA\Microsoft\OneDrive\OneDrive.exe","$env:ProgramFiles\Microsoft OneDrive\OneDrive.exe","${env:ProgramFiles(x86)}\Microsoft OneDrive\OneDrive.exe");$exe=$paths|Where-Object{Test-Path -LiteralPath $_}|Select-Object -First 1;$accounts=@(Get-ChildItem 'HKCU:\Software\Microsoft\OneDrive\Accounts');$props=@($accounts|ForEach-Object{Get-ItemProperty $_.PSPath});$roots=@($props.UserFolder|Where-Object{$_});$shell=Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders';function Inside($p){if(!$p){return $false};@($roots|Where-Object{$p.StartsWith($_,[StringComparison]::OrdinalIgnoreCase)}).Count -gt 0};$fod=@($props|ForEach-Object{$_.FilesOnDemandEnabled}|Where-Object{$_ -ne $null});$fodPolicy=Get-ItemPropertyValue 'HKLM:\SOFTWARE\Policies\Microsoft\OneDrive' 'FilesOnDemandEnabled' -ErrorAction SilentlyContinue;$kfm=Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\OneDrive' -ErrorAction SilentlyContinue;[pscustomobject]@{Installed=[bool]$exe;Version=$(if($exe){(Get-Item -LiteralPath $exe).VersionInfo.FileVersion});Running=[bool](Get-Process OneDrive);Startup=[bool](Get-ItemPropertyValue 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' 'OneDrive');Personal=[bool]($accounts|Where-Object{$_.PSChildName -eq 'Personal'});Work=[bool]($accounts|Where-Object{$_.PSChildName -like 'Business*'});SyncRootCount=$roots.Count;DesktopRedirected=(Inside $shell.Desktop);DocumentsRedirected=(Inside $shell.Personal);PicturesRedirected=(Inside $shell.'My Pictures');KfmPolicy=[bool]$kfm;FilesOnDemandPolicy=$fodPolicy;FilesOnDemandValues=@($fod);FilesOnDemandEvidenceComplete=($accounts.Count -eq $fod.Count)}|ConvertTo-Json -Depth 4 -Compress"#
+            r#"$ErrorActionPreference='SilentlyContinue';$paths=@("$env:LOCALAPPDATA\Microsoft\OneDrive\OneDrive.exe","$env:ProgramFiles\Microsoft OneDrive\OneDrive.exe","${env:ProgramFiles(x86)}\Microsoft OneDrive\OneDrive.exe");$exe=$paths|Where-Object{Test-Path -LiteralPath $_}|Select-Object -First 1;$accounts=@(Get-ChildItem 'HKCU:\Software\Microsoft\OneDrive\Accounts');$props=@($accounts|ForEach-Object{Get-ItemProperty $_.PSPath});$roots=@($props.UserFolder|Where-Object{$_});$shell=Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders';$run=Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -ErrorAction SilentlyContinue;function Inside($p){if(!$p){return $false};@($roots|Where-Object{$p.StartsWith($_,[StringComparison]::OrdinalIgnoreCase)}).Count -gt 0};$fod=@($props|ForEach-Object{$_.FilesOnDemandEnabled}|Where-Object{$_ -ne $null});$fodPolicy=Get-ItemPropertyValue 'HKLM:\SOFTWARE\Policies\Microsoft\OneDrive' 'FilesOnDemandEnabled' -ErrorAction SilentlyContinue;$kfm=Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\OneDrive' -ErrorAction SilentlyContinue;[pscustomobject]@{Installed=[bool]$exe;Version=$(if($exe){(Get-Item -LiteralPath $exe).VersionInfo.FileVersion});Running=[bool](Get-Process OneDrive);Startup=[bool]$run.OneDrive;Personal=[bool]($accounts|Where-Object{$_.PSChildName -eq 'Personal'});Work=[bool]($accounts|Where-Object{$_.PSChildName -like 'Business*'});SyncRootCount=$roots.Count;DesktopRedirected=(Inside $shell.Desktop);DocumentsRedirected=(Inside $shell.Personal);PicturesRedirected=(Inside $shell.'My Pictures');KfmPolicy=[bool]$kfm;FilesOnDemandPolicy=$fodPolicy;FilesOnDemandValues=@($fod);FilesOnDemandEvidenceComplete=($accounts.Count -eq $fod.Count)}|ConvertTo-Json -Depth 4 -Compress"#
         }
     }
 }
@@ -470,16 +470,12 @@ fn run_bounded_powershell(
         } else {
             QueryErrorKind::NonZeroExit
         };
-        let mut value = failure(
-            query_id,
-            kind,
-            if stderr.trim().is_empty() {
-                "PowerShell returned a non-zero exit code"
-            } else {
-                stderr.trim()
-            },
-            duration,
-        );
+        let message = if stderr.trim().is_empty() {
+            "PowerShell returned a non-zero exit code".into()
+        } else {
+            crate::privacy::redact(stderr.trim())
+        };
+        let mut value = failure(query_id, kind, message, duration);
         value.exit_code = status.code();
         return Err(value);
     }
@@ -1768,6 +1764,53 @@ mod tests {
     }
 
     #[test]
+    fn provisioning_permission_denied_is_separate_from_all_user_state() {
+        struct ProvisioningPermissionRunner(FixtureRunner);
+        impl ReadOnlyRunner for ProvisioningPermissionRunner {
+            fn run(
+                &self,
+                id: QueryId,
+                token: &CancellationToken,
+            ) -> Result<CommandResult, QueryFailure> {
+                if id == QueryId::AppxProvisioned {
+                    Err(failure(
+                        id,
+                        QueryErrorKind::PermissionDenied,
+                        "Access is denied",
+                        1,
+                    ))
+                } else {
+                    self.0.run(id, token)
+                }
+            }
+        }
+        let token = CancellationToken::default();
+        let outcome = run_inspection(
+            &ProvisioningPermissionRunner(FixtureRunner::new(None, token.clone())),
+            "provisioning-permission".into(),
+            &token,
+            |_| {},
+        );
+        let package = outcome
+            .observations
+            .iter()
+            .find(|result| result.component_id == ComponentId::ConsumerCopilot)
+            .unwrap();
+        assert!(matches!(
+            package.current,
+            State::Package {
+                all_users: PackageRegistrationState::Present,
+                provisioned: PackageProvisioningState::PermissionLimited,
+                ..
+            }
+        ));
+        assert_eq!(
+            package.package_completeness,
+            PackageCompleteness::RegistrationCompleteProvisioningUnknown
+        );
+    }
+
+    #[test]
     fn cancellation_token_can_start_a_new_independent_inspection() {
         let cancelled = CancellationToken::default();
         cancelled.cancel();
@@ -1929,5 +1972,132 @@ mod tests {
         assert_eq!(conflict.authority, Authority::Unknown);
         assert!(conflict.alternatives.contains(&Authority::DomainPolicy));
         assert!(conflict.alternatives.contains(&Authority::Mdm));
+    }
+
+    fn onedrive_fixture(value: Value, build: u32) -> DetectionResult {
+        let info = parse_inventory(Some(&serde_json::json!({
+            "ProductName": "Windows 11 Pro",
+            "Edition": "Professional",
+            "Build": build,
+            "DisplayVersion": "25H2",
+            "UBR": 8875,
+            "Architecture": "64-bit",
+            "DomainJoined": false,
+            "Windows11": true
+        })));
+        let mut context = SharedContext::default();
+        context.values.insert(QueryId::OneDriveMetadata, Ok(value));
+        context.values.insert(
+            QueryId::ManagementContext,
+            Ok(serde_json::json!({
+                "DomainJoined": false,
+                "WorkplaceJoined": false,
+                "MdmEnrollmentCount": 0,
+                "MdmPolicyProviderCount": 0,
+                "DomainGpoHistoryCount": 0,
+                "LocalPolicyStorePresent": false
+            })),
+        );
+        onedrive_detection(&info, &context)
+    }
+
+    fn onedrive_value(installed: bool, roots: u64) -> Value {
+        serde_json::json!({
+            "Installed": installed,
+            "Version": null,
+            "Running": false,
+            "Startup": false,
+            "Personal": false,
+            "Work": false,
+            "SyncRootCount": roots,
+            "DesktopRedirected": false,
+            "DocumentsRedirected": false,
+            "PicturesRedirected": false,
+            "KfmPolicy": false,
+            "FilesOnDemandPolicy": null,
+            "FilesOnDemandValues": [],
+            "FilesOnDemandEvidenceComplete": roots == 0
+        })
+    }
+
+    #[test]
+    fn onedrive_missing_registry_branches_is_honest_not_installed_state() {
+        let result = onedrive_fixture(onedrive_value(false, 0), 26_200);
+        assert!(matches!(
+            result.current,
+            State::OneDrive {
+                installed: false,
+                files_on_demand: FilesOnDemandState::NotInstalled,
+                ..
+            }
+        ));
+        assert_eq!(result.detector_status, DetectorStatus::Successful);
+    }
+
+    #[test]
+    fn onedrive_installed_unlinked_or_without_active_account_remains_distinct() {
+        let result = onedrive_fixture(onedrive_value(true, 0), 26_200);
+        assert!(matches!(
+            result.current,
+            State::OneDrive {
+                installed: true,
+                personal_account: false,
+                work_account: false,
+                files_on_demand: FilesOnDemandState::InstalledUnlinked,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn onedrive_null_values_under_strict_mode_remain_incomplete() {
+        let mut value = onedrive_value(true, 1);
+        value["Startup"] = Value::Null;
+        value["FilesOnDemandValues"] = serde_json::json!([null]);
+        let result = onedrive_fixture(value, 26_200);
+        assert!(matches!(
+            result.current,
+            State::OneDrive {
+                startup: false,
+                files_on_demand: FilesOnDemandState::DetectionIncomplete,
+                partial: true,
+                ..
+            }
+        ));
+        assert_eq!(result.detector_status, DetectorStatus::Unknown);
+    }
+
+    #[test]
+    fn onedrive_non_zero_query_is_failure_not_absence() {
+        let info = parse_inventory(Some(&serde_json::json!({
+            "ProductName": "Windows 11 Pro",
+            "Edition": "Professional",
+            "Build": 26200,
+            "Windows11": true
+        })));
+        let mut context = SharedContext::default();
+        context.values.insert(
+            QueryId::OneDriveMetadata,
+            Err(QueryFailure {
+                query_id: QueryId::OneDriveMetadata,
+                kind: QueryErrorKind::NonZeroExit,
+                message: "PowerShell returned a non-zero exit code".into(),
+                exit_code: Some(1),
+                duration_ms: 1,
+                partial_output_available: false,
+            }),
+        );
+        let result = onedrive_detection(&info, &context);
+        assert_eq!(result.detector_status, DetectorStatus::Failed);
+        assert!(matches!(result.current, State::Unknown { .. }));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn onedrive_startup_query_tolerates_a_missing_run_value() {
+        let script = powershell_script(QueryId::OneDriveMetadata);
+        assert!(script.contains("$run=Get-ItemProperty"));
+        assert!(script.contains("Startup=[bool]$run.OneDrive"));
+        assert!(!script.contains("Startup=[bool](Get-ItemPropertyValue"));
     }
 }

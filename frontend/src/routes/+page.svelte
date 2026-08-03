@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
-  import type { UnlistenFn } from '@tauri-apps/api/event';
 
   import {
     createBackendClient,
@@ -24,6 +23,10 @@
     type PlatformDashboard,
     type VisualVerification
   } from '$lib/backend';
+  import {
+    installInspectionProgressListener,
+    isTerminalInspectionPhase
+  } from '$lib/inspection-progress';
   import '$lib/theme.css';
 
   const backend = createBackendClient();
@@ -113,10 +116,12 @@
   $: busy = pendingRequests > 0 || inspectionRunning;
 
   onMount(() => {
-    let unlisten: UnlistenFn | undefined;
     void load();
-    void backend.subscribeInspectionProgress(handleInspectionProgress).then((stop) => {
-      unlisten = stop;
+    const unlisten = installInspectionProgressListener(backend, {
+      onProgress: handleInspectionProgress,
+      onError: (message) => {
+        errorMessage = message;
+      }
     });
     void backend.getRunningInspectionState().then((progress) => {
       inspectionProgress = progress;
@@ -130,13 +135,13 @@
       }
     }, 1000);
     return () => {
-      unlisten?.();
+      unlisten();
       window.clearInterval(timer);
     };
   });
 
   function isTerminal(phase: InspectionProgress['phase']): boolean {
-    return ['completed', 'completed_with_partial_failures', 'cancelled', 'failed'].includes(phase);
+    return isTerminalInspectionPhase(phase);
   }
 
   function handleInspectionProgress(progress: InspectionProgress): void {

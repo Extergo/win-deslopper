@@ -38,7 +38,9 @@ three documented taskbar presentation settings.
    operation boundary.
 10. **Live-validation safety and evidence.** The existing application is the
    guest runner. A fixed local manifest and denylist add scenario, machine,
-   checkpoint, platform, and guest-database gates. The frontend renders the
+   checkpoint, platform, and guest-database gates. A separate ignored generic
+   target approval distinguishes VMs from physical laptops and rejects pending,
+   incomplete, expired, mismatched, or recovery-unready targets. The frontend renders the
    identity banner and sends only closed visual-verification enums. Evidence
    facts come from the journal and export to a fixed ignored location. Optional
    Hyper-V tooling is allowlisted and cannot invoke broker operations.
@@ -52,4 +54,8 @@ not compile `src/mutation` or register its Tauri commands. Runtime VM detection
 is not a security gate. Normal builds do not compile live-validation evidence
 commands.
 
-See `docs/mutation-threat-model.md`, `docs/mutation-broker-alpha.md`, and D-009.
+The normal main-window capability contains only the Tauri listen and unlisten
+commands required for Rust-emitted inspection progress. Frontend event emission
+is not part of the presentation boundary.
+
+See `docs/mutation-threat-model.md`, `docs/mutation-broker-alpha.md`, and D-010.

@@ -224,11 +224,13 @@ export interface MutationAlphaStatus {
   liveValidation: {
     commandLineOptIn: boolean;
     manifestLoaded: boolean;
+    targetApprovalLoaded: boolean;
     denylistLoaded: boolean;
     scenarioMatches: boolean;
     machineIdentityMatches: boolean;
     checkpointMatches: boolean;
     platformMatches: boolean;
+    targetTypeMatches: boolean;
     databaseBelongsToGuest: boolean;
     developmentHostRefused: boolean;
     available: boolean;

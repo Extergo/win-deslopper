@@ -16,5 +16,23 @@
     { "id": "package-provisioning-removed", "edition": "Enterprise", "build": "24H2", "account": "local", "domain": false, "mdm": false, "oneDrive": "unconfigured", "mutationStatus": "not_provisioned" },
     { "id": "permission-limited-standard-user", "edition": "Home", "build": "24H2", "account": "local", "domain": false, "mdm": false, "oneDrive": "unconfigured", "mutationStatus": "not_provisioned" }
   ],
+  "preparationTargets": [
+    {
+      "id": "physical-laptop-win11-pro-25h2-read-only",
+      "targetType": "physical_laptop",
+      "edition": "Pro",
+      "build": "25H2",
+      "account": "local_administrator",
+      "domain": false,
+      "entra": false,
+      "mdm": false,
+      "readOnlyStatus": "read_only_validated",
+      "preparationStatus": "preparation_incomplete",
+      "recoveryStatus": "recovery_not_ready",
+      "approvalStatus": "not_approved",
+      "mutationStatus": "mutation_not_attempted",
+      "countsAsCompletedMutationTarget": false
+    }
+  ],
   "requiredAssertions": ["component applicability", "package registration and provisioning", "policy and preference precedence", "authority and confidence", "detector confidence", "known limitations", "manual verification steps"]
 }
