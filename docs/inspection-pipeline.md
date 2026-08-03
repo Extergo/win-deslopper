@@ -6,6 +6,12 @@ Every run receives a unique `inspection-{timestamp}-{sequence}` ID and moves thr
 
 Tauri emits `deslopper://inspection-progress` payloads containing the inspection ID, phase, completed/total work, current component, detector status, warning/error counts, cancel availability, status text, and update timestamp. Svelte subscribes once; it does not poll the whole dashboard. Persisted SQLite state is authoritative after restart.
 
+The main window is granted only `core:event:allow-listen` and
+`core:event:allow-unlisten`. The generated Tauri ACL keeps frontend event
+emission separate and unavailable. Listener registration failures are shown
+honestly while persisted history remains authoritative, and teardown always
+removes a listener even when registration completes after page cleanup.
+
 Cancellation is ID-scoped and idempotent at the token level. It propagates into the active child query, terminates that Deslopper-owned child, skips queued work, preserves completed detector results, and never reports success. Shutdown signals the same token. Drift comparison ignores failed and cancelled detector results.
 
 ## Query boundary and timeouts
@@ -36,6 +42,12 @@ Authority confidence is Confirmed, Strong, Moderate, Weak, or Unknown. Conflicti
 
 OneDrive inspection does not enumerate or open personal files. It distinguishes not installed, installed/unlinked, linked roots, supported enabled/disabled, mixed/per-root uncertainty, policy enforcement, and incomplete detection from client, account-count, policy, and preference metadata. It never stores account identity or root paths. When no reliable global representation exists, the composite state remains partial.
 
+The fixed startup check reads the current-user Run key and then checks the
+OneDrive property. A missing property is false without aborting JSON object
+construction; a non-zero query remains failed, never absent. Targeted tests
+cover missing account/policy branches, installed-unlinked state, strict-mode
+nulls, 25H2 parsing, non-zero execution, and redaction.
+
 ## Desired state and history
 
 Rust supplies finite allowed options for the current component and observation. Validation reports valid, valid-with-warnings, requires-review, invalid, externally managed, insufficient confidence, unsupported build/edition, missing rollback source, or incomplete package scope. Save requests contain only option key, allowed scope, persistence preference, approval preference, and a bounded note. Every save and clear creates a revision; applicability, authority, build, or detection changes mark records stale, invalid, or requiring review rather than deleting them.
@@ -45,3 +57,7 @@ Inspection history, inspection detail, component timelines, detailed package row
 ## SQLite integrity
 
 Schema v2 enables foreign keys, WAL, normal synchronous mode, a five-second busy timeout, immediate migration locking, transactional writes, history indexes, observation uniqueness, quick integrity checks, application-version metadata, and resumable migrations. Unsupported newer schemas and failed integrity checks preserve the original database and surface recovery status. Alpha JSON is renamed only after the import transaction commits; malformed or failed input remains in place. Backup-name collisions receive a numbered suffix.
+
+History reload uses the persisted inspection `started_at` as the snapshot start
+time and the lifecycle completion timestamp as the end time. This preserves the
+authoritative duration after the UI closes and reopens.

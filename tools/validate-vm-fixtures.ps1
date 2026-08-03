@@ -36,13 +36,16 @@ try {
     $localDirectory = Join-Path $repository '.deslopper\local'
     $denylistPath = Join-Path $localDirectory 'development-host-denylist.json'
     $liveScenarioPath = Join-Path $localDirectory 'live-validation-scenario.json'
-    $approvalPath = Join-Path $localDirectory 'approved-validation-vms.json'
+    $approvalPath = Join-Path $localDirectory 'approved-validation-target.json'
+    $legacyApprovalPath = Join-Path $localDirectory 'approved-validation-vms.json'
     $denylistPresent = Test-Path -LiteralPath $denylistPath
     $liveScenarioPresent = Test-Path -LiteralPath $liveScenarioPath
     $approvedInventoryPresent = Test-Path -LiteralPath $approvalPath
+    $legacyApprovedInventoryPresent = Test-Path -LiteralPath $legacyApprovalPath
     $hostDenied = $false
     $liveScenarioTargetsHost = $false
     $approvedVmCount = 0
+    $approvedTargetType = $null
 
     $currentVersion = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
     $fingerprintInput = "$($env:COMPUTERNAME.ToUpperInvariant()):$($currentVersion.EditionID):$($currentVersion.CurrentBuild)"
@@ -63,19 +66,26 @@ try {
         $liveScenarioTargetsHost = [string]$liveScenario.expectedMachineId -eq $hostFingerprint
     }
     if ($approvedInventoryPresent) {
-        $approvedInventory = Get-Content -Raw $approvalPath | ConvertFrom-Json
-        if ($null -ne $approvedInventory.vms) {
-            $approvedVmCount = @($approvedInventory.vms).Count
-        }
+        $approvedTarget = Get-Content -Raw $approvalPath | ConvertFrom-Json
+        $approvedTargetType = [string]$approvedTarget.targetType
+        $approvedVmCount = if (
+            $approvedTarget.recordKind -eq 'approval' -and
+            $approvedTarget.approvalStatus -eq 'approved'
+        ) { 1 } else { 0 }
+    } elseif ($legacyApprovedInventoryPresent) {
+        $approvedInventory = Get-Content -Raw $legacyApprovalPath | ConvertFrom-Json
+        $approvedTargetType = 'virtual_machine'
+        $approvedVmCount = @($approvedInventory.vms).Count
     }
     $deslopperProcessCount = @(Get-Process -Name 'win-deslopper' -ErrorAction SilentlyContinue).Count
     $hostProtectionPassed = $denylistPresent -and $hostDenied -and -not $liveScenarioTargetsHost -and $deslopperProcessCount -eq 0
     $hostProtectionResult = if ($hostProtectionPassed) { 'Passed' } else { 'Failed closed / requires review' }
-    $liveValidationBlocker = if (-not $approvedInventoryPresent) {
-        'No ignored approved-VM inventory exists; no guest is authorized.'
+    $anyApprovedInventoryPresent = $approvedInventoryPresent -or $legacyApprovedInventoryPresent
+    $liveValidationBlocker = if (-not $anyApprovedInventoryPresent) {
+        'No ignored approved validation target exists; no target is authorized.'
     } elseif ($approvedVmCount -eq 0) {
-        'The ignored approved-VM inventory contains no guest entries.'
-    } elseif ($vmToolNames.Count -eq 0) {
+        'The ignored approval record contains no approved target.'
+    } elseif ($approvedTargetType -eq 'virtual_machine' -and $vmToolNames.Count -eq 0) {
         'Approved entries exist, but no supported VM management command is available.'
     } else {
         'No live evidence has been collected; complete the manual guest protocol.'
@@ -90,6 +100,7 @@ try {
         "- Synthetic mutation fixture bundles: $($mutationFixtures.Count)",
         "- Live mutation evidence bundles: $($liveEvidence.Count)",
         "- Defined matrix targets: $($matrix.targets.Count)",
+        "- Physical preparation targets (not mutation evidence): $(@($matrix.preparationTargets).Count)",
         '- Runner: Rust production parsers and detectors',
         '- Mutation boundary: Fixture replay only; no Windows mutation or query execution',
         "- Live mutation VM scenarios completed: $(@($matrix.targets | Where-Object { $_.mutationStatus -in @('passed','passed_with_limitations','failed','handler_removed') }).Count)",
@@ -107,8 +118,9 @@ try {
         "- Deslopper processes running: $deslopperProcessCount",
         "- Live scenario manifest present: $liveScenarioPresent",
         "- Live scenario targets development host: $liveScenarioTargetsHost",
-        "- Approved VM inventory present: $approvedInventoryPresent",
-        "- Approved VM entries: $approvedVmCount",
+        "- Approved generic target present: $approvedInventoryPresent",
+        "- Legacy approved VM inventory present: $legacyApprovedInventoryPresent",
+        "- Approved target entries: $approvedVmCount",
         "- Windows hypervisor layer present: $hypervisorLayerPresent",
         "- Windows Sandbox executable present: $windowsSandboxPresent",
         "- Host virtualisation tooling detected: $vmInfrastructure",
@@ -148,6 +160,14 @@ try {
     $lines += '| Scenario | Status |'
     $lines += '|---|---|'
     $lines += $matrix.targets | ForEach-Object { "| $($_.id) | $($_.mutationStatus.Replace('_', ' ')) |" }
+    $lines += ''
+    $lines += 'Read-only preparation targets (excluded from completed mutation coverage):'
+    $lines += ''
+    $lines += '| Target | Read-only | Preparation | Recovery | Approval | Mutation | Counts as completed mutation |'
+    $lines += '|---|---|---|---|---|---|---|'
+    $lines += $matrix.preparationTargets | ForEach-Object {
+        "| $($_.id) | $($_.readOnlyStatus.Replace('_', ' ')) | $($_.preparationStatus.Replace('_', ' ')) | $($_.recoveryStatus.Replace('_', ' ')) | $($_.approvalStatus.Replace('_', ' ')) | $($_.mutationStatus.Replace('_', ' ')) | $($_.countsAsCompletedMutationTarget) |"
+    }
     $report = ($lines -join "`n") + "`n"
     [System.IO.File]::WriteAllText((Join-Path $repository 'validation\report.md'), $report, [System.Text.UTF8Encoding]::new($false))
 } finally {

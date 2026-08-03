@@ -689,7 +689,7 @@ fn load_store(conn: &Connection) -> rusqlite::Result<Store> {
         ..Default::default()
     };
     let mut stmt = conn
-        .prepare("SELECT id,completed_at,platform_json,lifecycle_json,query_failures_json,machine_id FROM inspections ORDER BY completed_at")?;
+        .prepare("SELECT id,started_at,platform_json,lifecycle_json,query_failures_json,machine_id FROM inspections ORDER BY completed_at")?;
     let rows = stmt.query_map([], |r| {
         Ok((
             r.get::<_, String>(0)?,
@@ -1421,6 +1421,7 @@ mod tests {
         assert_eq!(state, "PermissionLimited");
         let loaded = load_store(&conn).unwrap();
         assert_eq!(loaded.snapshots[0].observations[0].packages.len(), 1);
+        assert_eq!(loaded.snapshots[0].timestamp, "1000");
         assert_eq!(
             loaded.snapshots[0]
                 .lifecycle

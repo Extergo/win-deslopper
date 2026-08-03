@@ -1,4 +1,8 @@
-use std::path::PathBuf;
+use std::{
+    collections::{BTreeMap, HashSet},
+    path::PathBuf,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 #[cfg(test)]
 use std::collections::BTreeSet;
@@ -193,11 +197,13 @@ pub struct EnvironmentIdentity {
 pub struct LiveValidationGateStatus {
     pub command_line_opt_in: bool,
     pub manifest_loaded: bool,
+    pub target_approval_loaded: bool,
     pub denylist_loaded: bool,
     pub scenario_matches: bool,
     pub machine_identity_matches: bool,
     pub checkpoint_matches: bool,
     pub platform_matches: bool,
+    pub target_type_matches: bool,
     pub database_belongs_to_guest: bool,
     pub development_host_refused: bool,
     pub available: bool,
@@ -211,11 +217,13 @@ impl LiveValidationGateStatus {
         Self {
             command_line_opt_in: true,
             manifest_loaded: true,
+            target_approval_loaded: true,
             denylist_loaded: true,
             scenario_matches: true,
             machine_identity_matches: true,
             checkpoint_matches: true,
             platform_matches: true,
+            target_type_matches: true,
             database_belongs_to_guest: true,
             development_host_refused: false,
             available: true,
@@ -249,6 +257,108 @@ pub struct ValidationScenarioManifest {
     pub management_context: String,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ValidationTargetType {
+    VirtualMachine,
+    PhysicalLaptop,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TargetRecordKind {
+    Preparation,
+    Approval,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TargetApprovalStatus {
+    Pending,
+    Approved,
+    Rejected,
+    Expired,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecoveryReadiness {
+    NotReady,
+    ReadyWithWarnings,
+    Ready,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BitLockerRecoveryState {
+    NotApplicableUnencrypted,
+    RecoveryMaterialConfirmed,
+    NotConfirmed,
+    Unknown,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecoveryMediaState {
+    Available,
+    BuiltInVerified,
+    Missing,
+    Unknown,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DevelopmentHostProtectionState {
+    PresentDistinct,
+    Missing,
+    MatchesTarget,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TargetManagementState {
+    pub domain_joined: bool,
+    pub entra_joined: bool,
+    pub mdm_enrolled: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ValidationTargetApproval {
+    pub schema_version: u32,
+    pub record_kind: TargetRecordKind,
+    pub scenario_id: String,
+    pub target_type: ValidationTargetType,
+    pub hashed_machine_identity: String,
+    pub windows_edition: String,
+    pub windows_build: u32,
+    pub windows_ubr: u32,
+    pub account_class: String,
+    pub management_state: TargetManagementState,
+    pub source_checkpoint_commit: String,
+    pub handler_versions: BTreeMap<String, String>,
+    pub approved_operations: Vec<MutationOperationId>,
+    pub approved_target_states: BTreeMap<String, Vec<MutationTarget>>,
+    pub evidence_output_location: String,
+    pub recovery_readiness: RecoveryReadiness,
+    pub important_data_confirmed: bool,
+    pub backup_confirmed: bool,
+    pub reinstallation_accepted: bool,
+    pub winre_verified: bool,
+    pub bitlocker_recovery_state: BitLockerRecoveryState,
+    pub recovery_media_state: RecoveryMediaState,
+    pub development_host_protection_state: DevelopmentHostProtectionState,
+    pub explicit_user_approval_timestamp: Option<String>,
+    pub approval_status: TargetApprovalStatus,
+    pub expires_at_epoch_ms: Option<u64>,
+    pub restore_or_reimage_procedure: String,
+    pub validation_maturity: String,
+    #[serde(default)]
+    pub disposable_confirmed: Option<bool>,
+    #[serde(default)]
+    pub expendable_confirmed: Option<bool>,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct DevelopmentHostDenylist {
@@ -280,6 +390,8 @@ pub fn build_live_validation_gate(
     let directory = local_validation_directory();
     let manifest =
         read_json::<ValidationScenarioManifest>(&directory.join("live-validation-scenario.json"));
+    let target_approval =
+        read_json::<ValidationTargetApproval>(&directory.join("approved-validation-target.json"));
     let denylist =
         read_json::<DevelopmentHostDenylist>(&directory.join("development-host-denylist.json"));
 
@@ -309,20 +421,25 @@ pub fn build_live_validation_gate(
     let manifest_loaded = manifest
         .as_ref()
         .is_some_and(|value| value.schema_version == 1);
+    let target_approval_loaded = target_approval
+        .as_ref()
+        .is_some_and(|value| target_approval_is_complete(value, current_epoch_ms()));
     let denylist_loaded = denylist
         .as_ref()
-        .is_some_and(|value| value.schema_version == 1);
+        .is_some_and(valid_development_host_denylist);
     let scenario_matches = manifest
         .as_ref()
         .is_some_and(|value| Some(value.scenario_id.as_str()) == scenario_argument.as_deref());
     let machine_identity_matches = manifest.as_ref().is_some_and(|value| {
         Some(value.expected_machine_id.as_str()) == expected_machine_argument.as_deref()
             && value.expected_machine_id == fingerprint
-    });
+    }) && target_approval
+        .as_ref()
+        .is_some_and(|value| value.hashed_machine_identity == fingerprint);
     let checkpoint_matches = manifest.as_ref().is_some_and(|value| {
         Some(value.checkpoint_id.as_str()) == expected_checkpoint_argument.as_deref()
     });
-    let platform_matches = manifest.as_ref().is_some_and(|value| {
+    let scenario_platform_matches = manifest.as_ref().is_some_and(|value| {
         let management_matches = match value.management_context.as_str() {
             "domain" => platform.and_then(|item| item.domain_joined) == Some(true),
             "mdm" => platform.and_then(|item| item.mdm_enrolled) == Some(true),
@@ -340,15 +457,45 @@ pub fn build_live_validation_gate(
                 .is_none_or(|expected| update_build_revision == Some(expected))
             && management_matches
     });
+    let target_platform_matches = target_approval.as_ref().is_some_and(|value| {
+        value.scenario_id
+            == manifest
+                .as_ref()
+                .map(|scenario| scenario.scenario_id.as_str())
+                .unwrap_or_default()
+            && value.windows_edition == edition
+            && value.windows_build == build
+            && update_build_revision == Some(value.windows_ubr)
+            && platform.is_some_and(|current| {
+                current.domain_joined == Some(value.management_state.domain_joined)
+                    && current.workplace_joined == Some(value.management_state.entra_joined)
+                    && current.mdm_enrolled == Some(value.management_state.mdm_enrolled)
+            })
+    });
+    let platform_matches = scenario_platform_matches && target_platform_matches;
+    let target_type_matches = target_approval.as_ref().is_some_and(|value| {
+        matches!(
+            (value.target_type, virtual_machine_detection),
+            (
+                ValidationTargetType::VirtualMachine,
+                VirtualMachineDetectionResult::Detected
+            ) | (
+                ValidationTargetType::PhysicalLaptop,
+                VirtualMachineDetectionResult::NotDetected
+            )
+        )
+    });
     let database_belongs_to_guest = current_machine_id.as_deref() == stored_machine_id;
     let (available, reason) = evaluate_gate(&GateFacts {
         command_line_opt_in,
         manifest_loaded,
+        target_approval_loaded,
         denylist_loaded,
         scenario_matches,
         machine_identity_matches,
         checkpoint_matches,
         platform_matches,
+        target_type_matches,
         database_belongs_to_guest,
         development_host_refused,
     });
@@ -356,11 +503,13 @@ pub fn build_live_validation_gate(
     LiveValidationGateStatus {
         command_line_opt_in,
         manifest_loaded,
+        target_approval_loaded,
         denylist_loaded,
         scenario_matches,
         machine_identity_matches,
         checkpoint_matches,
         platform_matches,
+        target_type_matches,
         database_belongs_to_guest,
         development_host_refused,
         available,
@@ -382,11 +531,13 @@ pub fn build_live_validation_gate(
 struct GateFacts {
     command_line_opt_in: bool,
     manifest_loaded: bool,
+    target_approval_loaded: bool,
     denylist_loaded: bool,
     scenario_matches: bool,
     machine_identity_matches: bool,
     checkpoint_matches: bool,
     platform_matches: bool,
+    target_type_matches: bool,
     database_belongs_to_guest: bool,
     development_host_refused: bool,
 }
@@ -394,11 +545,13 @@ struct GateFacts {
 fn evaluate_gate(facts: &GateFacts) -> (bool, &'static str) {
     let available = facts.command_line_opt_in
         && facts.manifest_loaded
+        && facts.target_approval_loaded
         && facts.denylist_loaded
         && facts.scenario_matches
         && facts.machine_identity_matches
         && facts.checkpoint_matches
         && facts.platform_matches
+        && facts.target_type_matches
         && facts.database_belongs_to_guest
         && !facts.development_host_refused;
     let reason = if facts.development_host_refused {
@@ -407,6 +560,8 @@ fn evaluate_gate(facts: &GateFacts) -> (bool, &'static str) {
         "The separate --enable-live-validation gate is absent."
     } else if !facts.denylist_loaded {
         "The local development-host denylist is missing or invalid."
+    } else if !facts.target_approval_loaded {
+        "The local validation-target approval is missing, incomplete, expired, or invalid."
     } else if !facts.manifest_loaded {
         "The fixed local live-validation scenario manifest is missing or invalid."
     } else if !facts.scenario_matches {
@@ -417,12 +572,104 @@ fn evaluate_gate(facts: &GateFacts) -> (bool, &'static str) {
         "The expected VM checkpoint identity does not match the scenario manifest."
     } else if !facts.platform_matches {
         "The guest edition, build, or UBR does not match the scenario manifest."
+    } else if !facts.target_type_matches {
+        "The detected target type does not match the approved validation target."
     } else if !facts.database_belongs_to_guest {
         "The Deslopper database does not belong to the current guest identity."
     } else {
         "All live-validation identity gates are satisfied."
     };
     (available, reason)
+}
+
+fn current_epoch_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_millis() as u64)
+}
+
+fn is_sha256(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn valid_development_host_denylist(value: &DevelopmentHostDenylist) -> bool {
+    value.schema_version == 1
+        && !value.development_host_fingerprints.is_empty()
+        && value
+            .development_host_fingerprints
+            .iter()
+            .all(|fingerprint| is_sha256(fingerprint))
+}
+
+fn target_approval_is_complete(value: &ValidationTargetApproval, now_epoch_ms: u64) -> bool {
+    let required_operations: HashSet<_> = MutationOperationId::ALL.into_iter().collect();
+    let operations: HashSet<_> = value.approved_operations.iter().copied().collect();
+    let states_complete = MutationOperationId::ALL.into_iter().all(|operation| {
+        value
+            .approved_target_states
+            .get(operation.key())
+            .is_some_and(|states| {
+                states.len() == 2
+                    && states.contains(&MutationTarget::Enabled)
+                    && states.contains(&MutationTarget::Disabled)
+            })
+    });
+    let handlers_complete = MutationOperationId::ALL.into_iter().all(|operation| {
+        value
+            .handler_versions
+            .get(operation.key())
+            .is_some_and(|version| !version.trim().is_empty())
+    });
+    let target_disposition_confirmed = match value.target_type {
+        ValidationTargetType::VirtualMachine => value.disposable_confirmed == Some(true),
+        ValidationTargetType::PhysicalLaptop => value.expendable_confirmed == Some(true),
+    };
+
+    value.schema_version == 1
+        && value.record_kind == TargetRecordKind::Approval
+        && value.approval_status == TargetApprovalStatus::Approved
+        && is_sha256(&value.hashed_machine_identity)
+        && is_sha256(&value.source_checkpoint_commit)
+        && !value.account_class.trim().is_empty()
+        && operations == required_operations
+        && states_complete
+        && handlers_complete
+        && value
+            .evidence_output_location
+            .replace('\\', "/")
+            .starts_with(".deslopper/local/")
+        && matches!(
+            value.recovery_readiness,
+            RecoveryReadiness::Ready | RecoveryReadiness::ReadyWithWarnings
+        )
+        && value.important_data_confirmed
+        && value.backup_confirmed
+        && value.reinstallation_accepted
+        && value.winre_verified
+        && matches!(
+            value.bitlocker_recovery_state,
+            BitLockerRecoveryState::NotApplicableUnencrypted
+                | BitLockerRecoveryState::RecoveryMaterialConfirmed
+        )
+        && matches!(
+            value.recovery_media_state,
+            RecoveryMediaState::Available | RecoveryMediaState::BuiltInVerified
+        )
+        && value.development_host_protection_state
+            == DevelopmentHostProtectionState::PresentDistinct
+        && value
+            .explicit_user_approval_timestamp
+            .as_ref()
+            .is_some_and(|timestamp| !timestamp.trim().is_empty())
+        && value
+            .expires_at_epoch_ms
+            .is_some_and(|expiration| expiration > now_epoch_ms)
+        && !value.restore_or_reimage_procedure.trim().is_empty()
+        && !value.validation_maturity.trim().is_empty()
+        && target_disposition_confirmed
 }
 
 fn argument_value(arguments: &[String], prefix: &str) -> Option<String> {
@@ -749,6 +996,60 @@ mod tests {
         }
     }
 
+    fn valid_target_approval(target_type: ValidationTargetType) -> ValidationTargetApproval {
+        let handlers = MutationOperationId::ALL
+            .into_iter()
+            .map(|operation| (operation.key().into(), "alpha-1".into()))
+            .collect();
+        let states = MutationOperationId::ALL
+            .into_iter()
+            .map(|operation| {
+                (
+                    operation.key().into(),
+                    vec![MutationTarget::Enabled, MutationTarget::Disabled],
+                )
+            })
+            .collect();
+        ValidationTargetApproval {
+            schema_version: 1,
+            record_kind: TargetRecordKind::Approval,
+            scenario_id: "physical-readiness".into(),
+            target_type,
+            hashed_machine_identity: "b".repeat(64),
+            windows_edition: "Professional".into(),
+            windows_build: 26_200,
+            windows_ubr: 8875,
+            account_class: "local_administrator".into(),
+            management_state: TargetManagementState {
+                domain_joined: false,
+                entra_joined: false,
+                mdm_enrolled: false,
+            },
+            source_checkpoint_commit: "a".repeat(64),
+            handler_versions: handlers,
+            approved_operations: MutationOperationId::ALL.to_vec(),
+            approved_target_states: states,
+            evidence_output_location: ".deslopper/local/evidence".into(),
+            recovery_readiness: RecoveryReadiness::ReadyWithWarnings,
+            important_data_confirmed: true,
+            backup_confirmed: true,
+            reinstallation_accepted: true,
+            winre_verified: true,
+            bitlocker_recovery_state: BitLockerRecoveryState::NotApplicableUnencrypted,
+            recovery_media_state: RecoveryMediaState::Available,
+            development_host_protection_state: DevelopmentHostProtectionState::PresentDistinct,
+            explicit_user_approval_timestamp: Some("2026-08-03T12:00:00Z".into()),
+            approval_status: TargetApprovalStatus::Approved,
+            expires_at_epoch_ms: Some(current_epoch_ms() + 60_000),
+            restore_or_reimage_procedure: "Use approved Windows recovery media.".into(),
+            validation_maturity: "synthetic_tested".into(),
+            disposable_confirmed: (target_type == ValidationTargetType::VirtualMachine)
+                .then_some(true),
+            expendable_confirmed: (target_type == ValidationTargetType::PhysicalLaptop)
+                .then_some(true),
+        }
+    }
+
     #[test]
     fn maturity_is_monotonic_and_rejection_disables_handler() {
         assert_eq!(
@@ -825,11 +1126,13 @@ mod tests {
         let valid = || GateFacts {
             command_line_opt_in: true,
             manifest_loaded: true,
+            target_approval_loaded: true,
             denylist_loaded: true,
             scenario_matches: true,
             machine_identity_matches: true,
             checkpoint_matches: true,
             platform_matches: true,
+            target_type_matches: true,
             database_belongs_to_guest: true,
             development_host_refused: false,
         };
@@ -860,6 +1163,77 @@ mod tests {
                 .1
                 .contains("development host")
         );
+        let mut pending_target = valid();
+        pending_target.target_approval_loaded = false;
+        assert!(evaluate_gate(&pending_target).1.contains("approval"));
+        let mut wrong_target_type = valid();
+        wrong_target_type.target_type_matches = false;
+        assert!(evaluate_gate(&wrong_target_type).1.contains("target type"));
+    }
+
+    #[test]
+    fn physical_target_recovery_confirmations_are_all_fail_closed() {
+        let now = current_epoch_ms();
+        let mut approval = valid_target_approval(ValidationTargetType::PhysicalLaptop);
+        assert!(target_approval_is_complete(&approval, now));
+
+        approval.backup_confirmed = false;
+        assert!(!target_approval_is_complete(&approval, now));
+        approval.backup_confirmed = true;
+        approval.reinstallation_accepted = false;
+        assert!(!target_approval_is_complete(&approval, now));
+        approval.reinstallation_accepted = true;
+        approval.winre_verified = false;
+        assert!(!target_approval_is_complete(&approval, now));
+        approval.winre_verified = true;
+        approval.bitlocker_recovery_state = BitLockerRecoveryState::Unknown;
+        assert!(!target_approval_is_complete(&approval, now));
+    }
+
+    #[test]
+    fn preparation_missing_host_protection_and_expiration_cannot_approve_mutation() {
+        let now = current_epoch_ms();
+        let mut approval = valid_target_approval(ValidationTargetType::PhysicalLaptop);
+        approval.record_kind = TargetRecordKind::Preparation;
+        approval.approval_status = TargetApprovalStatus::Pending;
+        assert!(!target_approval_is_complete(&approval, now));
+
+        approval.record_kind = TargetRecordKind::Approval;
+        approval.approval_status = TargetApprovalStatus::Approved;
+        approval.development_host_protection_state = DevelopmentHostProtectionState::Missing;
+        assert!(!target_approval_is_complete(&approval, now));
+
+        approval.development_host_protection_state =
+            DevelopmentHostProtectionState::PresentDistinct;
+        approval.expires_at_epoch_ms = Some(now.saturating_sub(1));
+        assert!(!target_approval_is_complete(&approval, now));
+    }
+
+    #[test]
+    fn development_host_denylist_must_be_nonempty_valid_and_distinct() {
+        let empty = DevelopmentHostDenylist {
+            schema_version: 1,
+            development_host_fingerprints: Vec::new(),
+        };
+        assert!(!valid_development_host_denylist(&empty));
+        let target = "b".repeat(64);
+        let same = DevelopmentHostDenylist {
+            schema_version: 1,
+            development_host_fingerprints: vec![target.clone()],
+        };
+        assert!(valid_development_host_denylist(&same));
+        assert!(same.development_host_fingerprints.contains(&target));
+    }
+
+    #[test]
+    fn virtual_machine_target_model_and_legacy_vm_inventory_remain_supported() {
+        let approval = valid_target_approval(ValidationTargetType::VirtualMachine);
+        assert!(target_approval_is_complete(&approval, current_epoch_ms()));
+        let legacy_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("validation/approved-validation-vms.schema.json");
+        let legacy: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(legacy_path).unwrap()).unwrap();
+        assert_eq!(legacy["properties"]["schemaVersion"]["const"], 2);
     }
 
     #[test]
@@ -960,6 +1334,12 @@ mod tests {
         assert!(targets.iter().all(|target| {
             allowed.contains(&target["mutationStatus"].as_str().unwrap_or_default())
         }));
+        let preparation = value["preparationTargets"].as_array().unwrap();
+        assert_eq!(preparation.len(), 1);
+        assert_eq!(preparation[0]["targetType"], "physical_laptop");
+        assert_eq!(preparation[0]["approvalStatus"], "not_approved");
+        assert_eq!(preparation[0]["mutationStatus"], "mutation_not_attempted");
+        assert_eq!(preparation[0]["countsAsCompletedMutationTarget"], false);
     }
 
     fn test_bundle(build: u32, plan_hash: &str) -> LiveEvidenceBundle {

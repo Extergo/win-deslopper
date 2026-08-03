@@ -42,8 +42,62 @@ if (-not (Test-Path -LiteralPath $denylistPath)) {
     throw 'The local development-host denylist is required before creating a guest manifest.'
 }
 $denylist = Get-Content -Raw $denylistPath | ConvertFrom-Json
+if ([uint32]$denylist.schemaVersion -ne 1 -or @($denylist.developmentHostFingerprints).Count -eq 0) {
+    throw 'The development-host denylist must contain at least one valid local hash.'
+}
+if (@($denylist.developmentHostFingerprints | Where-Object { $_ -notmatch '^[a-f0-9]{64}$' }).Count -ne 0) {
+    throw 'The development-host denylist contains an invalid hash.'
+}
 if ($denylist.developmentHostFingerprints -contains $fingerprint) {
     throw 'Refusing to create a live-validation scenario manifest on the recorded development host.'
+}
+
+$targetApprovalPath = Join-Path $localDirectory 'approved-validation-target.json'
+if (-not (Test-Path -LiteralPath $targetApprovalPath)) {
+    throw 'A separate, ignored approved-validation-target.json is required; a preparation draft cannot authorize mutation.'
+}
+$target = Get-Content -Raw $targetApprovalPath | ConvertFrom-Json
+$requiredOperations = @(
+    'set_taskbar_widgets_visibility',
+    'set_taskbar_task_view_visibility',
+    'set_taskbar_show_desktop_enabled'
+)
+$operations = @($target.approvedOperations)
+$statesComplete = @($requiredOperations | Where-Object {
+    $states = @($target.approvedTargetStates.PSObject.Properties[$_].Value)
+    $states.Count -ne 2 -or $states -notcontains 'enabled' -or $states -notcontains 'disabled'
+}).Count -eq 0
+$recoveryComplete =
+    $target.importantDataConfirmed -eq $true -and
+    $target.backupConfirmed -eq $true -and
+    $target.reinstallationAccepted -eq $true -and
+    $target.winreVerified -eq $true -and
+    $target.bitlockerRecoveryState -in @('not_applicable_unencrypted', 'recovery_material_confirmed') -and
+    $target.recoveryMediaState -in @('available', 'built_in_verified')
+$dispositionConfirmed =
+    ($target.targetType -eq 'virtual_machine' -and $target.disposableConfirmed -eq $true) -or
+    ($target.targetType -eq 'physical_laptop' -and $target.expendableConfirmed -eq $true)
+if (
+    [uint32]$target.schemaVersion -ne 1 -or
+    $target.recordKind -ne 'approval' -or
+    $target.approvalStatus -ne 'approved' -or
+    $target.scenarioId -ne $ScenarioId -or
+    $target.hashedMachineIdentity -ne $fingerprint -or
+    $target.windowsEdition -ne $currentVersion.EditionID -or
+    [uint32]$target.windowsBuild -ne [uint32]$currentVersion.CurrentBuild -or
+    [uint32]$target.windowsUbr -ne [uint32]$currentVersion.UBR -or
+    $target.sourceCheckpointCommit -notmatch '^[a-f0-9]{64}$' -or
+    $target.developmentHostProtectionState -ne 'present_distinct' -or
+    $target.recoveryReadiness -notin @('ready', 'ready_with_warnings') -or
+    [string]::IsNullOrWhiteSpace([string]$target.explicitUserApprovalTimestamp) -or
+    [uint64]$target.expiresAtEpochMs -le [uint64][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() -or
+    $operations.Count -ne 3 -or
+    @($requiredOperations | Where-Object { $operations -notcontains $_ }).Count -ne 0 -or
+    -not $statesComplete -or
+    -not $recoveryComplete -or
+    -not $dispositionConfirmed
+) {
+    throw 'The local validation-target approval is incomplete, expired, or does not match this target.'
 }
 
 $manifest = [ordered]@{

@@ -80,3 +80,12 @@ Each decision below is accepted for the current architecture. Replacements must 
 - **Decision:** Keep the feature-gated application as the only guest runner. Add a separate live flag, fixed ignored manifest, exact scenario/machine/checkpoint, edition/build/UBR, guest-owned database, local development-host denylist, and visible environment banner. Keep VM detection informational. Host Hyper-V tooling reads an ignored explicit VM inventory, requires confirmation for state changes, and cannot invoke mutation. Evidence combines durable broker facts with closed manual visual states and label-only screenshots.
 - **Consequences:** All three handlers remain `SyntheticTested` and visibly not live validated. No unavailable target counts as passed. Normal builds remain unchanged and read-only.
 - **Rejected:** Direct handler test paths, VM detection as authorization, automatic VM creation/download, automatic acknowledgement, host mutation, arbitrary evidence paths, and treating registry reread as visual proof.
+
+## D-010 - Validation targets separate preparation from approval
+
+- **Status:** Accepted for validation readiness
+- **Date:** 2026-08-03
+- **Context:** The first physical-laptop read-only pass could not honestly use a disposable-VM approval schema, and a physical target needs stronger recovery evidence and explicit user confirmations.
+- **Decision:** Add a generic local validation-target schema with `virtual_machine` and `physical_laptop` types and explicit `preparation`/`approval` record kinds. Keep the legacy VM inventory for Hyper-V compatibility. Require the live gate to load a separate ignored approved target and reject pending, incomplete, expired, recovery-unready, wrong-type/build/identity, empty-denylist, and development-host-equal states.
+- **Consequences:** A physical preparation may record read-only inspection and recovery-audit facts without becoming an approval. Physical approval requires important-data, backup, reinstall, WinRE, BitLocker recovery, media, expendability, restore/reimage, timestamp, expiration, and development-host protection fields. The original development-host identity remains local-only and mandatory.
+- **Rejected:** Claiming the laptop is a VM, treating a draft as approval, inventing or committing either machine identity, accepting an empty denylist, auto-approving from inspection/audit results, or counting read-only preparation as live mutation evidence.

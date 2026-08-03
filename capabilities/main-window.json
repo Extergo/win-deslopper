@@ -3,5 +3,5 @@
   "identifier": "main-window",
   "description": "Minimal local capability for the Deslopper preview window.",
   "windows": ["main"],
-  "permissions": []
+  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
 }

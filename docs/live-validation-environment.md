@@ -4,6 +4,16 @@ Live mutation remains prohibited on the development host. The ignored
 `.deslopper/local/development-host-denylist.json` contains only a SHA-256 host
 fingerprint; it contains no computer name or other identifying source value.
 The application fails closed when the denylist is absent or invalid.
+An empty denylist is invalid; it is never equivalent to development-host
+protection.
+
+Every live target also requires ignored
+`.deslopper/local/approved-validation-target.json`, validated against
+`validation/approved-validation-targets.schema.json`. This is distinct from a
+preparation draft. The live gate rejects pending or expired approval, missing
+recovery/user confirmations, a target/build/identity mismatch, or a target
+identity equal to the development-host denylist. The legacy approved-VM schema
+remains supported by Hyper-V host tooling.
 
 ## Guest preparation
 
@@ -17,19 +27,29 @@ commands, and evidence transfer steps are in `docs/manual-vm-provisioning.md`.
 3. Run a normal read-only inspection in the guest so its SQLite database is
    bound to that guest.
 4. Copy the development-host denylist into the guest working directory.
-5. From the guest checkout, run `tools/New-DeslopperLiveScenarioManifest.ps1`.
+5. Supply a separate, explicitly approved validation-target manifest locally.
+   A preparation record cannot be renamed or reused as approval.
+6. From the guest checkout, run `tools/New-DeslopperLiveScenarioManifest.ps1`.
    The tool refuses a fingerprint present in the denylist and writes the fixed
    ignored `.deslopper/local/live-validation-scenario.json`.
-6. Launch the internal build with all values printed by the tool:
+7. Launch the internal build with all values printed by the tool:
 
    `--enable-mutation-alpha --enable-live-validation --validation-scenario=<id> --expected-machine-id=<fingerprint> --expected-checkpoint-id=<checkpoint>`
 
-7. Confirm the visible environment banner before acknowledging the warning.
+8. Confirm the visible environment banner before acknowledging the warning.
 
 The live gate requires the CLI flag, selected scenario, checkpoint identifier,
 machine fingerprint, edition, build, optional UBR, guest-owned database,
 denylist, normal alpha gates, and explicit UI acknowledgement. VM detection is
 informational only and cannot make an environment eligible.
+
+## Physical-laptop preparation
+
+The 2026-08-03 Windows 11 Pro 25H2 laptop pass is documented in
+`physical-validation-target-readiness.md`. Its local draft remains pending,
+recovery-not-ready, unapproved, and ignored. The original development-host
+hash is unavailable on the laptop and must later be exported from the original
+PC as a hash only. Zero live mutation tests were attempted.
 
 ## Optional Hyper-V host tooling
 
