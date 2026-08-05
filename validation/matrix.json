@@ -27,11 +27,17 @@
       "entra": false,
       "mdm": false,
       "readOnlyStatus": "read_only_validated",
-      "preparationStatus": "preparation_incomplete",
+      "preparationStatus": "retired_before_mutation",
+      "targetStatus": "target_withdrawn",
+      "retirementReason": "hardware_being_sold",
       "recoveryStatus": "recovery_not_ready",
       "approvalStatus": "not_approved",
       "mutationStatus": "mutation_not_attempted",
-      "countsAsCompletedMutationTarget": false
+      "liveMutationScenarioCount": 0,
+      "countsAsCompletedMutationTarget": false,
+      "countsAsFailedMutationTarget": false,
+      "countsAsApprovedTarget": false,
+      "countsAsLiveHandlerEvidence": false
     }
   ],
   "requiredAssertions": ["component applicability", "package registration and provisioning", "policy and preference precedence", "authority and confidence", "detector confidence", "known limitations", "manual verification steps"]

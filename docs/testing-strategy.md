@@ -33,8 +33,9 @@ truthfully means zero completed live runs.
 Generic validation-target tests reject incomplete physical recovery fields,
 pending preparation, expired approval, missing development-host identity, and
 wrong type/build/identity. Virtual-machine approval and the legacy VM inventory
-schema remain supported. The physical preparation matrix row never contributes
-to completed live-mutation counts.
+schema remain supported. The retired physical matrix row never contributes to
+completed or failed live-mutation counts, approved-target counts, or evidence
+that a handler works live.
 
 Preparation-schema coverage requires structured states for all nine user-only
 recovery confirmations, restart verification, redacted recovery audit summary,

@@ -5,6 +5,19 @@ The first real Windows 11 Pro 25H2 physical-laptop pass was performed on
 approval. No live mutation, mutation-alpha launch, mutation runtime flag,
 taskbar registry write, or approved live scenario was used.
 
+## Retirement
+
+On 2026-08-05 the physical target was withdrawn because the hardware is being
+sold. Its committed state is `retired_before_mutation`, `target_withdrawn`,
+`read_only_validated`, `not_approved`, and `mutation_not_attempted`, with zero
+live mutation scenarios. It is excluded from completed targets, failed mutation
+targets, approved targets, and evidence that any handler works live.
+
+The useful read-only conclusions remain: Windows 11 Pro 25H2 inspection was
+validated; minimal Tauri event permissions were corrected; the OneDrive
+detector was corrected; MDM evidence handling was corrected; and AppX
+permission-limited behavior remained explicit. No mutation occurred.
+
 ## Read-only application result
 
 The initial laptop inspection persisted successfully, but the frontend stayed
@@ -104,10 +117,10 @@ equal to a denylisted development-host identity. The original development-host
 hash is not available on this laptop and must be transferred locally from the
 original PC; it must never be committed.
 
-The local physical-laptop draft and recovery audit remain ignored. Its status
-is `preparation_incomplete`, `recovery_not_ready`, `not_approved`, and
-`mutation_not_attempted`. The physical preparation row in
-`validation/matrix.json` does not count as a completed mutation target.
+The physical target is retired and withdrawn before mutation. Its ignored local
+preparation state never became an approval or live scenario. The physical row
+in `validation/matrix.json` records zero live mutation scenarios and contributes
+no completed, failed, approved, or live-handler evidence.
 
 The earlier MDM result was a detector false positive. Three provider-backed
 Enrollment registry records contained only metadata: `dsregcmd` reported no

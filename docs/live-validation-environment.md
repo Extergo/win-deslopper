@@ -76,10 +76,11 @@ informational only and cannot make an environment eligible.
 ## Physical-laptop preparation
 
 The 2026-08-03 Windows 11 Pro 25H2 laptop pass is documented in
-`physical-validation-target-readiness.md`. Its local draft remains pending,
-recovery-not-ready, unapproved, and ignored. The original development-host
-hash is unavailable on the laptop and must later be exported from the original
-PC as a hash only. Zero live mutation tests were attempted.
+`physical-validation-target-readiness.md`. On 2026-08-05 the target was
+`retired_before_mutation` and `target_withdrawn` because the hardware is being
+sold. It remained read-only validated, unapproved, and mutation not attempted;
+zero live mutation scenarios exist. It is not eligible for later approval and
+does not count as completed, failed, approved, or live-handler evidence.
 
 ## Optional Hyper-V host tooling
 

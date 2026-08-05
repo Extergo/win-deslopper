@@ -8,10 +8,12 @@ Every matrix row independently records `not_provisioned`,
 The current matrix has thirteen `not_provisioned` rows and no live evidence.
 
 `preparationTargets` is a separate inventory for read-only physical-target
-readiness. Its Windows 11 Pro 25H2 laptop row is
-`read_only_validated`, `preparation_incomplete`, `recovery_not_ready`,
-`not_approved`, and `mutation_not_attempted`. It is not aggregated with the
-thirteen mutation targets and cannot change a live status.
+history. Its Windows 11 Pro 25H2 laptop row is `retired_before_mutation`,
+`target_withdrawn`, `read_only_validated`, `not_approved`, and
+`mutation_not_attempted`, with zero live mutation scenarios. The hardware is
+being sold. The row is not aggregated with the thirteen mutation targets and
+cannot count as completed, failed, approved, or evidence that a handler works
+live.
 
 `validation/matrix.json` is the target inventory. Each checked-in scenario must record OS edition/build/UBR, account type, domain/MDM evidence, OneDrive state, expected component applicability, package registration and provisioning, policy/preference precedence, authority/confidence, limitations, and manual verification steps.
 

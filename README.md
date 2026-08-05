@@ -44,8 +44,9 @@ reviewed, and explicitly approved; it is not approved merely by being a laptop.
 The first physical-laptop read-only preparation pass is documented in
 `docs/physical-validation-target-readiness.md`. Live progress and persisted
 history were verified after a minimal Tauri event-listen correction; OneDrive
-detection now tolerates a missing startup value. Recovery remains not ready and
-mutation remains prohibited.
+detection now tolerates a missing startup value. The target was withdrawn and
+retired before mutation because the hardware is being sold. It was never
+approved, zero live mutation scenarios exist, and mutation was not attempted.
 
 ## Development and validation
 
