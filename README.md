@@ -39,11 +39,12 @@ for exactly three closed current-user taskbar experiments. It is not part of the
 normal Product Alpha command registration or presentation. All mutation results
 remain synthetic: zero handlers are live validated and none is production-ready.
 
-The former physical validation laptop completed read-only preparation and was
-withdrawn because the hardware was sold. It was never approved, never received
-the development-host identity, never launched mutation alpha, and never wrote a
-taskbar value. No mutation failure occurred. Another explicitly approved,
-disposable target is required for any future live-validation milestone.
+The physical validation laptop completed read-only preparation and was then
+retired before mutation because the hardware was being sold. That event remains
+in history. It is now temporarily reactivated and ready only for a separate
+Widgets approval review before its final reset, but remains unapproved with zero
+live scenarios and no mutation attempt. Reactivation and review readiness do not
+themselves authorize mutation.
 
 The original development PC remains permanently denied by its local ignored
 `.deslopper/local/development-host-denylist.json`. Never commit or expose that

@@ -79,8 +79,11 @@ The 2026-08-03 Windows 11 Pro 25H2 laptop pass is documented in
 `physical-validation-target-readiness.md`. On 2026-08-05 the target was
 `retired_before_mutation` and `target_withdrawn` because the hardware is being
 sold. It remained read-only validated, unapproved, and mutation not attempted;
-zero live mutation scenarios exist. It is not eligible for later approval and
-does not count as completed, failed, approved, or live-handler evidence.
+zero live mutation scenarios exist. A later explicit event temporarily
+reactivated it for Widgets-only preparation before the final reset. The
+retirement remains historical. Preparation reached approval-review readiness,
+but reactivation is still unapproved, permits no mutation, and does not count as
+completed, failed, approved, or live-handler evidence.
 
 ## Optional Hyper-V host tooling
 

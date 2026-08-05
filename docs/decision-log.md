@@ -98,3 +98,12 @@ Each decision below is accepted for the current architecture. Replacements must 
 - **Decision:** Expose the 20-component catalogue, honest dashboard, desired-state comparisons, non-executable previews, reviewed/resolved drift, history comparison and retention, and user-reviewed redacted diagnostics. Keep the normal binary feature-off, unelevated, local, and incapable of Windows mutation.
 - **Consequences:** Internal mutation research stays behind its compile and live-validation gates and is absent from the normal product workflow. The former physical laptop is withdrawn because it was sold before approval or mutation; unavailability is not a failed operation and cannot count as mutation evidence.
 - **Rejected:** Health scores that hide uncertainty, an Apply control with no released executor, generic diagnostics dumps, silent uploads, and treating an unavailable target as live validation.
+
+## D-012 - Preserve retirement while allowing bounded reactivation preparation
+
+- **Status:** Accepted for preparation only
+- **Date:** 2026-08-05
+- **Context:** The physical target was retired before mutation when sale and reset were planned. The user later allowed temporary preparation for one Widgets visibility validation before the final reset.
+- **Decision:** Preserve the retirement event and add a chronological reactivation event limited to Widgets preparation. Keep approval `not_approved`, mutation `mutation_not_attempted`, and live scenarios at zero. Reactivation alone never authorizes a plan, transaction, or write.
+- **Consequences:** Recovery, identity separation, a fresh read-only inspection, exact pre-state capture, and a new local approval-review draft must all pass before a separate approval decision. Task View and Show Desktop remain out of scope.
+- **Rejected:** Rewriting retirement history, reusing an old approval, treating reactivation as approval, or granting any live-handler maturity before an independently approved apply-and-rollback session.

@@ -37,15 +37,18 @@ try {
     $denylistPath = Join-Path $localDirectory 'development-host-denylist.json'
     $liveScenarioPath = Join-Path $localDirectory 'live-validation-scenario.json'
     $approvalPath = Join-Path $localDirectory 'approved-validation-target.json'
+    $preparationPath = Join-Path $localDirectory 'physical-laptop-validation-draft.json'
     $legacyApprovalPath = Join-Path $localDirectory 'approved-validation-vms.json'
     $denylistPresent = Test-Path -LiteralPath $denylistPath
     $liveScenarioPresent = Test-Path -LiteralPath $liveScenarioPath
     $approvedInventoryPresent = Test-Path -LiteralPath $approvalPath
+    $preparationRecordPresent = Test-Path -LiteralPath $preparationPath
     $legacyApprovedInventoryPresent = Test-Path -LiteralPath $legacyApprovalPath
     $hostDenied = $false
     $liveScenarioTargetsHost = $false
     $approvedVmCount = 0
     $approvedTargetType = $null
+    $preparedTargetProtected = $false
 
     $currentVersion = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
     $fingerprintInput = "$($env:COMPUTERNAME.ToUpperInvariant()):$($currentVersion.EditionID):$($currentVersion.CurrentBuild)"
@@ -77,8 +80,21 @@ try {
         $approvedTargetType = 'virtual_machine'
         $approvedVmCount = @($approvedInventory.vms).Count
     }
+    if ($preparationRecordPresent -and $denylistPresent) {
+        $preparationRecord = Get-Content -Raw $preparationPath | ConvertFrom-Json
+        $preparedTargetProtected =
+            $preparationRecord.recordKind -eq 'preparation' -and
+            $preparationRecord.approvalStatus -eq 'pending' -and
+            $preparationRecord.hashedMachineIdentity -eq $hostFingerprint -and
+            $preparationRecord.developmentHostProtectionState -eq 'present_distinct' -and
+            @($denylist.developmentHostFingerprints) -notcontains $hostFingerprint
+    }
     $deslopperProcessCount = @(Get-Process -Name 'win-deslopper' -ErrorAction SilentlyContinue).Count
-    $hostProtectionPassed = $denylistPresent -and $hostDenied -and -not $liveScenarioTargetsHost -and $deslopperProcessCount -eq 0
+    $hostProtectionPassed =
+        $denylistPresent -and
+        ($hostDenied -or $preparedTargetProtected) -and
+        -not $liveScenarioTargetsHost -and
+        $deslopperProcessCount -eq 0
     $hostProtectionResult = if ($hostProtectionPassed) { 'Passed' } else { 'Failed closed / requires review' }
     $anyApprovedInventoryPresent = $approvedInventoryPresent -or $legacyApprovedInventoryPresent
     $liveValidationBlocker = if (-not $anyApprovedInventoryPresent) {
@@ -101,7 +117,9 @@ try {
         "- Live mutation evidence bundles: $($liveEvidence.Count)",
         "- Defined matrix targets: $($matrix.targets.Count)",
         "- Physical preparation targets (not mutation evidence): $(@($matrix.preparationTargets).Count)",
-        "- Withdrawn preparation targets: $(@($matrix.preparationTargets | Where-Object { $_.availabilityStatus -eq 'withdrawn_sold' }).Count)",
+        "- Historical retired-before-mutation events: $(@($matrix.preparationTargets.lifecycleEvents | Where-Object { $_.event -eq 'retired_before_mutation' }).Count)",
+        "- Current approval-review-ready preparation targets: $(@($matrix.preparationTargets | Where-Object { $_.preparationStatus -eq 'ready_for_approval_review' }).Count)",
+        "- Physical-target live mutation scenarios: $([int](($matrix.preparationTargets | Measure-Object -Property liveMutationScenarioCount -Sum).Sum))",
         '- Runner: Rust production parsers and detectors',
         '- Mutation boundary: Fixture replay only; no Windows mutation or query execution',
         "- Live mutation VM scenarios completed: $(@($matrix.targets | Where-Object { $_.mutationStatus -in @('passed','passed_with_limitations','failed','handler_removed') }).Count)",
@@ -116,6 +134,7 @@ try {
         "- Host protection audit: $hostProtectionResult",
         "- Development-host denylist present: $denylistPresent",
         "- Current host fingerprint denied: $hostDenied",
+        "- Current host is protected prepared target: $preparedTargetProtected",
         "- Deslopper processes running: $deslopperProcessCount",
         "- Live scenario manifest present: $liveScenarioPresent",
         "- Live scenario targets development host: $liveScenarioTargetsHost",
@@ -164,11 +183,13 @@ try {
     $lines += ''
     $lines += 'Read-only preparation targets (excluded from completed mutation coverage):'
     $lines += ''
-    $lines += '| Target | Availability | Read-only | Preparation | Recovery | Approval | Mutation | Counts as completed mutation |'
-    $lines += '|---|---|---|---|---|---|---|---|'
+    $lines += '| Target | Availability | Read-only | Preparation | Recovery | Approval | Mutation | Live scenarios | Completed credit | Failed credit | Approved credit | Live handler evidence |'
+    $lines += '|---|---|---|---|---|---|---|---:|---|---|---|---|'
     $lines += $matrix.preparationTargets | ForEach-Object {
-        "| $($_.id) | $($_.availabilityStatus.Replace('_', ' ')) | $($_.readOnlyStatus.Replace('_', ' ')) | $($_.preparationStatus.Replace('_', ' ')) | $($_.recoveryStatus.Replace('_', ' ')) | $($_.approvalStatus.Replace('_', ' ')) | $($_.mutationStatus.Replace('_', ' ')) | $($_.countsAsCompletedMutationTarget) |"
+        "| $($_.id) | $($_.availabilityStatus.Replace('_', ' ')) | $($_.readOnlyStatus.Replace('_', ' ')) | $($_.preparationStatus.Replace('_', ' ')) | $($_.recoveryStatus.Replace('_', ' ')) | $($_.approvalStatus.Replace('_', ' ')) | $($_.mutationStatus.Replace('_', ' ')) | $($_.liveMutationScenarioCount) | $($_.countsAsCompletedMutationTarget) | $($_.countsAsFailedMutationTarget) | $($_.countsAsApprovedTarget) | $($_.countsAsLiveHandlerEvidence) |"
     }
+    $lines += ''
+    $lines += 'The physical target was retired before mutation because the hardware is being sold, then explicitly reactivated for bounded Widgets preparation before its final reset. Retirement remains in chronological history. Read-only Windows 11 Pro 25H2 inspection, Tauri event permission, OneDrive detection, MDM evidence, and permission-limited AppX findings remain useful; no handler has live evidence and zero mutation occurred.'
     $report = ($lines -join "`n") + "`n"
     [System.IO.File]::WriteAllText((Join-Path $repository 'validation\report.md'), $report, [System.Text.UTF8Encoding]::new($false))
 } finally {

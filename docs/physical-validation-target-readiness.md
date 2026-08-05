@@ -24,6 +24,24 @@ validated; minimal Tauri event permissions were corrected; the OneDrive
 detector was corrected; MDM evidence handling was corrected; and AppX
 permission-limited behavior remained explicit. No mutation occurred.
 
+## Reactivation preparation
+
+On 2026-08-05 the user explicitly superseded the operational retirement status
+without erasing the retirement event. The target is temporarily
+`reactivation_preparation` for `widgets_visibility_preparation_only` before its
+final reset. It remains `not_approved`, `mutation_not_attempted`, and at zero
+live scenarios. Task View and Show Desktop are outside this preparation scope.
+
+The preparation reached `ready_for_approval_review` without creating an
+approval or live scenario. A fresh ignored review draft is limited to the fixed
+Widgets visibility handler, one execution, and two hours. Its pre-state records
+an absent `TaskbarDa` value, no configured Widgets policy, a conservative
+detector result of unknown, and the user's confirmation that the Widgets button
+is not visible. The proposed opposite state is enabled; exact rollback is value
+absence. The draft prohibits mutation until a separate approval decision and
+also prohibits automatic repair, elevation, Explorer termination, other
+handlers, and generic registry paths.
+
 ## Read-only application result
 
 The initial laptop inspection persisted successfully, but the frontend stayed
@@ -120,13 +138,15 @@ The live gate additionally requires an ignored
 draft, incomplete recovery fields, an expired approval, a wrong target
 type/build/identity, an empty development-host denylist, or a target identity
 equal to a denylisted development-host identity. The original development-host
-hash is not available on this laptop and must be transferred locally from the
-original PC; it must never be committed.
+identity was transferred through removable media, validated against its
+replacement checksum and closed field set, and imported only into the ignored
+local denylist. It is distinct from this target and must never be committed.
 
-The physical target is retired and withdrawn before mutation. Its ignored local
-preparation state never became an approval or live scenario. The physical row
-in `validation/matrix.json` records zero live mutation scenarios and contributes
-no completed, failed, approved, or live-handler evidence.
+The historical retirement remains in the target lifecycle. The later
+reactivation event is preparation-only and does not convert the target into an
+approval or live scenario. The physical row in `validation/matrix.json` records
+zero live mutation scenarios and contributes no completed, failed, approved, or
+live-handler evidence.
 
 The earlier MDM result was a detector false positive. Three provider-backed
 Enrollment registry records contained only metadata: `dsregcmd` reported no

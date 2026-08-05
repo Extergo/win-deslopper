@@ -1,15 +1,15 @@
 # Deslopper VM fixture validation report
 
-Generated: 2026-08-05T15:26:25Z
+Generated: 2026-08-05T17:39:54Z
 
 - Result: Passed
 - Checked-in fixture bundles: 1
 - Synthetic mutation fixture bundles: 1
 - Live mutation evidence bundles: 0
 - Defined matrix targets: 13
-- Physical retired/read-only targets (not mutation evidence): 1
-- Retired before mutation: 1
-- Target withdrawn: 1
+- Physical preparation targets (not mutation evidence): 1
+- Historical retired-before-mutation events: 1
+- Current approval-review-ready preparation targets: 1
 - Physical-target live mutation scenarios: 0
 - Runner: Rust production parsers and detectors
 - Mutation boundary: Fixture replay only; no Windows mutation or query execution
@@ -24,7 +24,8 @@ Generated: 2026-08-05T15:26:25Z
 - Handler removed: 0
 - Host protection audit: Passed
 - Development-host denylist present: True
-- Current host fingerprint denied: True
+- Current host fingerprint denied: False
+- Current host is protected prepared target: True
 - Deslopper processes running: 0
 - Live scenario manifest present: False
 - Live scenario targets development host: False
@@ -34,7 +35,7 @@ Generated: 2026-08-05T15:26:25Z
 - Windows hypervisor layer present: True
 - Windows Sandbox executable present: False
 - Host virtualisation tooling detected: None detected
-- Live validation blocker: The physical target was withdrawn before mutation; no target is approved or authorized.
+- Live validation blocker: No ignored approved validation target exists; no target is authorized.
 - Manual provisioning handoff: `docs/manual-vm-provisioning.md`
 - Live infrastructure exercised: None
 - Live operation/state combinations exercised: None
@@ -78,12 +79,10 @@ Scenario status:
 | package-provisioning-removed | not provisioned |
 | permission-limited-standard-user | not provisioned |
 
-Retired read-only physical targets (excluded from completed, failed, approved, and handler-evidence mutation coverage):
+Read-only preparation targets (excluded from completed mutation coverage):
 
-| Target | Target state | Retirement | Read-only | Approval | Mutation | Live scenarios | Completed credit | Failed credit | Approved credit | Live handler evidence |
-|---|---|---|---|---|---|---:|---|---|---|---|
-| physical-laptop-win11-pro-25h2-read-only | target withdrawn | retired before mutation | read only validated | not approved | mutation not attempted | 0 | False | False | False | False |
+| Target | Availability | Read-only | Preparation | Recovery | Approval | Mutation | Live scenarios | Completed credit | Failed credit | Approved credit | Live handler evidence |
+|---|---|---|---|---|---|---|---:|---|---|---|---|
+| physical-laptop-win11-pro-25h2-read-only | available for approval review | read only validated | ready for approval review | recovery ready | not approved | mutation not attempted | 0 | False | False | False | False |
 
-The target was withdrawn because the hardware is being sold. Its read-only
-findings remain useful, but they do not demonstrate that any mutation handler
-works live. Zero mutation occurred.
+The physical target was retired before mutation because the hardware is being sold, then explicitly reactivated for bounded Widgets preparation before its final reset. Retirement remains in chronological history. Read-only Windows 11 Pro 25H2 inspection, Tauri event permission, OneDrive detection, MDM evidence, and permission-limited AppX findings remain useful; no handler has live evidence and zero mutation occurred.

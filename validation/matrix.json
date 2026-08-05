@@ -26,20 +26,55 @@
       "domain": false,
       "entra": false,
       "mdm": false,
-      "availabilityStatus": "withdrawn_sold",
-      "availabilityNote": "The laptop was sold before mutation approval or any mutation attempt and is no longer an available validation target.",
+      "availabilityStatus": "available_for_approval_review",
+      "availabilityNote": "Temporarily available only for a separate Widgets approval review before the final device reset.",
       "readOnlyStatus": "read_only_validated",
-      "preparationStatus": "retired_before_mutation",
-      "targetStatus": "target_withdrawn",
-      "retirementReason": "hardware_being_sold",
-      "recoveryStatus": "recovery_not_ready",
+      "preparationStatus": "ready_for_approval_review",
+      "targetStatus": "target_ready_for_approval_review",
+      "reactivationScope": "widgets_visibility_preparation_only",
+      "finalDisposition": "reset_before_sale_still_intended",
+      "recoveryStatus": "recovery_ready",
       "approvalStatus": "not_approved",
       "mutationStatus": "mutation_not_attempted",
       "liveMutationScenarioCount": 0,
       "countsAsCompletedMutationTarget": false,
       "countsAsFailedMutationTarget": false,
       "countsAsApprovedTarget": false,
-      "countsAsLiveHandlerEvidence": false
+      "countsAsLiveHandlerEvidence": false,
+      "lifecycleEvents": [
+        {
+          "event": "retired_before_mutation",
+          "date": "2026-08-05",
+          "reason": "hardware_being_sold",
+          "targetStatus": "target_withdrawn",
+          "approvalStatus": "not_approved",
+          "mutationStatus": "mutation_not_attempted",
+          "liveScenarios": 0
+        },
+        {
+          "event": "reactivation_requested",
+          "date": "2026-08-05",
+          "previousStatus": "retired_before_mutation",
+          "reason": "temporary_bounded_validation_before_final_device_reset",
+          "target": "physical_laptop",
+          "allowedScope": "widgets_visibility_preparation_only",
+          "currentStatus": "reactivation_preparation",
+          "approvalStatus": "not_approved",
+          "mutationStatus": "mutation_not_attempted",
+          "liveScenarios": 0,
+          "finalDisposition": "reset_before_sale_still_intended"
+        },
+        {
+          "event": "approval_review_draft_prepared",
+          "date": "2026-08-05",
+          "allowedScope": "widgets_visibility_only",
+          "currentStatus": "ready_for_approval_review",
+          "approvalStatus": "not_approved",
+          "mutationStatus": "mutation_not_attempted",
+          "liveScenarios": 0,
+          "finalDisposition": "reset_before_sale_still_intended"
+        }
+      ]
     }
   ],
   "requiredAssertions": ["component applicability", "package registration and provisioning", "policy and preference precedence", "authority and confidence", "detector confidence", "known limitations", "manual verification steps"]

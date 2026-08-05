@@ -61,9 +61,16 @@ completed live runs.
 Generic validation-target tests reject incomplete physical recovery fields,
 pending preparation, expired approval, missing development-host identity, and
 wrong type/build/identity. Virtual-machine approval and the legacy VM inventory
-schema remain supported. The retired physical matrix row never contributes to
-completed or failed live-mutation counts, approved-target counts, or evidence
-that a handler works live.
+schema remain supported. The physical lifecycle preserves retirement followed
+by preparation-only reactivation. Neither event contributes to completed or
+failed live-mutation counts, approved-target counts, or evidence that a handler
+works live.
+
+The separate Widgets approval-review draft schema is non-authorizing. It fixes
+the scope to one Widgets visibility handler, requires the opposite of the
+user-confirmed visible state, preserves the exact original representation for
+rollback, expires within two hours, and requires mutation, elevation, Explorer
+termination, automatic repair, and generic registry paths to remain disabled.
 
 Preparation-schema coverage requires structured states for all nine user-only
 recovery confirmations, restart verification, redacted recovery audit summary,

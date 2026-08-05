@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Deslopper local Widgets approval-review draft",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "recordKind",
+    "approvalStatus",
+    "mutationAllowed",
+    "executed",
+    "scenarioId",
+    "targetType",
+    "hashedMachineIdentity",
+    "windowsEdition",
+    "windowsBuild",
+    "windowsUbr",
+    "sourceCheckpointCommit",
+    "handlerVersion",
+    "inspectionId",
+    "inspectionEvidenceSha256",
+    "developmentHostDenylistIdentity",
+    "operation",
+    "originalRepresentation",
+    "detectorState",
+    "userObservedState",
+    "proposedTarget",
+    "rollbackRepresentation",
+    "executionLimit",
+    "createdAtUtc",
+    "expiresAtEpochMs",
+    "automaticRepair",
+    "elevation",
+    "explorerTermination",
+    "genericRegistryPath",
+    "allowedHandlers"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "recordKind": { "const": "approval_review_draft" },
+    "approvalStatus": { "const": "ready_for_approval_review" },
+    "mutationAllowed": { "const": false },
+    "executed": { "const": false },
+    "scenarioId": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+    "targetType": { "const": "physical_laptop" },
+    "hashedMachineIdentity": { "$ref": "#/$defs/hash" },
+    "windowsEdition": { "type": "string", "minLength": 1 },
+    "windowsBuild": { "type": "integer", "minimum": 22000 },
+    "windowsUbr": { "type": "integer", "minimum": 0 },
+    "sourceCheckpointCommit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+    "handlerVersion": { "type": "string", "minLength": 1 },
+    "inspectionId": { "type": "string", "pattern": "^inspection-[a-zA-Z0-9-]+$" },
+    "inspectionEvidenceSha256": { "$ref": "#/$defs/hash" },
+    "developmentHostDenylistIdentity": { "$ref": "#/$defs/hash" },
+    "operation": { "const": "set_taskbar_widgets_visibility" },
+    "originalRepresentation": { "$ref": "#/$defs/representation" },
+    "detectorState": {
+      "type": "object",
+      "required": [
+        "effectiveState",
+        "authority",
+        "policyState",
+        "conflict",
+        "evidenceTimestampEpochMs"
+      ],
+      "properties": {
+        "effectiveState": { "enum": ["enabled", "disabled", "unknown"] },
+        "authority": { "enum": ["user", "local_policy", "domain", "mdm", "unknown"] },
+        "policyState": { "enum": ["not_configured", "enabled", "disabled", "unknown"] },
+        "conflict": { "type": "boolean" },
+        "evidenceTimestampEpochMs": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "userObservedState": { "enum": ["visible", "not_visible"] },
+    "proposedTarget": { "enum": ["enabled", "disabled"] },
+    "rollbackRepresentation": { "$ref": "#/$defs/representation" },
+    "executionLimit": { "const": 1 },
+    "createdAtUtc": { "type": "string", "format": "date-time" },
+    "expiresAtEpochMs": { "type": "integer", "minimum": 1 },
+    "automaticRepair": { "const": false },
+    "elevation": { "const": false },
+    "explorerTermination": { "const": false },
+    "genericRegistryPath": { "const": false },
+    "allowedHandlers": {
+      "type": "array",
+      "prefixItems": [{ "const": "set_taskbar_widgets_visibility" }],
+      "items": false,
+      "minItems": 1,
+      "maxItems": 1
+    }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "representation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": { "kind": { "const": "missing" } },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind", "value"],
+          "properties": {
+            "kind": { "const": "dword" },
+            "value": { "enum": [0, 1] }
+          },
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
+  "additionalProperties": false
+}
