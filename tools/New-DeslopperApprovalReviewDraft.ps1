@@ -55,9 +55,9 @@ if ($developmentHostHashes -contains $targetFingerprint) {
     throw 'The development-host identity matches this validation target.'
 }
 
-& git -C $repository merge-base --is-ancestor $SourceCheckpointCommit HEAD
-if ($LASTEXITCODE -ne 0) {
-    throw 'The source checkpoint is not an ancestor of the current repository state.'
+$head = (& git -C $repository rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0 -or $SourceCheckpointCommit -ne $head) {
+    throw 'The source checkpoint must equal the current repository commit.'
 }
 
 $widgetsPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
@@ -88,7 +88,7 @@ if ($policyConfigured) {
 $proposedTarget = if ($UserObservedState -eq 'visible') { 'disabled' } else { 'enabled' }
 $created = [DateTimeOffset]::UtcNow
 $draft = [ordered]@{
-    schemaVersion = 1
+    schemaVersion = 2
     recordKind = 'approval_review_draft'
     approvalStatus = 'ready_for_approval_review'
     mutationAllowed = $false
@@ -100,11 +100,18 @@ $draft = [ordered]@{
     windowsBuild = [uint32]$currentVersion.CurrentBuild
     windowsUbr = [uint32]$currentVersion.UBR
     sourceCheckpointCommit = $SourceCheckpointCommit
-    handlerVersion = 'mutation-alpha.1'
     inspectionId = $InspectionId
     inspectionEvidenceSha256 = $InspectionEvidenceSha256
     developmentHostDenylistIdentity = $developmentHostHashes[0]
-    operation = 'set_taskbar_widgets_visibility'
+    approvedOperationScopes = @(
+        [ordered]@{
+            operationId = 'set_taskbar_widgets_visibility'
+            allowedTargetStates = @($proposedTarget)
+            handlerVersion = 'mutation-alpha.1'
+        }
+    )
+    maximumPlans = 1
+    maximumExecutions = 1
     originalRepresentation = $representation
     detectorState = [ordered]@{
         effectiveState = 'unknown'
@@ -114,16 +121,15 @@ $draft = [ordered]@{
         evidenceTimestampEpochMs = $EvidenceTimestampEpochMs
     }
     userObservedState = $UserObservedState
-    proposedTarget = $proposedTarget
     rollbackRepresentation = $representation
-    executionLimit = 1
+    rollbackAuthority = 'transaction_bound_exact_pre_state'
     createdAtUtc = $created.ToString('o')
-    expiresAtEpochMs = $created.AddHours(2).ToUnixTimeMilliseconds()
+    expiresAtEpochMs = $created.AddMinutes(30).ToUnixTimeMilliseconds()
     automaticRepair = $false
     elevation = $false
     explorerTermination = $false
+    restart = $false
     genericRegistryPath = $false
-    allowedHandlers = @('set_taskbar_widgets_visibility')
 }
 
 [IO.Directory]::CreateDirectory($localDirectory) | Out-Null
@@ -137,10 +143,11 @@ $draft = [ordered]@{
     DraftCreated = $true
     ApprovalStatus = $draft.approvalStatus
     MutationAllowed = $draft.mutationAllowed
-    Operation = $draft.operation
-    ProposedTarget = $draft.proposedTarget
+    Operation = $draft.approvedOperationScopes[0].operationId
+    ProposedTarget = $draft.approvedOperationScopes[0].allowedTargetStates[0]
     OriginalRepresentation = $draft.originalRepresentation.kind
-    ExecutionLimit = $draft.executionLimit
-    ValidityMinutes = 120
+    MaximumPlans = $draft.maximumPlans
+    MaximumExecutions = $draft.maximumExecutions
+    ValidityMinutes = 30
     IdentityDisplayed = $false
 }

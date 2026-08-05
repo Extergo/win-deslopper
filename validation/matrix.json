@@ -73,6 +73,19 @@
           "mutationStatus": "mutation_not_attempted",
           "liveScenarios": 0,
           "finalDisposition": "reset_before_sale_still_intended"
+        },
+        {
+          "event": "scoped_approval_model_implemented",
+          "date": "2026-08-05",
+          "reason": "legacy_all_operations_approval_could_not_represent_widgets_enabled_only",
+          "allowedScope": "widgets_visibility_enabled_only",
+          "maximumPlans": 1,
+          "maximumExecutions": 1,
+          "currentStatus": "ready_for_approval_review",
+          "approvalStatus": "not_approved",
+          "mutationStatus": "mutation_not_attempted",
+          "liveScenarios": 0,
+          "countsAsLiveHandlerEvidence": false
         }
       ]
     }

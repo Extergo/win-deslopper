@@ -42,9 +42,13 @@ three documented taskbar presentation settings.
    operation boundary.
 10. **Live-validation safety and evidence.** The existing application is the
    guest runner. A fixed local manifest and denylist add scenario, machine,
-   checkpoint, platform, and guest-database gates. A separate ignored generic
+   checkpoint, source, platform, and guest-database gates. A separate ignored
    target approval distinguishes VMs from physical laptops and rejects pending,
-   incomplete, expired, mismatched, or recovery-unready targets. The frontend renders the
+   incomplete, expired, mismatched, or recovery-unready targets. Scoped version
+   2 physical approvals list operation-specific target states and bind handler,
+   inspection/evidence, denylist identity, and plan/execution limits. Broker
+   options are derived from that scope, while plan and execution independently
+   revalidate it. The frontend renders the
    identity banner and sends only closed visual-verification enums. Evidence
    facts come from the journal and export to a fixed ignored location. Optional
    Hyper-V tooling is allowlisted and cannot invoke broker operations.

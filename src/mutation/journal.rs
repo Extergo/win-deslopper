@@ -10,6 +10,12 @@ pub struct MutationJournal {
     database_path: Option<std::path::PathBuf>,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ApprovalUsage {
+    pub plans: u32,
+    pub executions: u32,
+}
+
 impl MutationJournal {
     #[cfg(test)]
     pub fn at(path: std::path::PathBuf) -> Self {
@@ -88,6 +94,45 @@ impl MutationJournal {
         } else {
             Err("The plan is missing or has already been consumed.".into())
         }
+    }
+
+    pub fn approval_usage(&self, approval_class: &str) -> Result<ApprovalUsage, String> {
+        let conn = self.connection()?;
+        let mut plan_statement = conn
+            .prepare("SELECT plan_json FROM mutation_plans")
+            .map_err(|error| error.to_string())?;
+        let plans = plan_statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|error| error.to_string())?;
+        let mut matching_plan_ids = std::collections::HashSet::new();
+        for raw in plans {
+            let plan: MutationPlan = serde_json::from_str(&raw.map_err(|error| error.to_string())?)
+                .map_err(|error| error.to_string())?;
+            if plan.approval_class == approval_class {
+                matching_plan_ids.insert(plan.plan_id);
+            }
+        }
+
+        let mut executions = 0_u32;
+        let mut transaction_statement = conn
+            .prepare("SELECT transaction_json FROM mutation_transactions")
+            .map_err(|error| error.to_string())?;
+        let transactions = transaction_statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|error| error.to_string())?;
+        for raw in transactions {
+            let transaction: MutationTransaction =
+                serde_json::from_str(&raw.map_err(|error| error.to_string())?)
+                    .map_err(|error| error.to_string())?;
+            if matching_plan_ids.contains(&transaction.plan_id) && transaction.approved_at.is_some()
+            {
+                executions = executions.saturating_add(1);
+            }
+        }
+        Ok(ApprovalUsage {
+            plans: matching_plan_ids.len().try_into().unwrap_or(u32::MAX),
+            executions,
+        })
     }
 
     pub fn save_transaction(&self, transaction: &MutationTransaction) -> Result<(), String> {

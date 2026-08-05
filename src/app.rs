@@ -2064,6 +2064,7 @@ pub fn run() -> tauri::Result<()> {
     let live_validation = build_live_validation_gate(
         latest.map(|snapshot| &snapshot.platform),
         latest.map(|snapshot| snapshot.machine_id.as_str()),
+        latest.map(|snapshot| snapshot.id.as_str()),
         &arguments,
     );
     let broker = Arc::new(Broker::new(

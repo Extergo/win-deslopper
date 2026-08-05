@@ -52,6 +52,16 @@ journals each transition, and offers separately approved exact rollback.
 Cross-process locking prevents concurrent app instances. Interrupted operations
 become recovery-required and are never silently replayed.
 
+Physical live validation additionally requires scoped approval schema version
+2. Each approved operation lists its own non-empty target-state set and matching
+handler version; the approval also binds source commit, inspection evidence,
+development-host denylist identity, expiration, and bounded plan/execution
+counts. Broker option filtering is informational defense in depth: plan
+generation, execution, and the immediate pre-write boundary independently
+revalidate the exact operation and target against the unchanged local approval.
+Rollback authority comes only from the durable transaction and captured exact
+pre-state, never from an inferred reverse-direction approval.
+
 SHA-256 records are integrity checks, not signatures against a same-user
 attacker who can rewrite both the database and hashes. The alpha remains
 internal until real disposable-VM coverage and security review are complete.

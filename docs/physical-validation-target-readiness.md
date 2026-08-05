@@ -34,13 +34,35 @@ live scenarios. Task View and Show Desktop are outside this preparation scope.
 
 The preparation reached `ready_for_approval_review` without creating an
 approval or live scenario. A fresh ignored review draft is limited to the fixed
-Widgets visibility handler, one execution, and two hours. Its pre-state records
+Widgets visibility handler, one plan, one execution, and no more than 30
+minutes. Its pre-state records
 an absent `TaskbarDa` value, no configured Widgets policy, a conservative
 detector result of unknown, and the user's confirmation that the Widgets button
 is not visible. The proposed opposite state is enabled; exact rollback is value
 absence. The draft prohibits mutation until a separate approval decision and
 also prohibits automatic repair, elevation, Explorer termination, other
 handlers, and generic registry paths.
+
+## Scoped approval correction
+
+The first execution handoff stopped because the version 1 approval model
+required all three handlers and both directions. Stretching that approval into
+Widgets-to-enabled-only authority would have violated the requested scope, so
+the fail-closed stop was correct and no mutation occurred.
+
+The additive version 2 model now supports a unique, non-empty target set per
+explicit operation. For this preparation the only representable scope is the
+fixed Widgets visibility handler targeting enabled, with maximum one plan,
+maximum one execution, and expiration no later than 30 minutes. Task View, Show
+Desktop, and standalone Widgets-disabled authority are absent. Exact restoration
+to the original absent representation is authorized only by a consumed durable
+transaction, not by adding disabled to the approval.
+
+The version 1 format remains deliberate legacy virtual-machine compatibility;
+physical live validation requires the scoped version 2 schema and exact source
+commit, inspection/evidence, handler, platform, identity, and development-host
+denylist bindings. The Widgets test remains unexecuted, unapproved, and at zero
+live scenarios.
 
 ## Read-only application result
 

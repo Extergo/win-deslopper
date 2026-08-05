@@ -17,7 +17,8 @@ use super::{
     journal::MutationJournal,
     live_validation::{
         EvidenceExportRequest, LiveEvidenceBundle, LiveValidationGateStatus, ValidationMaturity,
-        ValidationScenarioManifest, load_local_manifest, local_validation_directory,
+        ValidationScenarioManifest, load_local_manifest, local_scoped_approval_allows,
+        local_validation_directory,
     },
     plan::{CapturedState, MutationPlan, hash_serializable, hash_text},
     request::{AlphaGateStatus, MutationOperationId, MutationTarget, PlanRequest, RollbackRequest},
@@ -25,6 +26,9 @@ use super::{
     transaction::{MutationStep, MutationTransaction, RollbackRecord, TransactionStatus},
     verification::classify_apply,
 };
+
+#[cfg(test)]
+use super::live_validation::ApprovedOperationScope;
 
 static BROKER_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 static WIDGETS_HANDLER: TaskbarWidgetsHandler = TaskbarWidgetsHandler;
@@ -56,7 +60,7 @@ pub struct OperationDefinition {
     pub subject_id: super::request::MutationSubjectId,
     pub title: &'static str,
     pub description: &'static str,
-    pub supported_targets: [MutationTarget; 2],
+    pub supported_targets: Vec<MutationTarget>,
     pub minimum_build: u32,
     pub supported_editions: &'static [&'static str],
     pub required_authority: &'static str,
@@ -170,29 +174,41 @@ impl Broker {
     pub fn gate_status(&self) -> AlphaGateStatus {
         let debug_build = cfg!(debug_assertions);
         let warning_acknowledged = self.warning_acknowledged.load(Ordering::SeqCst);
+        let mut live_validation = self.live_validation.clone();
+        if !live_validation.scope_is_valid() {
+            live_validation.available = false;
+            live_validation.reason =
+                "The scoped live-validation approval has no valid operation allowance.".into();
+        } else if live_validation
+            .approval_expires_at_epoch_ms
+            .is_none_or(|expiration| expiration <= now_millis() as u64)
+        {
+            live_validation.available = false;
+            live_validation.reason = "The scoped live-validation approval has expired.".into();
+        }
         let available = debug_build
             && self.command_line_opt_in
             && warning_acknowledged
-            && self.live_validation.available;
-        let reason = if !debug_build {
-            "Mutation alpha is unavailable outside debug/internal builds."
+            && live_validation.available;
+        let reason: String = if !debug_build {
+            "Mutation alpha is unavailable outside debug/internal builds.".into()
         } else if !self.command_line_opt_in {
-            "Restart with --enable-mutation-alpha in a disposable Windows test environment."
+            "Restart with --enable-mutation-alpha in a disposable Windows test environment.".into()
         } else if !warning_acknowledged {
-            "Acknowledge the in-application experimental mutation warning."
-        } else if !self.live_validation.available {
-            self.live_validation.reason.as_str()
+            "Acknowledge the in-application experimental mutation warning.".into()
+        } else if !live_validation.available {
+            live_validation.reason.clone()
         } else {
-            "All internal mutation-alpha gates are present."
+            "All internal mutation-alpha gates are present.".into()
         };
         AlphaGateStatus {
             compiled: true,
             debug_build,
             command_line_opt_in: self.command_line_opt_in,
             warning_acknowledged,
-            live_validation: self.live_validation.clone(),
+            live_validation,
             available,
-            reason: reason.into(),
+            reason,
         }
     }
 
@@ -203,10 +219,22 @@ impl Broker {
     }
 
     pub fn operation_options(&self, context: &BrokerContext) -> Vec<OperationOption> {
-        MutationOperationId::ALL
-            .into_iter()
+        if !self.live_validation.available
+            || !self.live_validation.scope_is_valid()
+            || self
+                .live_validation
+                .approval_expires_at_epoch_ms
+                .is_none_or(|expiration| expiration <= now_millis() as u64)
+        {
+            return Vec::new();
+        }
+        self.live_validation
+            .approved_operation_scopes
+            .iter()
+            .map(|scope| scope.operation_id)
             .map(|operation_id| {
-                let definition = operation_definition(operation_id);
+                let mut definition = operation_definition(operation_id);
+                definition.supported_targets = self.live_validation.allowed_targets(operation_id);
                 let maturity = self.maturity(operation_id);
                 let eligibility = validate_context(context, &definition);
                 let state = handler(operation_id).inspect_pre_state(self.backend.as_ref());
@@ -251,6 +279,20 @@ impl Broker {
         context: &BrokerContext,
     ) -> Result<IssuedPlan, BrokerError> {
         self.require_gate()?;
+        self.require_authorized(request.operation_id, request.target)?;
+        let approval_class = self.approval_class()?;
+        let _cross_process = MutationProcessLock::acquire(self.journal.lock_path())
+            .map_err(|message| BrokerError::new("cross_process_lock_unavailable", message))?;
+        let usage = self
+            .journal
+            .approval_usage(&approval_class)
+            .map_err(journal_error)?;
+        if usage.plans >= self.live_validation.maximum_plans {
+            return Err(BrokerError::new(
+                "approval_plan_limit_exhausted",
+                "The scoped approval has no remaining plan allowance.",
+            ));
+        }
         if request.source_inspection_id != context.inspection_id {
             return Err(BrokerError::new(
                 "stale_inspection",
@@ -303,7 +345,7 @@ impl Broker {
             evidence_fingerprint: context.evidence_fingerprint.clone(),
             generated_at: now.to_string(),
             expires_at: (now + 300_000).to_string(),
-            approval_class: "explicit_single_operation".into(),
+            approval_class,
             rollback_method: definition.rollback_method.into(),
             documentation: definition
                 .documentation
@@ -394,6 +436,25 @@ impl Broker {
             ));
         }
 
+        self.require_authorized(plan.operation_id, plan.target_state)?;
+        let approval_class = self.approval_class()?;
+        if plan.approval_class != approval_class {
+            return Err(BrokerError::new(
+                "approval_binding_mismatch",
+                "The plan is not bound to the active scoped approval.",
+            ));
+        }
+        let usage = self
+            .journal
+            .approval_usage(&approval_class)
+            .map_err(journal_error)?;
+        if usage.executions >= self.live_validation.maximum_executions {
+            return Err(BrokerError::new(
+                "approval_execution_limit_exhausted",
+                "The scoped approval has no remaining execution allowance.",
+            ));
+        }
+
         let mut transaction = self
             .journal
             .load_transaction(&format!("transaction-{}", plan.plan_id))
@@ -476,6 +537,8 @@ impl Broker {
             .map_err(journal_error)?;
 
         if pre_state.effective_enabled != plan.target_state.enabled() {
+            self.require_gate()?;
+            self.require_authorized(plan.operation_id, plan.target_state)?;
             self.fault(FaultPoint::BeforeWrite)?;
             transition(
                 &self.journal,
@@ -541,7 +604,7 @@ impl Broker {
         request: &RollbackRequest,
         context: &BrokerContext,
     ) -> Result<MutationTransaction, BrokerError> {
-        self.require_gate()?;
+        self.require_rollback_gate()?;
         if !request.acknowledged {
             return Err(BrokerError::new(
                 "rollback_approval_required",
@@ -984,6 +1047,51 @@ impl Broker {
         }
     }
 
+    fn require_rollback_gate(&self) -> Result<(), BrokerError> {
+        if cfg!(debug_assertions)
+            && self.command_line_opt_in
+            && self.live_validation.rollback_environment_available
+        {
+            Ok(())
+        } else {
+            Err(BrokerError::new(
+                "rollback_environment_disabled",
+                "The transaction-bound rollback environment is unavailable.",
+            ))
+        }
+    }
+
+    fn approval_class(&self) -> Result<String, BrokerError> {
+        self.live_validation
+            .approval_id
+            .as_ref()
+            .filter(|value| !value.trim().is_empty())
+            .map(|value| format!("scoped:{value}"))
+            .ok_or_else(|| {
+                BrokerError::new(
+                    "approval_scope_missing",
+                    "No validated scoped approval identity is available.",
+                )
+            })
+    }
+
+    fn require_authorized(
+        &self,
+        operation_id: MutationOperationId,
+        target: MutationTarget,
+    ) -> Result<(), BrokerError> {
+        if self.live_validation.allows(operation_id, target)
+            && local_scoped_approval_allows(&self.live_validation, operation_id, target)
+        {
+            Ok(())
+        } else {
+            Err(BrokerError::new(
+                "operation_target_not_approved",
+                "The requested operation and target are not explicitly authorized by the scoped approval.",
+            ))
+        }
+    }
+
     fn fault(&self, point: FaultPoint) -> Result<(), BrokerError> {
         let active = self
             .fault_point
@@ -1018,7 +1126,7 @@ fn operation_definition(operation_id: MutationOperationId) -> OperationDefinitio
             subject_id: operation_id.subject(),
             title: "Widgets button visibility",
             description: "Show or hide only the current user's Widgets taskbar button.",
-            supported_targets: [MutationTarget::Enabled, MutationTarget::Disabled],
+            supported_targets: vec![MutationTarget::Enabled, MutationTarget::Disabled],
             minimum_build: 22_000,
             supported_editions: ALL_EDITIONS,
             required_authority: "user",
@@ -1036,7 +1144,7 @@ fn operation_definition(operation_id: MutationOperationId) -> OperationDefinitio
             subject_id: operation_id.subject(),
             title: "Task View button visibility",
             description: "Show or hide only the current user's Task View taskbar button.",
-            supported_targets: [MutationTarget::Enabled, MutationTarget::Disabled],
+            supported_targets: vec![MutationTarget::Enabled, MutationTarget::Disabled],
             minimum_build: 22_000,
             supported_editions: ALL_EDITIONS,
             required_authority: "user",
@@ -1054,7 +1162,7 @@ fn operation_definition(operation_id: MutationOperationId) -> OperationDefinitio
             subject_id: operation_id.subject(),
             title: "Show Desktop corner",
             description: "Enable or disable the current user's far-corner Show Desktop target.",
-            supported_targets: [MutationTarget::Enabled, MutationTarget::Disabled],
+            supported_targets: vec![MutationTarget::Enabled, MutationTarget::Disabled],
             minimum_build: 22_000,
             supported_editions: ALL_EDITIONS,
             required_authority: "user",
@@ -1514,6 +1622,33 @@ mod tests {
         (broker, backend, path)
     }
 
+    fn scoped_broker(
+        label: &str,
+        maximum_plans: u32,
+        maximum_executions: u32,
+    ) -> (Broker, Arc<FakeBackend>, std::path::PathBuf) {
+        let backend = Arc::new(FakeBackend::ready());
+        *backend.widgets.lock().unwrap() = Some(CapturedRepresentation::Missing);
+        let path = temp_database(label);
+        let mut gate = LiveValidationGateStatus::test_valid();
+        gate.approval_id = Some(format!("{label}-approval"));
+        gate.approved_operation_scopes = vec![ApprovedOperationScope {
+            operation_id: MutationOperationId::WidgetsVisibility,
+            allowed_target_states: vec![MutationTarget::Enabled],
+            handler_version: HANDLER_VERSION.into(),
+        }];
+        gate.maximum_plans = maximum_plans;
+        gate.maximum_executions = maximum_executions;
+        let broker = Broker::with_journal(
+            backend.clone(),
+            true,
+            gate,
+            MutationJournal::at(path.clone()),
+        );
+        broker.acknowledge_warning(true);
+        (broker, backend, path)
+    }
+
     fn issue(
         broker: &Broker,
         operation_id: MutationOperationId,
@@ -1558,6 +1693,171 @@ mod tests {
         assert_eq!(MutationOperationId::ALL.len(), 3);
         let (broker, _, path) = ready_broker("registry");
         assert_eq!(broker.operation_options(&context()).len(), 3);
+        cleanup(&path);
+    }
+
+    #[test]
+    fn scoped_approval_exposes_widgets_enabled_only_and_rejects_every_other_direction() {
+        let (mut broker, backend, path) = scoped_broker("scoped-options", 1, 1);
+        let context = context();
+        let options = broker.operation_options(&context);
+        assert_eq!(options.len(), 1);
+        assert_eq!(
+            options[0].definition.operation_id,
+            MutationOperationId::WidgetsVisibility
+        );
+        assert_eq!(
+            options[0].definition.supported_targets,
+            vec![MutationTarget::Enabled]
+        );
+
+        for (operation_id, target) in [
+            (
+                MutationOperationId::WidgetsVisibility,
+                MutationTarget::Disabled,
+            ),
+            (
+                MutationOperationId::TaskViewVisibility,
+                MutationTarget::Enabled,
+            ),
+            (
+                MutationOperationId::TaskViewVisibility,
+                MutationTarget::Disabled,
+            ),
+            (
+                MutationOperationId::ShowDesktopEnabled,
+                MutationTarget::Enabled,
+            ),
+            (
+                MutationOperationId::ShowDesktopEnabled,
+                MutationTarget::Disabled,
+            ),
+        ] {
+            let error = broker
+                .generate_plan(
+                    &PlanRequest {
+                        operation_id,
+                        target,
+                        source_inspection_id: context.inspection_id.clone(),
+                    },
+                    &context,
+                )
+                .unwrap_err();
+            assert_eq!(error.code, "operation_target_not_approved");
+        }
+
+        let issued = issue(
+            &broker,
+            MutationOperationId::WidgetsVisibility,
+            MutationTarget::Enabled,
+            &context,
+        );
+        let second = broker
+            .generate_plan(
+                &PlanRequest {
+                    operation_id: MutationOperationId::WidgetsVisibility,
+                    target: MutationTarget::Enabled,
+                    source_inspection_id: context.inspection_id.clone(),
+                },
+                &context,
+            )
+            .unwrap_err();
+        assert_eq!(second.code, "approval_plan_limit_exhausted");
+
+        let request = ApprovalRequest {
+            plan_id: issued.plan.plan_id.clone(),
+            approval_nonce: issued.approval_nonce.clone(),
+            acknowledged: true,
+        };
+        let transaction = broker.execute(&request, &context).unwrap();
+        let transaction = broker
+            .complete_effective_verification(transaction, &context)
+            .unwrap();
+        assert_eq!(transaction.status, TransactionStatus::RollbackAvailable);
+        let replay = broker.execute(&request, &context).unwrap_err();
+        assert_eq!(replay.code, "consumed_plan");
+
+        broker.live_validation.approval_expires_at_epoch_ms = Some(0);
+        assert!(!broker.gate_status().available);
+        let rolled_back = broker
+            .rollback(
+                &RollbackRequest {
+                    transaction_id: transaction.transaction_id,
+                    acknowledged: true,
+                    allow_conflict: false,
+                },
+                &context,
+            )
+            .unwrap();
+        assert_eq!(rolled_back.status, TransactionStatus::RolledBack);
+        assert_eq!(
+            FakeBackend::read(&backend.widgets).unwrap(),
+            CapturedRepresentation::Missing
+        );
+        cleanup(&path);
+    }
+
+    #[test]
+    fn empty_approval_scope_exposes_nothing_and_fails_the_gate() {
+        let (mut broker, _, path) = scoped_broker("scoped-empty", 1, 1);
+        broker.live_validation.approved_operation_scopes.clear();
+        assert!(broker.operation_options(&context()).is_empty());
+        assert!(!broker.gate_status().available);
+        assert_eq!(
+            broker
+                .generate_plan(
+                    &PlanRequest {
+                        operation_id: MutationOperationId::WidgetsVisibility,
+                        target: MutationTarget::Enabled,
+                        source_inspection_id: context().inspection_id,
+                    },
+                    &context(),
+                )
+                .unwrap_err()
+                .code,
+            "mutation_alpha_disabled"
+        );
+        cleanup(&path);
+    }
+
+    #[test]
+    fn scoped_execution_allowance_is_consumed_once_even_with_two_plans() {
+        let (broker, _, path) = scoped_broker("scoped-executions", 2, 1);
+        let context = context();
+        let first = issue(
+            &broker,
+            MutationOperationId::WidgetsVisibility,
+            MutationTarget::Enabled,
+            &context,
+        );
+        let second = issue(
+            &broker,
+            MutationOperationId::WidgetsVisibility,
+            MutationTarget::Enabled,
+            &context,
+        );
+        let transaction = broker
+            .execute(
+                &ApprovalRequest {
+                    plan_id: first.plan.plan_id,
+                    approval_nonce: first.approval_nonce,
+                    acknowledged: true,
+                },
+                &context,
+            )
+            .unwrap();
+        assert_eq!(transaction.status, TransactionStatus::Applied);
+        let error = broker
+            .execute(
+                &ApprovalRequest {
+                    plan_id: second.plan.plan_id,
+                    approval_nonce: second.approval_nonce,
+                    acknowledged: true,
+                },
+                &context,
+            )
+            .unwrap_err();
+        assert_eq!(error.code, "approval_execution_limit_exhausted");
         cleanup(&path);
     }
 

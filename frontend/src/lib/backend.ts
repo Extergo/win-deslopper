@@ -268,6 +268,12 @@ export type MutationOperationId =
   | 'set_taskbar_show_desktop_enabled';
 export type MutationTarget = 'enabled' | 'disabled';
 
+export interface ApprovedMutationOperationScope {
+  operationId: MutationOperationId;
+  allowedTargetStates: MutationTarget[];
+  handlerVersion: string;
+}
+
 export interface MutationAlphaStatus {
   compiled: boolean;
   debugBuild: boolean;
@@ -285,6 +291,16 @@ export interface MutationAlphaStatus {
     targetTypeMatches: boolean;
     databaseBelongsToGuest: boolean;
     developmentHostRefused: boolean;
+    approvalId: string | null;
+    approvalSourceCommit: string | null;
+    approvalSourceInspectionId: string | null;
+    approvalEvidenceSha256: string | null;
+    approvedOperationScopes: ApprovedMutationOperationScope[];
+    maximumPlans: number;
+    maximumExecutions: number;
+    approvalExpiresAtEpochMs: number | null;
+    rollbackEnvironmentAvailable: boolean;
+    localApprovalRevalidationRequired: boolean;
     available: boolean;
     reason: string;
     environment: {

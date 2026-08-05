@@ -15,6 +15,34 @@ host denylist. The internal UI always shows computer name, machine-ID prefix,
 platform, informational VM detection, and scenario. All three operations remain
 “Internal alpha - not live validated.”
 
+## Scoped live approvals (version 2)
+
+Physical live validation requires the additive version 2 approval format. It
+binds a non-empty list of explicit operation scopes, with target states listed
+per operation, plus handler version, machine/platform, source commit,
+inspection/evidence, denylist identity, expiry, maximum plans, and maximum
+executions. Compiled handlers are never implicitly approved, and omitted scope
+never means all operations.
+
+Broker options are derived from the validated scope, but filtering is not the
+security boundary. Plan generation, execution, and the final pre-write check
+independently require the exact operation/target pair. For version 2 physical
+validation the broker re-reads the ignored local approval and requires the
+startup approval ID, bindings, scope, and limits to remain identical and
+unexpired. Journal usage is counted per approval ID, preventing unlimited
+retries beyond its plan and execution allowances.
+
+Rollback authority is transaction-bound rather than granted by a target state.
+An approved Widgets-to-enabled transaction may restore its captured absent
+pre-state after approval expiry, while a standalone Widgets-to-disabled plan
+remains unauthorized. Recovery retains the existing guest, scenario, source,
+platform, database, policy, and denylist checks.
+
+Version 1 remains a deliberate legacy virtual-machine path. It is never
+silently promoted into unrestricted physical-target authority. All three
+handlers remain not live validated, and zero live mutation scenarios are
+complete.
+
 ## Closed registry
 
 Exactly three current-user, unelevated operations exist:

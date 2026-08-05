@@ -45,6 +45,29 @@ recovery/user confirmations, a target/build/identity mismatch, or a target
 identity equal to the development-host denylist. The legacy approved-VM schema
 remains supported by Hyper-V host tooling.
 
+## Scoped approval formats
+
+The generic version 1 target schema remains readable only through the
+deliberate legacy virtual-machine path. Physical live validation requires
+`validation/approved-validation-targets-v2.schema.json`. Version 2 has explicit
+operation-specific target states, matching handler versions, source
+commit/inspection/evidence binding, denylist binding, expiration, and positive
+bounded plan/execution limits. A missing scope never authorizes compiled
+handlers.
+
+`tools/New-DeslopperLiveScenarioManifest.ps1` therefore requires at least one
+explicit `-OperationScope`, such as
+`set_taskbar_widgets_visibility=enabled`, and emits the additional
+`--expected-source-commit=<commit>` launch binding. Unknown, empty, or duplicate
+operations and states fail closed.
+
+The first physical execution handoff stopped correctly because version 1 could
+not express the explicit Widgets-to-enabled-only boundary. Version 2 corrects
+that source limitation without approving or executing the test. The intended
+review draft is one Widgets scope, enabled only, at most one plan and one
+execution, and no more than 30 minutes of review lifetime. Zero live scenarios
+remain completed.
+
 ## Guest preparation
 
 The exact developer handoff, schema-version-two approval template, checkpoint

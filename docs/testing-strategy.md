@@ -69,7 +69,7 @@ works live.
 The separate Widgets approval-review draft schema is non-authorizing. It fixes
 the scope to one Widgets visibility handler, requires the opposite of the
 user-confirmed visible state, preserves the exact original representation for
-rollback, expires within two hours, and requires mutation, elevation, Explorer
+rollback, expires within 30 minutes, and requires mutation, elevation, Explorer
 termination, automatic repair, and generic registry paths to remain disabled.
 
 Preparation-schema coverage requires structured states for all nine user-only
@@ -78,6 +78,19 @@ toolchain state, missing development-host protection, and the invariant that
 mutation remains prohibited. Identity-export and denylist-validator parser
 self-tests prove hash-only output plus empty, malformed, and target-equal
 rejection without displaying an identity.
+
+Scoped version 2 tests accept Widgets-to-enabled only and reject empty or
+duplicate scopes/states, unknown operations/states/fields, wrong handler/source/
+inspection/evidence bindings, expiration, and exhausted plan or execution
+allowances. Broker tests prove that options contain only the approved operation
+and direction, direct calls reject every unapproved operation/direction pair,
+one-use plans and nonces cannot replay, and exact rollback derives only from the
+durable transaction. All apply/rollback coverage is synthetic; no test command
+uses live runtime flags.
+
+The non-authorizing review draft now expires within 30 minutes and carries one
+Widgets-enabled scope plus one-plan/one-execution limits. It creates no plan,
+transaction, nonce, approval, or live manifest.
 
 `tools/scan-mutation-boundary.ps1` rejects generic registry/process surfaces and
 prohibited Windows operations. Live apply/rollback testing follows

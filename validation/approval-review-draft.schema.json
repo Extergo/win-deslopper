@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Deslopper local Widgets approval-review draft",
+  "title": "Deslopper local scoped approval-review draft",
   "type": "object",
   "required": [
     "schemaVersion",
@@ -15,27 +15,27 @@
     "windowsBuild",
     "windowsUbr",
     "sourceCheckpointCommit",
-    "handlerVersion",
     "inspectionId",
     "inspectionEvidenceSha256",
     "developmentHostDenylistIdentity",
-    "operation",
+    "approvedOperationScopes",
+    "maximumPlans",
+    "maximumExecutions",
     "originalRepresentation",
     "detectorState",
     "userObservedState",
-    "proposedTarget",
     "rollbackRepresentation",
-    "executionLimit",
+    "rollbackAuthority",
     "createdAtUtc",
     "expiresAtEpochMs",
     "automaticRepair",
     "elevation",
     "explorerTermination",
-    "genericRegistryPath",
-    "allowedHandlers"
+    "restart",
+    "genericRegistryPath"
   ],
   "properties": {
-    "schemaVersion": { "const": 1 },
+    "schemaVersion": { "const": 2 },
     "recordKind": { "const": "approval_review_draft" },
     "approvalStatus": { "const": "ready_for_approval_review" },
     "mutationAllowed": { "const": false },
@@ -47,11 +47,18 @@
     "windowsBuild": { "type": "integer", "minimum": 22000 },
     "windowsUbr": { "type": "integer", "minimum": 0 },
     "sourceCheckpointCommit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
-    "handlerVersion": { "type": "string", "minLength": 1 },
     "inspectionId": { "type": "string", "pattern": "^inspection-[a-zA-Z0-9-]+$" },
     "inspectionEvidenceSha256": { "$ref": "#/$defs/hash" },
     "developmentHostDenylistIdentity": { "$ref": "#/$defs/hash" },
-    "operation": { "const": "set_taskbar_widgets_visibility" },
+    "approvedOperationScopes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": { "$ref": "approved-validation-targets-v2.schema.json#/$defs/operationScope" }
+    },
+    "maximumPlans": { "type": "integer", "minimum": 1, "maximum": 32 },
+    "maximumExecutions": { "type": "integer", "minimum": 1, "maximum": 32 },
     "originalRepresentation": { "$ref": "#/$defs/representation" },
     "detectorState": {
       "type": "object",
@@ -72,22 +79,15 @@
       "additionalProperties": false
     },
     "userObservedState": { "enum": ["visible", "not_visible"] },
-    "proposedTarget": { "enum": ["enabled", "disabled"] },
     "rollbackRepresentation": { "$ref": "#/$defs/representation" },
-    "executionLimit": { "const": 1 },
+    "rollbackAuthority": { "const": "transaction_bound_exact_pre_state" },
     "createdAtUtc": { "type": "string", "format": "date-time" },
     "expiresAtEpochMs": { "type": "integer", "minimum": 1 },
     "automaticRepair": { "const": false },
     "elevation": { "const": false },
     "explorerTermination": { "const": false },
-    "genericRegistryPath": { "const": false },
-    "allowedHandlers": {
-      "type": "array",
-      "prefixItems": [{ "const": "set_taskbar_widgets_visibility" }],
-      "items": false,
-      "minItems": 1,
-      "maxItems": 1
-    }
+    "restart": { "const": false },
+    "genericRegistryPath": { "const": false }
   },
   "$defs": {
     "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },

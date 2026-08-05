@@ -107,3 +107,12 @@ Each decision below is accepted for the current architecture. Replacements must 
 - **Decision:** Preserve the retirement event and add a chronological reactivation event limited to Widgets preparation. Keep approval `not_approved`, mutation `mutation_not_attempted`, and live scenarios at zero. Reactivation alone never authorizes a plan, transaction, or write.
 - **Consequences:** Recovery, identity separation, a fresh read-only inspection, exact pre-state capture, and a new local approval-review draft must all pass before a separate approval decision. Task View and Show Desktop remain out of scope.
 - **Rejected:** Rewriting retirement history, reusing an old approval, treating reactivation as approval, or granting any live-handler maturity before an independently approved apply-and-rollback session.
+
+## D-013 - Scope physical live approval to operation and target direction
+
+- **Status:** Accepted for internal validation
+- **Date:** 2026-08-05
+- **Context:** The first bounded execution handoff correctly stopped because version 1 required all three operations and both directions, while the user authorized preparation only for Widgets-to-enabled.
+- **Decision:** Add explicit schema version 2 operation scopes with per-operation target states, handler/source/inspection/evidence/identity/denylist bindings, expiration, and bounded plan/execution counts. Require version 2 for physical live validation, filter broker options from validated scope, and independently revalidate the exact pair during plan generation, execution, and immediately before a write.
+- **Consequences:** One Widgets-enabled plan and execution can be represented without authorizing Widgets-disabled, Task View, or Show Desktop. Exact rollback derives from the consumed durable transaction and captured pre-state, so it does not grant reusable reverse-direction authority. Version 1 remains a deliberate legacy VM path. The current physical test remains unexecuted, unapproved, and at zero live scenarios.
+- **Rejected:** Treating compiled handlers as approved, global target-state inheritance, default-all scope, UI filtering as the security boundary, unlimited retries, requiring reverse-direction approval for transaction rollback, and silently promoting version 1 physical approval.

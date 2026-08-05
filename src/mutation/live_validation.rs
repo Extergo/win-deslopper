@@ -20,6 +20,7 @@ pub const LIVE_VALIDATION_FLAG: &str = "--enable-live-validation";
 pub const SCENARIO_ARGUMENT: &str = "--validation-scenario=";
 pub const EXPECTED_MACHINE_ARGUMENT: &str = "--expected-machine-id=";
 pub const EXPECTED_CHECKPOINT_ARGUMENT: &str = "--expected-checkpoint-id=";
+pub const EXPECTED_SOURCE_COMMIT_ARGUMENT: &str = "--expected-source-commit=";
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -206,9 +207,41 @@ pub struct LiveValidationGateStatus {
     pub target_type_matches: bool,
     pub database_belongs_to_guest: bool,
     pub development_host_refused: bool,
+    pub approval_id: Option<String>,
+    pub approval_source_commit: Option<String>,
+    pub approval_source_inspection_id: Option<String>,
+    pub approval_evidence_sha256: Option<String>,
+    pub approved_operation_scopes: Vec<ApprovedOperationScope>,
+    pub maximum_plans: u32,
+    pub maximum_executions: u32,
+    pub approval_expires_at_epoch_ms: Option<u64>,
+    pub rollback_environment_available: bool,
+    pub local_approval_revalidation_required: bool,
     pub available: bool,
     pub reason: String,
     pub environment: EnvironmentIdentity,
+}
+
+impl LiveValidationGateStatus {
+    pub fn scope_is_valid(&self) -> bool {
+        valid_operation_scopes(&self.approved_operation_scopes)
+            && (1..=32).contains(&self.maximum_plans)
+            && (1..=32).contains(&self.maximum_executions)
+            && self.maximum_executions <= self.maximum_plans
+    }
+
+    pub fn allows(&self, operation_id: MutationOperationId, target: MutationTarget) -> bool {
+        self.approved_operation_scopes.iter().any(|scope| {
+            scope.operation_id == operation_id && scope.allowed_target_states.contains(&target)
+        })
+    }
+
+    pub fn allowed_targets(&self, operation_id: MutationOperationId) -> Vec<MutationTarget> {
+        self.approved_operation_scopes
+            .iter()
+            .find(|scope| scope.operation_id == operation_id)
+            .map_or_else(Vec::new, |scope| scope.allowed_target_states.clone())
+    }
 }
 
 #[cfg(test)]
@@ -226,6 +259,23 @@ impl LiveValidationGateStatus {
             target_type_matches: true,
             database_belongs_to_guest: true,
             development_host_refused: false,
+            approval_id: Some("synthetic-test-approval".into()),
+            approval_source_commit: Some("a".repeat(40)),
+            approval_source_inspection_id: Some("inspection-1".into()),
+            approval_evidence_sha256: Some("b".repeat(64)),
+            approved_operation_scopes: MutationOperationId::ALL
+                .into_iter()
+                .map(|operation_id| ApprovedOperationScope {
+                    operation_id,
+                    allowed_target_states: vec![MutationTarget::Enabled, MutationTarget::Disabled],
+                    handler_version: super::HANDLER_VERSION.into(),
+                })
+                .collect(),
+            maximum_plans: 32,
+            maximum_executions: 32,
+            approval_expires_at_epoch_ms: Some(u64::MAX),
+            rollback_environment_available: true,
+            local_approval_revalidation_required: false,
             available: true,
             reason: "All test identity gates are satisfied.".into(),
             environment: EnvironmentIdentity {
@@ -255,6 +305,20 @@ pub struct ValidationScenarioManifest {
     pub checkpoint_id: String,
     pub account_class: String,
     pub management_context: String,
+    #[serde(default)]
+    pub approval_id: Option<String>,
+    #[serde(default)]
+    pub source_commit: Option<String>,
+    #[serde(default)]
+    pub source_inspection_id: Option<String>,
+    #[serde(default)]
+    pub inspection_evidence_sha256: Option<String>,
+    #[serde(default)]
+    pub approved_operation_scopes: Vec<ApprovedOperationScope>,
+    #[serde(default)]
+    pub maximum_plans: Option<u32>,
+    #[serde(default)]
+    pub maximum_executions: Option<u32>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -324,6 +388,14 @@ pub struct TargetManagementState {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ApprovedOperationScope {
+    pub operation_id: MutationOperationId,
+    pub allowed_target_states: Vec<MutationTarget>,
+    pub handler_version: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ValidationTargetApproval {
     pub schema_version: u32,
     pub record_kind: TargetRecordKind,
@@ -359,6 +431,73 @@ pub struct ValidationTargetApproval {
     pub expendable_confirmed: Option<bool>,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ScopedValidationTargetApproval {
+    pub schema_version: u32,
+    pub record_kind: TargetRecordKind,
+    pub approval_id: String,
+    pub scenario_id: String,
+    pub target_type: ValidationTargetType,
+    pub hashed_machine_identity: String,
+    pub windows_edition: String,
+    pub windows_build: u32,
+    pub windows_ubr: u32,
+    pub account_class: String,
+    pub management_state: TargetManagementState,
+    pub source_checkpoint_commit: String,
+    pub source_inspection_id: String,
+    pub inspection_evidence_sha256: String,
+    pub development_host_denylist_identity: String,
+    pub approved_operation_scopes: Vec<ApprovedOperationScope>,
+    pub maximum_plans: u32,
+    pub maximum_executions: u32,
+    pub evidence_output_location: String,
+    pub recovery_readiness: RecoveryReadiness,
+    pub important_data_confirmed: bool,
+    pub backup_confirmed: bool,
+    pub reinstallation_accepted: bool,
+    pub winre_verified: bool,
+    pub bitlocker_recovery_state: BitLockerRecoveryState,
+    pub recovery_media_state: RecoveryMediaState,
+    pub development_host_protection_state: DevelopmentHostProtectionState,
+    pub explicit_user_approval_timestamp: Option<String>,
+    pub approval_status: TargetApprovalStatus,
+    pub expires_at_epoch_ms: Option<u64>,
+    pub restore_or_reimage_procedure: String,
+    pub validation_maturity: String,
+    #[serde(default)]
+    pub disposable_confirmed: Option<bool>,
+    #[serde(default)]
+    pub expendable_confirmed: Option<bool>,
+}
+
+#[derive(Clone, Debug)]
+enum ValidationTargetApprovalDocument {
+    Legacy(ValidationTargetApproval),
+    Scoped(ScopedValidationTargetApproval),
+}
+
+#[derive(Clone, Debug)]
+struct NormalizedTargetApproval {
+    approval_id: String,
+    scenario_id: String,
+    target_type: ValidationTargetType,
+    hashed_machine_identity: String,
+    windows_edition: String,
+    windows_build: u32,
+    windows_ubr: u32,
+    management_state: TargetManagementState,
+    source_checkpoint_commit: String,
+    source_inspection_id: Option<String>,
+    inspection_evidence_sha256: Option<String>,
+    development_host_denylist_identity: Option<String>,
+    approved_operation_scopes: Vec<ApprovedOperationScope>,
+    maximum_plans: u32,
+    maximum_executions: u32,
+    expires_at_epoch_ms: u64,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct DevelopmentHostDenylist {
@@ -377,21 +516,81 @@ pub fn load_local_manifest() -> Option<ValidationScenarioManifest> {
     read_json(&local_validation_directory().join("live-validation-scenario.json"))
 }
 
+/// Re-read the authorizing V2 approval from disk immediately before a scoped
+/// operation is accepted. Test-only gate values may opt out because they do not
+/// have a local approval document.
+pub fn local_scoped_approval_allows(
+    status: &LiveValidationGateStatus,
+    operation_id: MutationOperationId,
+    target: MutationTarget,
+) -> bool {
+    if !status.local_approval_revalidation_required {
+        return status.allows(operation_id, target);
+    }
+
+    scoped_approval_document_allows(
+        status,
+        operation_id,
+        target,
+        &local_validation_directory().join("approved-validation-target.json"),
+        current_epoch_ms(),
+    )
+}
+
+fn scoped_approval_document_allows(
+    status: &LiveValidationGateStatus,
+    operation_id: MutationOperationId,
+    target: MutationTarget,
+    path: &std::path::Path,
+    now_epoch_ms: u64,
+) -> bool {
+    let document = read_target_approval(path);
+    let Some(ValidationTargetApprovalDocument::Scoped(_)) = document.as_ref() else {
+        return false;
+    };
+    let Some(approval) = document
+        .as_ref()
+        .and_then(|value| normalize_target_approval(value, now_epoch_ms))
+    else {
+        return false;
+    };
+
+    status.approval_id.as_deref() == Some(approval.approval_id.as_str())
+        && status.approval_source_commit.as_deref()
+            == Some(approval.source_checkpoint_commit.as_str())
+        && status.approval_source_inspection_id.as_deref()
+            == approval.source_inspection_id.as_deref()
+        && status.approval_evidence_sha256.as_deref()
+            == approval.inspection_evidence_sha256.as_deref()
+        && status.approved_operation_scopes == approval.approved_operation_scopes
+        && status.maximum_plans == approval.maximum_plans
+        && status.maximum_executions == approval.maximum_executions
+        && approval.approved_operation_scopes.iter().any(|scope| {
+            scope.operation_id == operation_id && scope.allowed_target_states.contains(&target)
+        })
+}
+
 pub fn build_live_validation_gate(
     platform: Option<&PlatformInfo>,
     stored_machine_id: Option<&str>,
+    latest_inspection_id: Option<&str>,
     arguments: &[String],
 ) -> LiveValidationGateStatus {
     let computer_name = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "unknown".into());
     let scenario_argument = argument_value(arguments, SCENARIO_ARGUMENT);
     let expected_machine_argument = argument_value(arguments, EXPECTED_MACHINE_ARGUMENT);
     let expected_checkpoint_argument = argument_value(arguments, EXPECTED_CHECKPOINT_ARGUMENT);
+    let expected_source_commit_argument =
+        argument_value(arguments, EXPECTED_SOURCE_COMMIT_ARGUMENT);
     let command_line_opt_in = arguments.iter().any(|value| value == LIVE_VALIDATION_FLAG);
     let directory = local_validation_directory();
     let manifest =
         read_json::<ValidationScenarioManifest>(&directory.join("live-validation-scenario.json"));
-    let target_approval =
-        read_json::<ValidationTargetApproval>(&directory.join("approved-validation-target.json"));
+    let target_approval_document =
+        read_target_approval(&directory.join("approved-validation-target.json"));
+    let target_approval = target_approval_document
+        .as_ref()
+        .and_then(|value| normalize_target_approval(value, current_epoch_ms()));
     let denylist =
         read_json::<DevelopmentHostDenylist>(&directory.join("development-host-denylist.json"));
 
@@ -420,24 +619,66 @@ pub fn build_live_validation_gate(
     });
     let manifest_loaded = manifest
         .as_ref()
-        .is_some_and(|value| value.schema_version == 1);
-    let target_approval_loaded = target_approval
-        .as_ref()
-        .is_some_and(|value| target_approval_is_complete(value, current_epoch_ms()));
+        .is_some_and(|value| matches!(value.schema_version, 1 | 2));
+    let target_approval_loaded = target_approval.is_some();
     let denylist_loaded = denylist
         .as_ref()
         .is_some_and(valid_development_host_denylist);
     let scenario_matches = manifest
         .as_ref()
         .is_some_and(|value| Some(value.scenario_id.as_str()) == scenario_argument.as_deref());
-    let machine_identity_matches = manifest.as_ref().is_some_and(|value| {
+    let scenario_machine_identity_matches = manifest.as_ref().is_some_and(|value| {
         Some(value.expected_machine_id.as_str()) == expected_machine_argument.as_deref()
             && value.expected_machine_id == fingerprint
-    }) && target_approval
-        .as_ref()
-        .is_some_and(|value| value.hashed_machine_identity == fingerprint);
+    });
+    let machine_identity_matches = scenario_machine_identity_matches
+        && target_approval
+            .as_ref()
+            .is_some_and(|value| value.hashed_machine_identity == fingerprint);
     let checkpoint_matches = manifest.as_ref().is_some_and(|value| {
         Some(value.checkpoint_id.as_str()) == expected_checkpoint_argument.as_deref()
+    });
+    let source_binding_matches = manifest.as_ref().is_some_and(|value| {
+        if value.schema_version == 1 {
+            target_approval_document.as_ref().is_some_and(|approval| {
+                matches!(approval, ValidationTargetApprovalDocument::Legacy(_))
+            })
+        } else {
+            target_approval.as_ref().is_some_and(|approval| {
+                value.approval_id.as_deref() == Some(approval.approval_id.as_str())
+                    && value.source_commit.as_deref()
+                        == Some(approval.source_checkpoint_commit.as_str())
+                    && value.source_commit.as_deref() == expected_source_commit_argument.as_deref()
+                    && value.source_inspection_id.as_deref()
+                        == approval.source_inspection_id.as_deref()
+                    && value.source_inspection_id.as_deref() == latest_inspection_id
+                    && value.inspection_evidence_sha256.as_deref()
+                        == approval.inspection_evidence_sha256.as_deref()
+            })
+        }
+    });
+    let approval_scope_matches = manifest.as_ref().is_some_and(|value| {
+        target_approval.as_ref().is_some_and(|approval| {
+            value.schema_version == 1
+                || (value.approved_operation_scopes == approval.approved_operation_scopes
+                    && value.maximum_plans == Some(approval.maximum_plans)
+                    && value.maximum_executions == Some(approval.maximum_executions))
+        })
+    });
+    let rollback_source_binding_matches = manifest.as_ref().is_some_and(|value| {
+        value.schema_version == 1
+            || value.source_commit.as_deref() == expected_source_commit_argument.as_deref()
+    });
+    let denylist_binding_matches = target_approval.as_ref().is_some_and(|approval| {
+        approval
+            .development_host_denylist_identity
+            .as_ref()
+            .is_none_or(|identity| {
+                denylist.as_ref().is_some_and(|value| {
+                    value.development_host_fingerprints.len() == 1
+                        && value.development_host_fingerprints[0] == *identity
+                })
+            })
     });
     let scenario_platform_matches = manifest.as_ref().is_some_and(|value| {
         let management_matches = match value.management_context.as_str() {
@@ -486,6 +727,16 @@ pub fn build_live_validation_gate(
         )
     });
     let database_belongs_to_guest = current_machine_id.as_deref() == stored_machine_id;
+    let rollback_environment_available = command_line_opt_in
+        && manifest_loaded
+        && denylist_loaded
+        && scenario_matches
+        && scenario_machine_identity_matches
+        && checkpoint_matches
+        && rollback_source_binding_matches
+        && scenario_platform_matches
+        && database_belongs_to_guest
+        && !development_host_refused;
     let (available, reason) = evaluate_gate(&GateFacts {
         command_line_opt_in,
         manifest_loaded,
@@ -494,11 +745,39 @@ pub fn build_live_validation_gate(
         scenario_matches,
         machine_identity_matches,
         checkpoint_matches,
+        source_binding_matches,
+        approval_scope_matches,
+        denylist_binding_matches,
         platform_matches,
         target_type_matches,
         database_belongs_to_guest,
         development_host_refused,
     });
+
+    let approval_id = target_approval
+        .as_ref()
+        .map(|value| value.approval_id.clone());
+    let approval_source_commit = target_approval
+        .as_ref()
+        .map(|value| value.source_checkpoint_commit.clone());
+    let approval_source_inspection_id = target_approval
+        .as_ref()
+        .and_then(|value| value.source_inspection_id.clone());
+    let approval_evidence_sha256 = target_approval
+        .as_ref()
+        .and_then(|value| value.inspection_evidence_sha256.clone());
+    let approved_operation_scopes = target_approval
+        .as_ref()
+        .map_or_else(Vec::new, |value| value.approved_operation_scopes.clone());
+    let maximum_plans = target_approval
+        .as_ref()
+        .map_or(0, |value| value.maximum_plans);
+    let maximum_executions = target_approval
+        .as_ref()
+        .map_or(0, |value| value.maximum_executions);
+    let approval_expires_at_epoch_ms = target_approval
+        .as_ref()
+        .map(|value| value.expires_at_epoch_ms);
 
     LiveValidationGateStatus {
         command_line_opt_in,
@@ -512,6 +791,19 @@ pub fn build_live_validation_gate(
         target_type_matches,
         database_belongs_to_guest,
         development_host_refused,
+        approval_id,
+        approval_source_commit,
+        approval_source_inspection_id,
+        approval_evidence_sha256,
+        approved_operation_scopes,
+        maximum_plans,
+        maximum_executions,
+        approval_expires_at_epoch_ms,
+        rollback_environment_available,
+        local_approval_revalidation_required: matches!(
+            target_approval_document,
+            Some(ValidationTargetApprovalDocument::Scoped(_))
+        ),
         available,
         reason: reason.into(),
         environment: EnvironmentIdentity {
@@ -536,6 +828,9 @@ struct GateFacts {
     scenario_matches: bool,
     machine_identity_matches: bool,
     checkpoint_matches: bool,
+    source_binding_matches: bool,
+    approval_scope_matches: bool,
+    denylist_binding_matches: bool,
     platform_matches: bool,
     target_type_matches: bool,
     database_belongs_to_guest: bool,
@@ -550,6 +845,9 @@ fn evaluate_gate(facts: &GateFacts) -> (bool, &'static str) {
         && facts.scenario_matches
         && facts.machine_identity_matches
         && facts.checkpoint_matches
+        && facts.source_binding_matches
+        && facts.approval_scope_matches
+        && facts.denylist_binding_matches
         && facts.platform_matches
         && facts.target_type_matches
         && facts.database_belongs_to_guest
@@ -570,6 +868,12 @@ fn evaluate_gate(facts: &GateFacts) -> (bool, &'static str) {
         "The expected test-machine identity does not match this machine."
     } else if !facts.checkpoint_matches {
         "The expected VM checkpoint identity does not match the scenario manifest."
+    } else if !facts.source_binding_matches {
+        "The approval source commit, inspection, evidence, or approval identity does not match."
+    } else if !facts.approval_scope_matches {
+        "The scenario operation scopes or plan/execution limits do not match the approval."
+    } else if !facts.denylist_binding_matches {
+        "The approval development-host denylist binding does not match."
     } else if !facts.platform_matches {
         "The guest edition, build, or UBR does not match the scenario manifest."
     } else if !facts.target_type_matches {
@@ -609,6 +913,173 @@ fn valid_development_host_denylist(value: &DevelopmentHostDenylist) -> bool {
             .development_host_fingerprints
             .iter()
             .all(|fingerprint| is_sha256(fingerprint))
+}
+
+fn read_target_approval(path: &std::path::Path) -> Option<ValidationTargetApprovalDocument> {
+    let raw = std::fs::read_to_string(path).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    match value
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+    {
+        Some(1) => serde_json::from_value(value)
+            .ok()
+            .map(ValidationTargetApprovalDocument::Legacy),
+        Some(2) => serde_json::from_value(value)
+            .ok()
+            .map(ValidationTargetApprovalDocument::Scoped),
+        _ => None,
+    }
+}
+
+fn normalize_target_approval(
+    document: &ValidationTargetApprovalDocument,
+    now_epoch_ms: u64,
+) -> Option<NormalizedTargetApproval> {
+    match document {
+        ValidationTargetApprovalDocument::Legacy(value) => {
+            if value.target_type != ValidationTargetType::VirtualMachine
+                || !target_approval_is_complete(value, now_epoch_ms)
+            {
+                return None;
+            }
+            let scopes = value
+                .approved_operations
+                .iter()
+                .map(|operation_id| ApprovedOperationScope {
+                    operation_id: *operation_id,
+                    allowed_target_states: value
+                        .approved_target_states
+                        .get(operation_id.key())
+                        .cloned()
+                        .unwrap_or_default(),
+                    handler_version: value
+                        .handler_versions
+                        .get(operation_id.key())
+                        .cloned()
+                        .unwrap_or_default(),
+                })
+                .collect();
+            Some(NormalizedTargetApproval {
+                approval_id: format!("legacy-v1-{}", value.scenario_id),
+                scenario_id: value.scenario_id.clone(),
+                target_type: value.target_type,
+                hashed_machine_identity: value.hashed_machine_identity.clone(),
+                windows_edition: value.windows_edition.clone(),
+                windows_build: value.windows_build,
+                windows_ubr: value.windows_ubr,
+                management_state: value.management_state.clone(),
+                source_checkpoint_commit: value.source_checkpoint_commit.clone(),
+                source_inspection_id: None,
+                inspection_evidence_sha256: None,
+                development_host_denylist_identity: None,
+                approved_operation_scopes: scopes,
+                maximum_plans: 32,
+                maximum_executions: 32,
+                expires_at_epoch_ms: value.expires_at_epoch_ms?,
+            })
+        }
+        ValidationTargetApprovalDocument::Scoped(value) => {
+            if !scoped_target_approval_is_complete(value, now_epoch_ms) {
+                return None;
+            }
+            Some(NormalizedTargetApproval {
+                approval_id: value.approval_id.clone(),
+                scenario_id: value.scenario_id.clone(),
+                target_type: value.target_type,
+                hashed_machine_identity: value.hashed_machine_identity.clone(),
+                windows_edition: value.windows_edition.clone(),
+                windows_build: value.windows_build,
+                windows_ubr: value.windows_ubr,
+                management_state: value.management_state.clone(),
+                source_checkpoint_commit: value.source_checkpoint_commit.clone(),
+                source_inspection_id: Some(value.source_inspection_id.clone()),
+                inspection_evidence_sha256: Some(value.inspection_evidence_sha256.clone()),
+                development_host_denylist_identity: Some(
+                    value.development_host_denylist_identity.clone(),
+                ),
+                approved_operation_scopes: value.approved_operation_scopes.clone(),
+                maximum_plans: value.maximum_plans,
+                maximum_executions: value.maximum_executions,
+                expires_at_epoch_ms: value.expires_at_epoch_ms?,
+            })
+        }
+    }
+}
+
+fn valid_operation_scopes(scopes: &[ApprovedOperationScope]) -> bool {
+    if scopes.is_empty() {
+        return false;
+    }
+    let mut operations = HashSet::new();
+    scopes.iter().all(|scope| {
+        let mut states = HashSet::new();
+        operations.insert(scope.operation_id)
+            && !scope.allowed_target_states.is_empty()
+            && scope
+                .allowed_target_states
+                .iter()
+                .all(|state| states.insert(*state))
+            && scope.handler_version == super::HANDLER_VERSION
+    })
+}
+
+fn scoped_target_approval_is_complete(
+    value: &ScopedValidationTargetApproval,
+    now_epoch_ms: u64,
+) -> bool {
+    let target_disposition_confirmed = match value.target_type {
+        ValidationTargetType::VirtualMachine => value.disposable_confirmed == Some(true),
+        ValidationTargetType::PhysicalLaptop => value.expendable_confirmed == Some(true),
+    };
+    value.schema_version == 2
+        && value.record_kind == TargetRecordKind::Approval
+        && value.approval_status == TargetApprovalStatus::Approved
+        && !value.approval_id.trim().is_empty()
+        && is_sha256(&value.hashed_machine_identity)
+        && is_git_commit_id(&value.source_checkpoint_commit)
+        && value.source_inspection_id.starts_with("inspection-")
+        && is_sha256(&value.inspection_evidence_sha256)
+        && is_sha256(&value.development_host_denylist_identity)
+        && value.development_host_denylist_identity != value.hashed_machine_identity
+        && !value.account_class.trim().is_empty()
+        && valid_operation_scopes(&value.approved_operation_scopes)
+        && (1..=32).contains(&value.maximum_plans)
+        && (1..=32).contains(&value.maximum_executions)
+        && value.maximum_executions <= value.maximum_plans
+        && value
+            .evidence_output_location
+            .replace('\\', "/")
+            .starts_with(".deslopper/local/")
+        && matches!(
+            value.recovery_readiness,
+            RecoveryReadiness::Ready | RecoveryReadiness::ReadyWithWarnings
+        )
+        && value.important_data_confirmed
+        && value.backup_confirmed
+        && value.reinstallation_accepted
+        && value.winre_verified
+        && matches!(
+            value.bitlocker_recovery_state,
+            BitLockerRecoveryState::NotApplicableUnencrypted
+                | BitLockerRecoveryState::RecoveryMaterialConfirmed
+        )
+        && matches!(
+            value.recovery_media_state,
+            RecoveryMediaState::Available | RecoveryMediaState::BuiltInVerified
+        )
+        && value.development_host_protection_state
+            == DevelopmentHostProtectionState::PresentDistinct
+        && value
+            .explicit_user_approval_timestamp
+            .as_ref()
+            .is_some_and(|timestamp| !timestamp.trim().is_empty())
+        && value
+            .expires_at_epoch_ms
+            .is_some_and(|expiration| expiration > now_epoch_ms)
+        && !value.restore_or_reimage_procedure.trim().is_empty()
+        && !value.validation_maturity.trim().is_empty()
+        && target_disposition_confirmed
 }
 
 fn target_approval_is_complete(value: &ValidationTargetApproval, now_epoch_ms: u64) -> bool {
@@ -1057,6 +1528,209 @@ mod tests {
         }
     }
 
+    fn valid_scoped_approval() -> ScopedValidationTargetApproval {
+        ScopedValidationTargetApproval {
+            schema_version: 2,
+            record_kind: TargetRecordKind::Approval,
+            approval_id: "widgets-enabled-once".into(),
+            scenario_id: "physical-readiness".into(),
+            target_type: ValidationTargetType::PhysicalLaptop,
+            hashed_machine_identity: "b".repeat(64),
+            windows_edition: "Professional".into(),
+            windows_build: 26_200,
+            windows_ubr: 8875,
+            account_class: "local_administrator".into(),
+            management_state: TargetManagementState {
+                domain_joined: false,
+                entra_joined: false,
+                mdm_enrolled: false,
+            },
+            source_checkpoint_commit: "a".repeat(40),
+            source_inspection_id: "inspection-1".into(),
+            inspection_evidence_sha256: "c".repeat(64),
+            development_host_denylist_identity: "d".repeat(64),
+            approved_operation_scopes: vec![ApprovedOperationScope {
+                operation_id: MutationOperationId::WidgetsVisibility,
+                allowed_target_states: vec![MutationTarget::Enabled],
+                handler_version: crate::mutation::HANDLER_VERSION.into(),
+            }],
+            maximum_plans: 1,
+            maximum_executions: 1,
+            evidence_output_location: ".deslopper/local/live-evidence".into(),
+            recovery_readiness: RecoveryReadiness::Ready,
+            important_data_confirmed: true,
+            backup_confirmed: true,
+            reinstallation_accepted: true,
+            winre_verified: true,
+            bitlocker_recovery_state: BitLockerRecoveryState::NotApplicableUnencrypted,
+            recovery_media_state: RecoveryMediaState::Available,
+            development_host_protection_state: DevelopmentHostProtectionState::PresentDistinct,
+            explicit_user_approval_timestamp: Some("2026-08-05T12:00:00Z".into()),
+            approval_status: TargetApprovalStatus::Approved,
+            expires_at_epoch_ms: Some(current_epoch_ms() + 60_000),
+            restore_or_reimage_procedure: "Use approved Windows recovery media.".into(),
+            validation_maturity: "read_only_validated".into(),
+            disposable_confirmed: None,
+            expendable_confirmed: Some(true),
+        }
+    }
+
+    #[test]
+    fn scoped_v2_widgets_enabled_only_normalizes_without_legacy_promotion() {
+        let now = current_epoch_ms();
+        let approval = valid_scoped_approval();
+        assert!(scoped_target_approval_is_complete(&approval, now));
+        let normalized =
+            normalize_target_approval(&ValidationTargetApprovalDocument::Scoped(approval), now)
+                .unwrap();
+        assert_eq!(normalized.approved_operation_scopes.len(), 1);
+        assert_eq!(
+            normalized.approved_operation_scopes[0].operation_id,
+            MutationOperationId::WidgetsVisibility
+        );
+        assert_eq!(
+            normalized.approved_operation_scopes[0].allowed_target_states,
+            vec![MutationTarget::Enabled]
+        );
+        assert_eq!(normalized.maximum_plans, 1);
+        assert_eq!(normalized.maximum_executions, 1);
+
+        let legacy_physical = valid_target_approval(ValidationTargetType::PhysicalLaptop);
+        assert!(
+            normalize_target_approval(
+                &ValidationTargetApprovalDocument::Legacy(legacy_physical),
+                now
+            )
+            .is_none()
+        );
+        let legacy_vm = valid_target_approval(ValidationTargetType::VirtualMachine);
+        assert!(
+            normalize_target_approval(&ValidationTargetApprovalDocument::Legacy(legacy_vm), now)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn local_scoped_approval_is_revalidated_against_the_startup_binding() {
+        let now = current_epoch_ms();
+        let approval = valid_scoped_approval();
+        let path = std::env::temp_dir().join(format!(
+            "deslopper-scoped-approval-{}-{now}.json",
+            std::process::id()
+        ));
+        std::fs::write(&path, serde_json::to_vec(&approval).unwrap()).unwrap();
+
+        let mut status = LiveValidationGateStatus::test_valid();
+        status.approval_id = Some(approval.approval_id.clone());
+        status.approval_source_commit = Some(approval.source_checkpoint_commit.clone());
+        status.approval_source_inspection_id = Some(approval.source_inspection_id.clone());
+        status.approval_evidence_sha256 = Some(approval.inspection_evidence_sha256.clone());
+        status.approved_operation_scopes = approval.approved_operation_scopes.clone();
+        status.maximum_plans = approval.maximum_plans;
+        status.maximum_executions = approval.maximum_executions;
+        status.local_approval_revalidation_required = true;
+
+        assert!(scoped_approval_document_allows(
+            &status,
+            MutationOperationId::WidgetsVisibility,
+            MutationTarget::Enabled,
+            &path,
+            now,
+        ));
+        assert!(!scoped_approval_document_allows(
+            &status,
+            MutationOperationId::WidgetsVisibility,
+            MutationTarget::Disabled,
+            &path,
+            now,
+        ));
+
+        let mut changed = approval;
+        changed.approved_operation_scopes[0].allowed_target_states = vec![MutationTarget::Disabled];
+        std::fs::write(&path, serde_json::to_vec(&changed).unwrap()).unwrap();
+        assert!(!scoped_approval_document_allows(
+            &status,
+            MutationOperationId::WidgetsVisibility,
+            MutationTarget::Enabled,
+            &path,
+            now,
+        ));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn scoped_v2_rejects_empty_duplicate_malformed_and_exhaustive_defaults() {
+        let now = current_epoch_ms();
+        let mut approval = valid_scoped_approval();
+        approval.approved_operation_scopes.clear();
+        assert!(!scoped_target_approval_is_complete(&approval, now));
+
+        approval = valid_scoped_approval();
+        approval
+            .approved_operation_scopes
+            .push(approval.approved_operation_scopes[0].clone());
+        assert!(!scoped_target_approval_is_complete(&approval, now));
+
+        approval = valid_scoped_approval();
+        approval.approved_operation_scopes[0]
+            .allowed_target_states
+            .push(MutationTarget::Enabled);
+        assert!(!scoped_target_approval_is_complete(&approval, now));
+
+        approval = valid_scoped_approval();
+        approval.approved_operation_scopes[0]
+            .allowed_target_states
+            .clear();
+        assert!(!scoped_target_approval_is_complete(&approval, now));
+
+        approval = valid_scoped_approval();
+        approval.maximum_plans = 0;
+        assert!(!scoped_target_approval_is_complete(&approval, now));
+        approval.maximum_plans = 1;
+        approval.maximum_executions = 2;
+        assert!(!scoped_target_approval_is_complete(&approval, now));
+    }
+
+    #[test]
+    fn scoped_v2_rejects_unknown_operations_states_and_unknown_fields() {
+        let value = serde_json::to_value(valid_scoped_approval()).unwrap();
+        let mut unknown_operation = value.clone();
+        unknown_operation["approvedOperationScopes"][0]["operationId"] =
+            serde_json::json!("future_operation");
+        assert!(
+            serde_json::from_value::<ScopedValidationTargetApproval>(unknown_operation).is_err()
+        );
+
+        let mut unknown_state = value.clone();
+        unknown_state["approvedOperationScopes"][0]["allowedTargetStates"][0] =
+            serde_json::json!("toggle");
+        assert!(serde_json::from_value::<ScopedValidationTargetApproval>(unknown_state).is_err());
+
+        let mut extra = value;
+        extra["approvedOperationScopes"][0]["registryPath"] = serde_json::json!("arbitrary");
+        assert!(serde_json::from_value::<ScopedValidationTargetApproval>(extra).is_err());
+    }
+
+    #[test]
+    fn scoped_v2_rejects_wrong_source_identity_evidence_handler_and_expiry() {
+        let now = current_epoch_ms();
+        let mut approval = valid_scoped_approval();
+        approval.source_checkpoint_commit = "a".repeat(39);
+        assert!(!scoped_target_approval_is_complete(&approval, now));
+        approval = valid_scoped_approval();
+        approval.hashed_machine_identity = "invalid".into();
+        assert!(!scoped_target_approval_is_complete(&approval, now));
+        approval = valid_scoped_approval();
+        approval.inspection_evidence_sha256 = "invalid".into();
+        assert!(!scoped_target_approval_is_complete(&approval, now));
+        approval = valid_scoped_approval();
+        approval.approved_operation_scopes[0].handler_version = "wrong".into();
+        assert!(!scoped_target_approval_is_complete(&approval, now));
+        approval = valid_scoped_approval();
+        approval.expires_at_epoch_ms = Some(now);
+        assert!(!scoped_target_approval_is_complete(&approval, now));
+    }
+
     #[test]
     fn maturity_is_monotonic_and_rejection_disables_handler() {
         assert_eq!(
@@ -1138,6 +1812,9 @@ mod tests {
             scenario_matches: true,
             machine_identity_matches: true,
             checkpoint_matches: true,
+            source_binding_matches: true,
+            approval_scope_matches: true,
+            denylist_binding_matches: true,
             platform_matches: true,
             target_type_matches: true,
             database_belongs_to_guest: true,
@@ -1160,6 +1837,19 @@ mod tests {
         let mut wrong_checkpoint = valid();
         wrong_checkpoint.checkpoint_matches = false;
         assert!(evaluate_gate(&wrong_checkpoint).1.contains("checkpoint"));
+        let mut wrong_source = valid();
+        wrong_source.source_binding_matches = false;
+        assert!(evaluate_gate(&wrong_source).1.contains("source"));
+        let mut wrong_scope = valid();
+        wrong_scope.approval_scope_matches = false;
+        assert!(evaluate_gate(&wrong_scope).1.contains("scope"));
+        let mut wrong_denylist_binding = valid();
+        wrong_denylist_binding.denylist_binding_matches = false;
+        assert!(
+            evaluate_gate(&wrong_denylist_binding)
+                .1
+                .contains("denylist")
+        );
         let mut copied_database = valid();
         copied_database.database_belongs_to_guest = false;
         assert!(evaluate_gate(&copied_database).1.contains("database"));
@@ -1173,6 +1863,16 @@ mod tests {
         let mut pending_target = valid();
         pending_target.target_approval_loaded = false;
         assert!(evaluate_gate(&pending_target).1.contains("approval"));
+        let mut missing_denylist = valid();
+        missing_denylist.denylist_loaded = false;
+        assert!(evaluate_gate(&missing_denylist).1.contains("denylist"));
+        let mut wrong_platform = valid();
+        wrong_platform.platform_matches = false;
+        assert!(
+            evaluate_gate(&wrong_platform)
+                .1
+                .contains("edition, build, or UBR")
+        );
         let mut wrong_target_type = valid();
         wrong_target_type.target_type_matches = false;
         assert!(evaluate_gate(&wrong_target_type).1.contains("target type"));
@@ -1392,6 +2092,40 @@ mod tests {
             value["properties"]["preparationStatus"]["properties"]["mutationStillProhibited"]["const"],
             true
         );
+    }
+
+    #[test]
+    fn scoped_v2_schemas_are_additive_strict_and_nonempty() {
+        let validation = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("validation");
+        let approval: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(validation.join("approved-validation-targets-v2.schema.json"))
+                .unwrap(),
+        )
+        .unwrap();
+        let scenario: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(validation.join("live-validation-scenario-v2.schema.json"))
+                .unwrap(),
+        )
+        .unwrap();
+        let draft: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(validation.join("approval-review-draft.schema.json")).unwrap(),
+        )
+        .unwrap();
+
+        for schema in [&approval, &scenario, &draft] {
+            assert_eq!(schema["properties"]["schemaVersion"]["const"], 2);
+            assert_eq!(
+                schema["properties"]["approvedOperationScopes"]["minItems"],
+                1
+            );
+            assert_eq!(schema["additionalProperties"], false);
+        }
+        assert_eq!(
+            approval["$defs"]["operationScope"]["oneOf"][0]["properties"]["handlerVersion"]["const"],
+            super::super::HANDLER_VERSION
+        );
+        assert_eq!(draft["properties"]["mutationAllowed"]["const"], false);
+        assert_eq!(draft["properties"]["executed"]["const"], false);
     }
 
     fn test_bundle(build: u32, plan_hash: &str) -> LiveEvidenceBundle {

@@ -119,6 +119,7 @@ try {
         "- Physical preparation targets (not mutation evidence): $(@($matrix.preparationTargets).Count)",
         "- Historical retired-before-mutation events: $(@($matrix.preparationTargets.lifecycleEvents | Where-Object { $_.event -eq 'retired_before_mutation' }).Count)",
         "- Current approval-review-ready preparation targets: $(@($matrix.preparationTargets | Where-Object { $_.preparationStatus -eq 'ready_for_approval_review' }).Count)",
+        "- Scoped approval-model correction events: $(@($matrix.preparationTargets.lifecycleEvents | Where-Object { $_.event -eq 'scoped_approval_model_implemented' }).Count)",
         "- Physical-target live mutation scenarios: $([int](($matrix.preparationTargets | Measure-Object -Property liveMutationScenarioCount -Sum).Sum))",
         '- Runner: Rust production parsers and detectors',
         '- Mutation boundary: Fixture replay only; no Windows mutation or query execution',
@@ -189,7 +190,7 @@ try {
         "| $($_.id) | $($_.availabilityStatus.Replace('_', ' ')) | $($_.readOnlyStatus.Replace('_', ' ')) | $($_.preparationStatus.Replace('_', ' ')) | $($_.recoveryStatus.Replace('_', ' ')) | $($_.approvalStatus.Replace('_', ' ')) | $($_.mutationStatus.Replace('_', ' ')) | $($_.liveMutationScenarioCount) | $($_.countsAsCompletedMutationTarget) | $($_.countsAsFailedMutationTarget) | $($_.countsAsApprovedTarget) | $($_.countsAsLiveHandlerEvidence) |"
     }
     $lines += ''
-    $lines += 'The physical target was retired before mutation because the hardware is being sold, then explicitly reactivated for bounded Widgets preparation before its final reset. Retirement remains in chronological history. Read-only Windows 11 Pro 25H2 inspection, Tauri event permission, OneDrive detection, MDM evidence, and permission-limited AppX findings remain useful; no handler has live evidence and zero mutation occurred.'
+    $lines += 'The physical target was retired before mutation because the hardware is being sold, then explicitly reactivated for bounded Widgets preparation before its final reset. Retirement remains in chronological history. The first execution handoff stopped at the overbroad version 1 approval boundary; scoped version 2 now represents Widgets-enabled only with one plan and one execution, but remains non-authorizing and unexecuted. Read-only Windows 11 Pro 25H2 inspection, Tauri event permission, OneDrive detection, MDM evidence, and permission-limited AppX findings remain useful; no handler has live evidence and zero mutation occurred.'
     $report = ($lines -join "`n") + "`n"
     [System.IO.File]::WriteAllText((Join-Path $repository 'validation\report.md'), $report, [System.Text.UTF8Encoding]::new($false))
 } finally {

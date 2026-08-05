@@ -101,3 +101,37 @@ pub struct AlphaGateStatus {
     pub available: bool,
     pub reason: String,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::PlanRequest;
+
+    #[test]
+    fn plan_request_rejects_multi_step_and_extra_step_shapes() {
+        let multi_step = serde_json::json!({
+            "steps": [
+                {
+                    "operationId": "set_taskbar_widgets_visibility",
+                    "target": "enabled"
+                },
+                {
+                    "operationId": "set_taskbar_task_view_visibility",
+                    "target": "enabled"
+                }
+            ],
+            "sourceInspectionId": "inspection-1"
+        });
+        assert!(serde_json::from_value::<PlanRequest>(multi_step).is_err());
+
+        let extra_step = serde_json::json!({
+            "operationId": "set_taskbar_widgets_visibility",
+            "target": "enabled",
+            "sourceInspectionId": "inspection-1",
+            "extraStep": {
+                "operationId": "set_taskbar_show_desktop_enabled",
+                "target": "enabled"
+            }
+        });
+        assert!(serde_json::from_value::<PlanRequest>(extra_step).is_err());
+    }
+}

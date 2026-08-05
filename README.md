@@ -46,6 +46,12 @@ Widgets approval review before its final reset, but remains unapproved with zero
 live scenarios and no mutation attempt. Reactivation and review readiness do not
 themselves authorize mutation.
 
+Scoped approval schema version 2 can bind a physical validation approval to an
+explicit operation and operation-specific target state. The broker filters
+options and independently revalidates the exact pair, source evidence, expiry,
+and usage limits. This source change does not constitute approval or live
+validation; the Widgets test remains unexecuted.
+
 The original development PC remains permanently denied by its local ignored
 `.deslopper/local/development-host-denylist.json`. Never commit or expose that
 identity.
