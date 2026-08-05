@@ -1,5 +1,11 @@
 # Physical validation-target readiness
 
+> **Withdrawn 2026-08-05:** The laptop was sold before mutation approval or
+> any mutation attempt and is no longer available. This is historical read-only
+> preparation evidence, not a mutation failure, approval, or completed target.
+> No local draft, audit record, or earlier preparation state authorizes work on
+> a replacement device.
+
 The first real Windows 11 Pro 25H2 physical-laptop pass was performed on
 2026-08-03. This is read-only preparation evidence, not a live mutation target
 approval. No live mutation, mutation-alpha launch, mutation runtime flag,

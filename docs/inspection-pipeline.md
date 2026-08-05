@@ -60,10 +60,32 @@ Rust supplies finite allowed options for the current component and observation. 
 
 Inspection history, inspection detail, component timelines, detailed package rows, and drift history are dedicated typed commands and UI views. Machine-identity changes are not ordinary comparisons. Cause inference persists primary cause, confidence, supporting facts, alternatives, and rule version 2.
 
+Product Alpha previews are schema-versioned comparison documents. They include
+current and desired values, authority, mechanism, restart implications, risk,
+rollback considerations, source inspection, and generation time. They always
+declare `executorEnabled: false`, create no approval nonce or transaction, and
+cannot be turned into an operation through the normal command surface.
+
+Drift acknowledgement means reviewed, not resolved. A later usable inspection
+that returns to the desired state resolves the event and records that return.
+Normal package version servicing is informational rather than configuration
+drift. History retention is user-selectable and always preserves the latest
+inspection; clear-history is separately confirmed.
+
 ## SQLite integrity
 
-Schema v2 enables foreign keys, WAL, normal synchronous mode, a five-second busy timeout, immediate migration locking, transactional writes, history indexes, observation uniqueness, quick integrity checks, application-version metadata, and resumable migrations. Unsupported newer schemas and failed integrity checks preserve the original database and surface recovery status. Alpha JSON is renamed only after the import transaction commits; malformed or failed input remains in place. Backup-name collisions receive a numbered suffix.
+Schema v4 enables foreign keys, WAL, normal synchronous mode, a five-second busy timeout, immediate migration locking, transactional writes, history indexes, observation uniqueness, quick integrity checks, application-version metadata, resumable migrations, reviewed/returned drift fields, and local retention preferences. Unsupported newer schemas and failed integrity checks preserve the original database and surface recovery status. Alpha JSON is renamed only after the import transaction commits; malformed or failed input remains in place. Backup-name collisions receive a numbered suffix. The v3-to-v4 migration is non-destructive, and read-only history clearing preserves internal mutation audit tables.
 
 History reload uses the persisted inspection `started_at` as the snapshot start
 time and the lifecycle completion timestamp as the end time. This preserves the
 authoritative duration after the UI closes and reopens.
+
+## Product diagnostics
+
+Rust constructs diagnostics from an allowlist rather than serializing the
+database or raw detector output. The export includes non-identifying product,
+Windows version, inspection-summary, detector-status, schema, capability, and
+privacy fields. Redaction is applied again at export time. Machine identity,
+hostname, user/account data, local validation files, raw paths, credentials,
+recovery material, and unredacted command output are excluded. The frontend
+shows the categories before a user-directed local save; no upload exists.

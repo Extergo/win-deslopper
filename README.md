@@ -2,60 +2,72 @@
 
 **Windows without the slop.**
 
-Deslopper is a safety-focused Rust/Tauri/SvelteKit Windows manager. Ordinary
-builds provide a completed 20-component read-only inspection beta with bounded
-queries, applicability/authority evidence, SQLite history, desired states,
-drift, privacy redaction, and VM fixture replay.
+Deslopper `0.1.0-alpha.1` is a privacy-conscious, installable Windows
+configuration inspector. The Read-Only Product Alpha observes 20 documented
+Windows components, explains uncertainty and authority, saves local inspection
+history, detects meaningful drift, records desired states, and creates
+non-executable previews.
 
-## Internal mutation broker alpha
+The normal build never applies a Windows change. It has no mutation command,
+filesystem capability, shell endpoint, network client, updater, elevation
+manifest, service, or privileged helper. Unknown does not mean broken,
+permission-limited does not mean absent, and a preview is never presented as
+completed work.
 
-An optional internal feature proves the inspect → plan → revalidate → approve →
-apply → verify → audit → exact rollback lifecycle for three current-user
-taskbar presentation settings: Widgets button, Task View button, and Show
-Desktop corner. Search mode and Search Highlights were not implemented because
-official research did not establish suitable stable unelevated current-user
-setters; see `docs/mutation-broker-alpha.md`.
+## Product Alpha features
 
-Mutation requires all of:
+- Compact first-run explanation and cancellable read-only inspection.
+- Honest dashboard summaries without fake health scores or optimisation claims.
+- All 20 registered components with applicability, authority, confidence,
+  completeness, desired state, drift, trade-offs, and redacted evidence.
+- Persisted SQLite history, snapshot comparison, reviewed drift, and retention
+  controls.
+- Desired-state validation and preview-only planning. Previews create no nonce,
+  transaction, approval, or executable operation.
+- User-controlled privacy-safe JSON diagnostics saved through the system file
+  picker. Nothing is uploaded automatically.
+- Settings/About with product/build status, redacted database location, local
+  history controls, privacy explanation, and explicit mutation unavailability.
+
+See `docs/read-only-product-alpha.md` for the complete product and privacy
+contract.
+
+## Internal mutation broker
+
+The repository retains a separately compiled internal `mutation-alpha` feature
+for exactly three closed current-user taskbar experiments. It is not part of the
+normal Product Alpha command registration or presentation. All mutation results
+remain synthetic: zero handlers are live validated and none is production-ready.
+
+The former physical validation laptop completed read-only preparation and was
+withdrawn because the hardware was sold. It was never approved, never received
+the development-host identity, never launched mutation alpha, and never wrote a
+taskbar value. No mutation failure occurred. Another explicitly approved,
+disposable target is required for any future live-validation milestone.
+
+The original development PC remains permanently denied by its local ignored
+`.deslopper/local/development-host-denylist.json`. Never commit or expose that
+identity.
+
+## Development and packaging
+
+Prerequisites are stable Rust, Bun 1.3.14, WebView2, and the supported Tauri 2
+Windows toolchain. Run the quality gates in `.deslopper/policy.toml`.
 
 ```powershell
-cargo run --features mutation-alpha -- --enable-mutation-alpha
+bun install --frozen-lockfile
+cargo test
+bun run test
+bun run tauri build --no-bundle
+bun run tauri build
 ```
 
-It also requires a debug/internal build, in-app warning acknowledgement, a
-fresh completed inspection, and a valid expiring machine-bound plan. Normal
-builds compile without the broker, expose no mutation Tauri commands, and render
-no mutation controls. There is no elevation, Apply All, automatic repair,
-package removal, service/task management, arbitrary shell, or generic registry
-setter.
+The normal NSIS installer uses Tauri's WebView2 downloaded-bootstrapper mode.
+Windows 11 normally supplies WebView2; the installer can obtain it when missing.
+The package is not code-signed and no public release is produced by this
+milestone. Application binaries uninstall normally; local history under
+`%LOCALAPPDATA%\Deslopper` is documented as user data and may remain unless the
+user clears it in Settings or removes it deliberately.
 
-Live execution additionally requires `--enable-live-validation`, a fixed local
-scenario manifest, expected machine/checkpoint arguments, guest-owned database,
-and development-host denylist. The UI labels all three handlers “Internal alpha
-- not live validated.” No live evidence currently exists; all thirteen matrix
-scenarios are not provisioned. See `docs/live-validation-environment.md`.
-
-No handler is production-ready, no approved validation target currently exists,
-and production mutation must remain disabled until the required live matrix
-passes. The next intended validation environment is a spare laptop after it
-clones the private checkpoint and is independently backed up, fingerprinted,
-reviewed, and explicitly approved; it is not approved merely by being a laptop.
-
-The first physical-laptop read-only preparation pass is documented in
-`docs/physical-validation-target-readiness.md`. Live progress and persisted
-history were verified after a minimal Tauri event-listen correction; OneDrive
-detection now tolerates a missing startup value. The target was withdrawn and
-retired before mutation because the hardware is being sold. It was never
-approved, zero live mutation scenarios exist, and mutation was not attempted.
-
-## Development and validation
-
-Prerequisites are stable Rust, Bun 1.3.14, and WebView2. Run the quality gates
-from `.deslopper/policy.toml`. `tools/validate-vm-fixtures.ps1` replays redacted
-read-only captures. `tools/scan-mutation-boundary.ps1` enforces the executable
-mutation boundary. Live mutation validation is permitted only on an explicitly
-approved, expendable validation target with complete recovery evidence; it is
-not claimed by synthetic fixtures or read-only preparation.
-
-Start with `AGENTS.md`; `ARCHITECTURE.md`, `SECURITY.md`, and the mutation threat
-model are authoritative.
+Start with `AGENTS.md`, `ARCHITECTURE.md`, `SECURITY.md`, and
+`docs/product-principles.md`.

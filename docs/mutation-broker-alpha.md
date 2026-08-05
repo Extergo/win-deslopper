@@ -98,12 +98,14 @@ pre-state present, or unexpected/uncertain as `recovery_required`; it never
 silently repeats apply. There is no worker, task, service, startup repair, or
 automatic drift reconciliation.
 
-## SQLite v3 and fault injection
+## SQLite v4 and fault injection
 
 `mutation_plans`, `mutation_transactions`, `mutation_steps`,
 `mutation_state_captures`, and `mutation_rollbacks` store typed audit data,
 hashes, redacted evidence, and recovery state. No raw command output, account
 data, arbitrary path, secret, or plaintext nonce is stored.
+Schema v4 adds read-only Product Alpha retention and drift-review fields without
+changing or deleting these internal audit tables.
 
 Test-only fault injection covers before/after capture, before/after write,
 verification, commit, rollback, and rollback verification. It has no Tauri or

@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main-window",
-  "description": "Minimal local capability for the Deslopper preview window.",
+  "description": "Minimal event-listener capability for the read-only Deslopper Product Alpha window.",
   "windows": ["main"],
   "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
 }

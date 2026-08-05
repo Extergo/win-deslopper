@@ -20,6 +20,16 @@ crashes, rollback conflict, and misleading success.
 - Normal builds have no mutation module or mutation command registration, no
   elevation manifest, `runas`, helper, service, backend, telemetry, or plugin
   execution.
+- Desired-state previews are explicitly non-executable and create no approval
+  nonce or mutation transaction.
+- Diagnostics are built from an allowlisted schema and exclude machine
+  identity, hostname, account identifiers, development-host protection,
+  approval manifests, raw profile paths, OneDrive identities, credentials,
+  recovery data, and unredacted command output. The user reviews categories and
+  chooses the destination; there is no automatic upload.
+- Retention and clear-history commands operate only on Deslopper's local
+  read-only database records. They do not alter Windows or erase internal
+  mutation audit tables.
 
 ## Internal mutation alpha
 

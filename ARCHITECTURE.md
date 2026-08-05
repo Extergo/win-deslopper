@@ -1,15 +1,16 @@
 # Architecture
 
-The normal Deslopper build remains the completed read-only beta. An internal
+The normal Deslopper build is the Read-Only Product Alpha. An internal
 Cargo feature, `mutation-alpha`, adds a closed unelevated broker for exactly
 three documented taskbar presentation settings.
 
 ## Layers
 
-1. **Tauri/Svelte presentation.** Svelte renders read-only evidence and, only
-   when the feature-only status command exists, the alpha warning, operation
-   options, exact review, progress, audit history, recovery, and rollback. It
-   never owns Windows paths, values, scripts, applicability, or authority.
+1. **Tauri/Svelte presentation.** Svelte renders onboarding, dashboard,
+   component browsing, desired-state previews, drift/history comparison,
+   diagnostics review, and local settings. The Product Alpha presentation has
+   no mutation workflow and never owns Windows paths, values, scripts,
+   applicability, authority, or redaction rules.
 2. **Application orchestration.** Rust owns inspection coordination, progress,
    desired-state validation, drift, feature-gated command transport, and fresh
    pre/post-operation inspection. Tauri handlers do not execute settings.
@@ -19,7 +20,8 @@ three documented taskbar presentation settings.
 4. **Read-only Windows inspection.** The existing eight fixed PowerShell queries
    retain timeout, output, parser, cancellation, and evidence contracts. They
    run immediately before and after alpha apply where material.
-5. **Planning.** Ordinary previews stay non-executable. Alpha plans are
+5. **Planning.** Product previews are schema-versioned and non-executable. They
+   create no nonce, approval, or transaction. Internal alpha plans are
    persisted, machine/build/edition/evidence bound, five-minute expiring,
    nonce-approved, one-use, and SHA-256 integrity checked.
 6. **Mutation broker.** `src/mutation` owns gates, validation, locking, capture,
@@ -30,8 +32,10 @@ three documented taskbar presentation settings.
    operation-specific preference reads/writes plus fixed read-only checks for
    Widgets policy, `HideTaskViewButton`, and `NoSetTaskbar`. No caller can
    provide a hive, path, name, type, or arbitrary value.
-8. **Persistence.** SQLite v3 stores read-only history plus mutation plans,
-   transactions, steps, captures, and rollback records. Persistence cannot
+8. **Persistence.** SQLite v4 stores read-only history, desired revisions,
+   reviewed/resolved drift, retention preferences, and internal feature-gated
+   mutation journal tables. Local history clearing removes only Deslopper's
+   read-only records and preserves internal audit tables. Persistence cannot
    dispatch operations.
 9. **Privileged host, plugins, backend, and updater.** Absent. The alpha has no
    elevation, helper, service, network, authentication, telemetry, or remote
@@ -44,10 +48,15 @@ three documented taskbar presentation settings.
    identity banner and sends only closed visual-verification enums. Evidence
    facts come from the journal and export to a fixed ignored location. Optional
    Hyper-V tooling is allowlisted and cannot invoke broker operations.
+11. **Diagnostics boundary.** Rust constructs a closed, redacted JSON value
+    without machine identity, validation files, account data, or raw output.
+    Svelte shows the included categories before using the WebView's user-driven
+    save picker. No Tauri filesystem permission or network upload exists.
 
 ## Dependency direction and release boundary
 
-Presentation sends typed IDs to Rust. Orchestration calls the broker; the broker
+Presentation sends typed IDs to Rust. Normal orchestration never calls the
+broker; feature-on internal orchestration calls the broker, and the broker
 selects a handler; the handler calls its fixed store method. Inspection never
 imports mutation. Persistence stores data but cannot apply it. Normal builds do
 not compile `src/mutation` or register its Tauri commands. Runtime VM detection
@@ -58,4 +67,5 @@ The normal main-window capability contains only the Tauri listen and unlisten
 commands required for Rust-emitted inspection progress. Frontend event emission
 is not part of the presentation boundary.
 
-See `docs/mutation-threat-model.md`, `docs/mutation-broker-alpha.md`, and D-010.
+See `docs/read-only-product-alpha.md`, `docs/mutation-threat-model.md`,
+`docs/mutation-broker-alpha.md`, and D-011.

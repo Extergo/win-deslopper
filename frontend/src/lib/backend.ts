@@ -126,7 +126,10 @@ export interface PlatformDashboard {
   driftCount: number;
   managedCount: number;
   unknownCount: number;
+  permissionLimitedCount: number;
+  failedCount: number;
   desiredStates: DesiredState[];
+  historyRetentionDays: number;
   databaseStatus: {
     healthy: boolean;
     message: string;
@@ -178,10 +181,59 @@ export interface DriftEvent {
   first_detected: string;
   last_observed: string;
   resolved: boolean;
+  reviewed: boolean;
+  reviewed_at: string | null;
+  returned_to_desired: boolean;
   occurrence_count: number;
   supporting_facts: string[];
   alternative_causes: string[];
   inference_rule_version: number;
+  previous_inspection_id: string | null;
+  current_inspection_id: string | null;
+}
+
+export interface ProductInfo {
+  productName: string;
+  version: string;
+  releaseLabel: string;
+  buildMode: string;
+  mutationAvailability: string;
+  databaseSchemaVersion: number;
+  databaseLocation: string;
+  supportedWindows: string;
+}
+
+export interface ProductComponent {
+  componentId: string;
+  name: string;
+  category: string;
+  purpose: string;
+  benefit: string;
+  support: string;
+  risk: string;
+  configuration: string;
+  restart: string;
+  rollback: string;
+  privileges: string;
+  gamingNotes: string;
+  enterpriseNotes: string;
+  documentation: string;
+  isPackage: boolean;
+}
+
+export interface SnapshotChange {
+  componentId: string;
+  previousState: Record<string, unknown>;
+  currentState: Record<string, unknown>;
+  previousStatus: string;
+  currentStatus: string;
+  explanation: string;
+}
+
+export interface SnapshotComparison {
+  previousInspectionId: string;
+  currentInspectionId: string;
+  changes: SnapshotChange[];
 }
 
 export interface ComponentTimelineEntry {
@@ -423,6 +475,20 @@ export interface BackendClient {
   validateDesiredState(request: DesiredStateRequest): Promise<DesiredStateValidation>;
   saveDesiredState(request: DesiredStateRequest): Promise<PlatformDashboard>;
   clearDesiredState(componentId: string): Promise<PlatformDashboard>;
+  generatePreviewPlan(componentId: string): Promise<Record<string, unknown>>;
+  getProductInfo(): Promise<ProductInfo>;
+  getProductComponentCatalogue(): Promise<ProductComponent[]>;
+  compareInspections(
+    previousInspectionId: string,
+    currentInspectionId: string
+  ): Promise<SnapshotComparison>;
+  acknowledgeDriftEvent(componentId: string, classification: string): Promise<DriftEvent[]>;
+  setHistoryRetention(days: number): Promise<PlatformDashboard>;
+  clearLocalHistory(confirmed: boolean): Promise<PlatformDashboard>;
+  generateDiagnosticsExport(request: {
+    includeHistorySummary: boolean;
+    includeRedactedErrors: boolean;
+  }): Promise<Record<string, unknown>>;
   getMutationAlphaStatus(): Promise<MutationAlphaStatus>;
   acknowledgeMutationAlphaWarning(acknowledged: boolean): Promise<MutationAlphaStatus>;
   getMutationOperationOptions(): Promise<MutationOperationOption[]>;
@@ -502,6 +568,27 @@ export function createBackendClient(
       (await invokeCommand('save_desired_state', { request })) as PlatformDashboard,
     clearDesiredState: async (componentId) =>
       (await invokeCommand('clear_desired_state', { componentId })) as PlatformDashboard,
+    generatePreviewPlan: async (componentId) =>
+      (await invokeCommand('generate_preview_plan', { componentId })) as Record<string, unknown>,
+    getProductInfo: async () => (await invokeCommand('get_product_info')) as ProductInfo,
+    getProductComponentCatalogue: async () =>
+      (await invokeCommand('get_product_component_catalogue')) as ProductComponent[],
+    compareInspections: async (previousInspectionId, currentInspectionId) =>
+      (await invokeCommand('compare_inspections', {
+        previousInspectionId,
+        currentInspectionId
+      })) as SnapshotComparison,
+    acknowledgeDriftEvent: async (componentId, classification) =>
+      (await invokeCommand('acknowledge_drift_event', {
+        componentId,
+        classification
+      })) as DriftEvent[],
+    setHistoryRetention: async (days) =>
+      (await invokeCommand('set_history_retention', { days })) as PlatformDashboard,
+    clearLocalHistory: async (confirmed) =>
+      (await invokeCommand('clear_local_history', { confirmed })) as PlatformDashboard,
+    generateDiagnosticsExport: async (request) =>
+      (await invokeCommand('generate_diagnostics_export', { request })) as Record<string, unknown>,
     getMutationAlphaStatus: async () =>
       (await invokeCommand('get_mutation_alpha_status')) as MutationAlphaStatus,
     acknowledgeMutationAlphaWarning: async (acknowledged) =>

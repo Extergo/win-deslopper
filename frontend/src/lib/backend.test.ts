@@ -118,6 +118,41 @@ describe('backend client', () => {
     expect(invokeCommand).toHaveBeenNthCalledWith(2, 'save_desired_state', { request });
   });
 
+  it('generates a separate non-executable preview and product diagnostics contract', async () => {
+    const invokeCommand = vi.fn<BackendInvoker>().mockResolvedValue({ executorEnabled: false });
+    const client = createBackendClient(invokeCommand);
+    await client.generatePreviewPlan('consumer_copilot');
+    await client.generateDiagnosticsExport({
+      includeHistorySummary: true,
+      includeRedactedErrors: true
+    });
+    expect(invokeCommand).toHaveBeenNthCalledWith(1, 'generate_preview_plan', {
+      componentId: 'consumer_copilot'
+    });
+    expect(invokeCommand).toHaveBeenNthCalledWith(2, 'generate_diagnostics_export', {
+      request: { includeHistorySummary: true, includeRedactedErrors: true }
+    });
+    expect(JSON.stringify(invokeCommand.mock.calls)).not.toMatch(/upload|network|http/i);
+  });
+
+  it('uses closed local-data commands for retention, review, comparison, and clearing', async () => {
+    const invokeCommand = vi.fn<BackendInvoker>().mockResolvedValue([]);
+    const client = createBackendClient(invokeCommand);
+    await client.setHistoryRetention(180);
+    await client.acknowledgeDriftEvent('onedrive', 'Preference');
+    await client.compareInspections('inspection-1', 'inspection-2');
+    await client.clearLocalHistory(true);
+    expect(invokeCommand.mock.calls).toEqual([
+      ['set_history_retention', { days: 180 }],
+      ['acknowledge_drift_event', { componentId: 'onedrive', classification: 'Preference' }],
+      [
+        'compare_inspections',
+        { previousInspectionId: 'inspection-1', currentInspectionId: 'inspection-2' }
+      ],
+      ['clear_local_history', { confirmed: true }]
+    ]);
+  });
+
   it('keeps permission-limited package evidence as a named state', () => {
     const row = {
       currentUser: 'present',

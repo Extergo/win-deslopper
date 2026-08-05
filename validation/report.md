@@ -1,6 +1,6 @@
 # Deslopper VM fixture validation report
 
-Generated: 2026-08-05T12:58:01Z
+Generated: 2026-08-05T15:26:25Z
 
 - Result: Passed
 - Checked-in fixture bundles: 1
@@ -22,9 +22,9 @@ Generated: 2026-08-05T12:58:01Z
 - Failed: 0
 - Blocked: 0
 - Handler removed: 0
-- Host protection audit: Failed closed / requires review
-- Development-host denylist present: False
-- Current host fingerprint denied: False
+- Host protection audit: Passed
+- Development-host denylist present: True
+- Current host fingerprint denied: True
 - Deslopper processes running: 0
 - Live scenario manifest present: False
 - Live scenario targets development host: False
