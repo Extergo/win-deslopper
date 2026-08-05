@@ -44,11 +44,15 @@ three documented taskbar presentation settings.
    guest runner. A fixed local manifest and denylist add scenario, machine,
    checkpoint, source, platform, and guest-database gates. A separate ignored
    target approval distinguishes VMs from physical laptops and rejects pending,
-   incomplete, expired, mismatched, or recovery-unready targets. Scoped version
-   2 physical approvals list operation-specific target states and bind handler,
-   inspection/evidence, denylist identity, and plan/execution limits. Broker
-   options are derived from that scope, while plan and execution independently
-   revalidate it. The frontend renders the
+   incomplete, expired, mismatched, or recovery-unready targets. A parsed,
+   committed policy explicitly allowlists target types. Scoped version 3
+   physical approvals add strict data, recovery-route, media, alternate-device,
+   restart, encryption, management, final-plan, automatic-repair, expiry, and
+   disposition requirements to operation-specific target states and exact
+   source/evidence/identity bindings. Version 2 remains VM-only compatibility.
+   Broker options are derived from scope, while plan, execution, and the
+   immediate pre-write boundary independently revalidate policy, approval, and
+   denylist. The frontend renders the
    identity banner and sends only closed visual-verification enums. Evidence
    facts come from the journal and export to a fixed ignored location. Optional
    Hyper-V tooling is allowlisted and cannot invoke broker operations.
@@ -63,9 +67,9 @@ Presentation sends typed IDs to Rust. Normal orchestration never calls the
 broker; feature-on internal orchestration calls the broker, and the broker
 selects a handler; the handler calls its fixed store method. Inspection never
 imports mutation. Persistence stores data but cannot apply it. Normal builds do
-not compile `src/mutation` or register its Tauri commands. Runtime VM detection
-is not a security gate. Normal builds do not compile live-validation evidence
-commands.
+not compile `src/mutation` or register its Tauri commands. Target-type evidence
+must match the explicit approval and cannot override policy or identity gates.
+Normal builds do not compile live-validation evidence commands.
 
 The normal main-window capability contains only the Tauri listen and unlisten
 commands required for Rust-emitted inspection progress. Frontend event emission

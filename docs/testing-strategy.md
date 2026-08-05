@@ -79,10 +79,14 @@ mutation remains prohibited. Identity-export and denylist-validator parser
 self-tests prove hash-only output plus empty, malformed, and target-equal
 rejection without displaying an identity.
 
-Scoped version 2 tests accept Widgets-to-enabled only and reject empty or
+Scoped version 3 physical tests accept Widgets-to-enabled only and reject empty or
 duplicate scopes/states, unknown operations/states/fields, wrong handler/source/
 inspection/evidence bindings, expiration, and exhausted plan or execution
-allowances. Broker tests prove that options contain only the approved operation
+allowances. Policy tests reject missing, malformed, legacy VM-only, empty,
+duplicate, and unknown target-type configuration. Physical tests reject every
+missing data, recovery, restart, encryption, management, automatic-repair,
+final-plan, expiry, reimage, and disposition requirement. Version 2 VM
+compatibility is tested separately. Broker tests prove that options contain only the approved operation
 and direction, direct calls reject every unapproved operation/direction pair,
 one-use plans and nonces cannot replay, and exact rollback derives only from the
 durable transaction. All apply/rollback coverage is synthetic; no test command

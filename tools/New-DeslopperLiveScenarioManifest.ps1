@@ -88,6 +88,28 @@ if ([string]::IsNullOrWhiteSpace($ScenarioId) -or
 }
 $requestedScopes = @(ConvertTo-OperationScopes $OperationScope)
 $repository = Resolve-Path (Join-Path $PSScriptRoot '..')
+$policyPath = Join-Path $repository '.deslopper\policy.toml'
+$policyText = Get-Content -Raw -LiteralPath $policyPath
+if ($policyText -match '(?m)^\s*allow_live_mutation_only_in_explicitly_approved_disposable_vm\s*=' -or
+    $policyText -notmatch '(?m)^\s*live_validation_policy_schema_version\s*=\s*2\s*$' -or
+    $policyText -notmatch '(?m)^\s*allow_live_mutation_only_in_explicitly_approved_disposable_target\s*=\s*true\s*$' -or
+    $policyText -notmatch '(?m)^\s*physical_target_requires_strict_recovery_readiness\s*=\s*true\s*$') {
+    throw 'The committed explicit-target live-validation policy is missing, legacy, or invalid.'
+}
+$allowedTargetLine = [regex]::Match(
+    $policyText,
+    '(?m)^\s*allowed_live_validation_target_types\s*=\s*\[(?<types>[^\]]*)\]\s*$'
+)
+if (-not $allowedTargetLine.Success) {
+    throw 'The committed policy has no explicit allowed target-type list.'
+}
+$allowedTargetTypes = @([regex]::Matches($allowedTargetLine.Groups['types'].Value, '"(?<type>[^"]+)"') |
+    ForEach-Object { $_.Groups['type'].Value })
+if ($allowedTargetTypes.Count -eq 0 -or
+    @($allowedTargetTypes | Where-Object { $_ -notin @('virtual_machine', 'physical_laptop') }).Count -ne 0 -or
+    @($allowedTargetTypes | Select-Object -Unique).Count -ne $allowedTargetTypes.Count) {
+    throw 'The committed policy target-type list is empty, duplicated, or contains an unknown type.'
+}
 $matrix = Get-Content -Raw (Join-Path $repository 'validation\matrix.json') | ConvertFrom-Json
 if (-not (@($matrix.targets) + @($matrix.preparationTargets) | Where-Object { $_.id -eq $ScenarioId })) {
     throw "Scenario '$ScenarioId' is not in validation/matrix.json."
@@ -109,7 +131,7 @@ $denylistPath = Join-Path $localDirectory 'development-host-denylist.json'
 $targetApprovalPath = Join-Path $localDirectory 'approved-validation-target.json'
 if (-not (Test-Path -LiteralPath $denylistPath)) { throw 'The local development-host denylist is required.' }
 if (-not (Test-Path -LiteralPath $targetApprovalPath)) {
-    throw 'A separate ignored version-2 target approval is required; a review draft cannot authorize mutation.'
+    throw 'A separate ignored scoped target approval is required; a review draft cannot authorize mutation.'
 }
 $denylist = Get-Content -Raw $denylistPath | ConvertFrom-Json
 $denylistHashes = @($denylist.developmentHostFingerprints)
@@ -142,14 +164,38 @@ foreach ($scope in $requestedScopes) {
         @($requestedStates | Where-Object { $_ -notin $approvedStates }).Count -eq 0
 }
 $recoveryComplete = $target.importantDataConfirmed -eq $true -and
-    $target.backupConfirmed -eq $true -and $target.reinstallationAccepted -eq $true -and
+    $target.reinstallationAccepted -eq $true -and
     $target.winreVerified -eq $true -and
     $target.bitlockerRecoveryState -in @('not_applicable_unencrypted', 'recovery_material_confirmed') -and
     $target.recoveryMediaState -in @('available', 'built_in_verified')
-$dispositionConfirmed = ($target.targetType -eq 'virtual_machine' -and $target.disposableConfirmed -eq $true) -or
-    ($target.targetType -eq 'physical_laptop' -and $target.expendableConfirmed -eq $true)
+$nowEpochMs = [uint64][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+$vmComplete = $target.targetType -eq 'virtual_machine' -and
+    [uint32]$target.schemaVersion -in @(2, 3) -and
+    $target.disposableConfirmed -eq $true -and $target.backupConfirmed -eq $true
+$physicalDataComplete = $target.importantDataState -eq 'absent' -or
+    ($target.importantDataState -eq 'present_backed_up' -and $target.backupConfirmed -eq $true)
+$physicalComplete = $target.targetType -eq 'physical_laptop' -and
+    [uint32]$target.schemaVersion -eq 3 -and
+    $target.expendableConfirmed -eq $true -and $physicalDataComplete -and
+    $target.recoveryReadiness -eq 'ready' -and
+    $target.recoveryRouteState -in @('recovery_partition_verified', 'equivalent_route_verified') -and
+    $target.recoveryMediaState -eq 'available' -and
+    $target.alternateRecoveryDeviceAvailable -eq $true -and
+    $target.restartPendingState -eq 'clear' -and
+    $target.managementState.domainJoined -eq $false -and
+    $target.managementState.entraJoined -eq $false -and
+    $target.managementState.workplaceJoined -eq $false -and
+    $target.managementState.mdmEnrolled -eq $false -and
+    $target.automaticRepairDisabled -eq $true -and
+    $target.finalPlanApprovalRequired -eq $true -and
+    [uint64]$target.approvalGrantedAtEpochMs -le $nowEpochMs -and
+    [uint64]$target.expiresAtEpochMs -gt [uint64]$target.approvalGrantedAtEpochMs -and
+    ([uint64]$target.expiresAtEpochMs - [uint64]$target.approvalGrantedAtEpochMs) -le 1800000 -and
+    $target.finalDisposition -in @('reset_before_sale', 'reimage_after_validation')
+$dispositionConfirmed = $vmComplete -or $physicalComplete
 $head = (& git -C $repository rev-parse HEAD).Trim()
-if ([uint32]$target.schemaVersion -ne 2 -or $target.recordKind -ne 'approval' -or
+if ($target.targetType -notin $allowedTargetTypes -or
+    $target.recordKind -ne 'approval' -or
     $target.approvalStatus -ne 'approved' -or $target.scenarioId -ne $ScenarioId -or
     $target.hashedMachineIdentity -ne $fingerprint -or
     $target.windowsEdition -ne $currentVersion.EditionID -or
@@ -166,7 +212,8 @@ if ([uint32]$target.schemaVersion -ne 2 -or $target.recordKind -ne 'approval' -o
     $target.developmentHostProtectionState -ne 'present_distinct' -or
     $target.recoveryReadiness -notin @('ready', 'ready_with_warnings') -or
     [string]::IsNullOrWhiteSpace([string]$target.explicitUserApprovalTimestamp) -or
-    [uint64]$target.expiresAtEpochMs -le [uint64][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() -or
+    [uint64]$target.expiresAtEpochMs -le $nowEpochMs -or
+    [string]::IsNullOrWhiteSpace([string]$target.restoreOrReimageProcedure) -or
     -not $recoveryComplete -or -not $dispositionConfirmed) {
     throw 'The scoped target approval is incomplete, expired, mismatched, or broader than requested.'
 }

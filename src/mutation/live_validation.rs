@@ -10,6 +10,7 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 
 use super::{
+    governance::{PolicyTargetType, committed_live_validation_policy},
     plan::{CapturedState, hash_text},
     request::{MutationOperationId, MutationTarget},
     transaction::{MutationTransaction, TransactionStatus},
@@ -21,6 +22,7 @@ pub const SCENARIO_ARGUMENT: &str = "--validation-scenario=";
 pub const EXPECTED_MACHINE_ARGUMENT: &str = "--expected-machine-id=";
 pub const EXPECTED_CHECKPOINT_ARGUMENT: &str = "--expected-checkpoint-id=";
 pub const EXPECTED_SOURCE_COMMIT_ARGUMENT: &str = "--expected-source-commit=";
+const MAX_PHYSICAL_APPROVAL_LIFETIME_MS: u64 = 30 * 60 * 1_000;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -197,6 +199,8 @@ pub struct EnvironmentIdentity {
 #[serde(rename_all = "camelCase")]
 pub struct LiveValidationGateStatus {
     pub command_line_opt_in: bool,
+    pub governance_policy_loaded: bool,
+    pub target_type_policy_allowed: bool,
     pub manifest_loaded: bool,
     pub target_approval_loaded: bool,
     pub denylist_loaded: bool,
@@ -215,6 +219,9 @@ pub struct LiveValidationGateStatus {
     pub maximum_plans: u32,
     pub maximum_executions: u32,
     pub approval_expires_at_epoch_ms: Option<u64>,
+    pub approved_target_type: Option<ValidationTargetType>,
+    pub approved_target_identity: Option<String>,
+    pub approved_target_management: Option<TargetManagementState>,
     pub rollback_environment_available: bool,
     pub local_approval_revalidation_required: bool,
     pub available: bool,
@@ -249,6 +256,8 @@ impl LiveValidationGateStatus {
     pub fn test_valid() -> Self {
         Self {
             command_line_opt_in: true,
+            governance_policy_loaded: true,
+            target_type_policy_allowed: true,
             manifest_loaded: true,
             target_approval_loaded: true,
             denylist_loaded: true,
@@ -274,6 +283,14 @@ impl LiveValidationGateStatus {
             maximum_plans: 32,
             maximum_executions: 32,
             approval_expires_at_epoch_ms: Some(u64::MAX),
+            approved_target_type: Some(ValidationTargetType::VirtualMachine),
+            approved_target_identity: Some("b".repeat(64)),
+            approved_target_management: Some(TargetManagementState {
+                domain_joined: false,
+                entra_joined: false,
+                workplace_joined: Some(false),
+                mdm_enrolled: false,
+            }),
             rollback_environment_available: true,
             local_approval_revalidation_required: false,
             available: true,
@@ -328,6 +345,15 @@ pub enum ValidationTargetType {
     PhysicalLaptop,
 }
 
+impl ValidationTargetType {
+    const fn policy_type(self) -> PolicyTargetType {
+        match self {
+            Self::VirtualMachine => PolicyTargetType::VirtualMachine,
+            Self::PhysicalLaptop => PolicyTargetType::PhysicalLaptop,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TargetRecordKind {
@@ -372,6 +398,39 @@ pub enum RecoveryMediaState {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
+pub enum ImportantDataState {
+    Absent,
+    PresentBackedUp,
+    PresentNotBackedUp,
+    Unknown,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecoveryRouteState {
+    RecoveryPartitionVerified,
+    EquivalentRouteVerified,
+    Missing,
+    Unknown,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RestartPendingState {
+    Clear,
+    Pending,
+    Unknown,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FinalDisposition {
+    ResetBeforeSale,
+    ReimageAfterValidation,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum DevelopmentHostProtectionState {
     PresentDistinct,
     Missing,
@@ -383,6 +442,8 @@ pub enum DevelopmentHostProtectionState {
 pub struct TargetManagementState {
     pub domain_joined: bool,
     pub entra_joined: bool,
+    #[serde(default)]
+    pub workplace_joined: Option<bool>,
     pub mdm_enrolled: bool,
 }
 
@@ -467,6 +528,22 @@ pub struct ScopedValidationTargetApproval {
     pub restore_or_reimage_procedure: String,
     pub validation_maturity: String,
     #[serde(default)]
+    pub important_data_state: Option<ImportantDataState>,
+    #[serde(default)]
+    pub recovery_route_state: Option<RecoveryRouteState>,
+    #[serde(default)]
+    pub alternate_recovery_device_available: Option<bool>,
+    #[serde(default)]
+    pub restart_pending_state: Option<RestartPendingState>,
+    #[serde(default)]
+    pub automatic_repair_disabled: Option<bool>,
+    #[serde(default)]
+    pub final_plan_approval_required: Option<bool>,
+    #[serde(default)]
+    pub approval_granted_at_epoch_ms: Option<u64>,
+    #[serde(default)]
+    pub final_disposition: Option<FinalDisposition>,
+    #[serde(default)]
     pub disposable_confirmed: Option<bool>,
     #[serde(default)]
     pub expendable_confirmed: Option<bool>,
@@ -516,9 +593,9 @@ pub fn load_local_manifest() -> Option<ValidationScenarioManifest> {
     read_json(&local_validation_directory().join("live-validation-scenario.json"))
 }
 
-/// Re-read the authorizing V2 approval from disk immediately before a scoped
-/// operation is accepted. Test-only gate values may opt out because they do not
-/// have a local approval document.
+/// Re-read committed policy, the authorizing scoped approval, and the local
+/// development-host denylist immediately before an operation is accepted.
+/// Test-only gate values may opt out because they have no local documents.
 pub fn local_scoped_approval_allows(
     status: &LiveValidationGateStatus,
     operation_id: MutationOperationId,
@@ -533,6 +610,8 @@ pub fn local_scoped_approval_allows(
         operation_id,
         target,
         &local_validation_directory().join("approved-validation-target.json"),
+        &local_validation_directory().join("development-host-denylist.json"),
+        None,
         current_epoch_ms(),
     )
 }
@@ -541,21 +620,54 @@ fn scoped_approval_document_allows(
     status: &LiveValidationGateStatus,
     operation_id: MutationOperationId,
     target: MutationTarget,
-    path: &std::path::Path,
+    approval_path: &std::path::Path,
+    denylist_path: &std::path::Path,
+    policy_source: Option<&str>,
     now_epoch_ms: u64,
 ) -> bool {
-    let document = read_target_approval(path);
-    let Some(ValidationTargetApprovalDocument::Scoped(_)) = document.as_ref() else {
+    let policy = policy_source.map_or_else(
+        committed_live_validation_policy,
+        super::governance::LiveValidationPolicy::parse,
+    );
+    let Ok(policy) = policy else {
         return false;
     };
+    let document = read_target_approval(approval_path);
+    if document.is_none() {
+        return false;
+    }
     let Some(approval) = document
         .as_ref()
         .and_then(|value| normalize_target_approval(value, now_epoch_ms))
     else {
         return false;
     };
+    let denylist = read_json::<DevelopmentHostDenylist>(denylist_path);
+    let Some(denylist) = denylist.filter(valid_development_host_denylist) else {
+        return false;
+    };
+    let denylist_identity = approval.development_host_denylist_identity.as_deref();
 
-    status.approval_id.as_deref() == Some(approval.approval_id.as_str())
+    let denylist_binding_valid = denylist_identity.is_none_or(|identity| {
+        Some(identity)
+            == denylist
+                .development_host_fingerprints
+                .first()
+                .map(String::as_str)
+    });
+
+    policy.allows(approval.target_type.policy_type())
+        && status.governance_policy_loaded
+        && status.target_type_policy_allowed
+        && status.approved_target_type == Some(approval.target_type)
+        && status.approved_target_identity.as_deref()
+            == Some(approval.hashed_machine_identity.as_str())
+        && status.approved_target_management.as_ref() == Some(&approval.management_state)
+        && denylist_binding_valid
+        && !denylist
+            .development_host_fingerprints
+            .contains(&approval.hashed_machine_identity)
+        && status.approval_id.as_deref() == Some(approval.approval_id.as_str())
         && status.approval_source_commit.as_deref()
             == Some(approval.source_checkpoint_commit.as_str())
         && status.approval_source_inspection_id.as_deref()
@@ -576,7 +688,13 @@ pub fn build_live_validation_gate(
     latest_inspection_id: Option<&str>,
     arguments: &[String],
 ) -> LiveValidationGateStatus {
-    let computer_name = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "unknown".into());
+    let computer_name_result = std::env::var("COMPUTERNAME");
+    let computer_name = computer_name_result
+        .as_deref()
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("unknown")
+        .to_owned();
     let scenario_argument = argument_value(arguments, SCENARIO_ARGUMENT);
     let expected_machine_argument = argument_value(arguments, EXPECTED_MACHINE_ARGUMENT);
     let expected_checkpoint_argument = argument_value(arguments, EXPECTED_CHECKPOINT_ARGUMENT);
@@ -593,6 +711,7 @@ pub fn build_live_validation_gate(
         .and_then(|value| normalize_target_approval(value, current_epoch_ms()));
     let denylist =
         read_json::<DevelopmentHostDenylist>(&directory.join("development-host-denylist.json"));
+    let governance_policy = committed_live_validation_policy();
 
     let edition = platform.map_or_else(|| "unknown".into(), |value| value.edition.clone());
     let build = platform.map_or(0, |value| value.build);
@@ -610,6 +729,11 @@ pub fn build_live_validation_gate(
         .collect();
     let (virtual_machine_detection, virtual_machine_evidence) = detect_virtual_machine(platform);
     let fingerprint = development_host_fingerprint(&computer_name, &edition, build);
+    let machine_identity_confident = computer_name_result.is_ok()
+        && platform.is_some()
+        && edition != "unknown"
+        && build > 0
+        && update_build_revision.is_some();
     let development_host_refused = denylist.as_ref().is_some_and(|value| {
         value.schema_version == 1
             && value
@@ -624,6 +748,12 @@ pub fn build_live_validation_gate(
     let denylist_loaded = denylist
         .as_ref()
         .is_some_and(valid_development_host_denylist);
+    let governance_policy_loaded = governance_policy.is_ok();
+    let target_type_policy_allowed = target_approval.as_ref().is_some_and(|approval| {
+        governance_policy
+            .as_ref()
+            .is_ok_and(|policy| policy.allows(approval.target_type.policy_type()))
+    });
     let scenario_matches = manifest
         .as_ref()
         .is_some_and(|value| Some(value.scenario_id.as_str()) == scenario_argument.as_deref());
@@ -631,7 +761,8 @@ pub fn build_live_validation_gate(
         Some(value.expected_machine_id.as_str()) == expected_machine_argument.as_deref()
             && value.expected_machine_id == fingerprint
     });
-    let machine_identity_matches = scenario_machine_identity_matches
+    let machine_identity_matches = machine_identity_confident
+        && scenario_machine_identity_matches
         && target_approval
             .as_ref()
             .is_some_and(|value| value.hashed_machine_identity == fingerprint);
@@ -685,8 +816,10 @@ pub fn build_live_validation_gate(
             "domain" => platform.and_then(|item| item.domain_joined) == Some(true),
             "mdm" => platform.and_then(|item| item.mdm_enrolled) == Some(true),
             "none" => {
-                platform.and_then(|item| item.domain_joined) != Some(true)
-                    && platform.and_then(|item| item.mdm_enrolled) != Some(true)
+                platform.and_then(|item| item.domain_joined) == Some(false)
+                    && platform.and_then(|item| item.entra_joined) == Some(false)
+                    && platform.and_then(|item| item.workplace_joined) == Some(false)
+                    && platform.and_then(|item| item.mdm_enrolled) == Some(false)
             }
             "local-policy" => true,
             _ => false,
@@ -708,23 +841,19 @@ pub fn build_live_validation_gate(
             && value.windows_build == build
             && update_build_revision == Some(value.windows_ubr)
             && platform.is_some_and(|current| {
+                let expected_workplace = value
+                    .management_state
+                    .workplace_joined
+                    .unwrap_or(value.management_state.entra_joined);
                 current.domain_joined == Some(value.management_state.domain_joined)
-                    && current.workplace_joined == Some(value.management_state.entra_joined)
+                    && current.entra_joined == Some(value.management_state.entra_joined)
+                    && current.workplace_joined == Some(expected_workplace)
                     && current.mdm_enrolled == Some(value.management_state.mdm_enrolled)
             })
     });
     let platform_matches = scenario_platform_matches && target_platform_matches;
     let target_type_matches = target_approval.as_ref().is_some_and(|value| {
-        matches!(
-            (value.target_type, virtual_machine_detection),
-            (
-                ValidationTargetType::VirtualMachine,
-                VirtualMachineDetectionResult::Detected
-            ) | (
-                ValidationTargetType::PhysicalLaptop,
-                VirtualMachineDetectionResult::NotDetected
-            )
-        )
+        target_type_matches_detection(value.target_type, virtual_machine_detection)
     });
     let database_belongs_to_guest = current_machine_id.as_deref() == stored_machine_id;
     let rollback_environment_available = command_line_opt_in
@@ -739,6 +868,8 @@ pub fn build_live_validation_gate(
         && !development_host_refused;
     let (available, reason) = evaluate_gate(&GateFacts {
         command_line_opt_in,
+        governance_policy_loaded,
+        target_type_policy_allowed,
         manifest_loaded,
         target_approval_loaded,
         denylist_loaded,
@@ -778,9 +909,18 @@ pub fn build_live_validation_gate(
     let approval_expires_at_epoch_ms = target_approval
         .as_ref()
         .map(|value| value.expires_at_epoch_ms);
+    let approved_target_type = target_approval.as_ref().map(|value| value.target_type);
+    let approved_target_identity = target_approval
+        .as_ref()
+        .map(|value| value.hashed_machine_identity.clone());
+    let approved_target_management = target_approval
+        .as_ref()
+        .map(|value| value.management_state.clone());
 
     LiveValidationGateStatus {
         command_line_opt_in,
+        governance_policy_loaded,
+        target_type_policy_allowed,
         manifest_loaded,
         target_approval_loaded,
         denylist_loaded,
@@ -799,11 +939,11 @@ pub fn build_live_validation_gate(
         maximum_plans,
         maximum_executions,
         approval_expires_at_epoch_ms,
+        approved_target_type,
+        approved_target_identity,
+        approved_target_management,
         rollback_environment_available,
-        local_approval_revalidation_required: matches!(
-            target_approval_document,
-            Some(ValidationTargetApprovalDocument::Scoped(_))
-        ),
+        local_approval_revalidation_required: target_approval_document.is_some(),
         available,
         reason: reason.into(),
         environment: EnvironmentIdentity {
@@ -822,6 +962,8 @@ pub fn build_live_validation_gate(
 
 struct GateFacts {
     command_line_opt_in: bool,
+    governance_policy_loaded: bool,
+    target_type_policy_allowed: bool,
     manifest_loaded: bool,
     target_approval_loaded: bool,
     denylist_loaded: bool,
@@ -839,6 +981,8 @@ struct GateFacts {
 
 fn evaluate_gate(facts: &GateFacts) -> (bool, &'static str) {
     let available = facts.command_line_opt_in
+        && facts.governance_policy_loaded
+        && facts.target_type_policy_allowed
         && facts.manifest_loaded
         && facts.target_approval_loaded
         && facts.denylist_loaded
@@ -856,6 +1000,10 @@ fn evaluate_gate(facts: &GateFacts) -> (bool, &'static str) {
         "Live mutation is refused on the recorded development host."
     } else if !facts.command_line_opt_in {
         "The separate --enable-live-validation gate is absent."
+    } else if !facts.governance_policy_loaded {
+        "The committed live-validation target policy is missing or invalid."
+    } else if !facts.target_type_policy_allowed {
+        "The approval target type is not explicitly allowed by committed policy."
     } else if !facts.denylist_loaded {
         "The local development-host denylist is missing or invalid."
     } else if !facts.target_approval_loaded {
@@ -906,9 +1054,23 @@ fn is_git_commit_id(value: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
+fn is_utc_approval_timestamp(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    (20..=35).contains(&bytes.len())
+        && bytes.get(4) == Some(&b'-')
+        && bytes.get(7) == Some(&b'-')
+        && bytes.get(10) == Some(&b'T')
+        && bytes.get(13) == Some(&b':')
+        && bytes.get(16) == Some(&b':')
+        && bytes.last() == Some(&b'Z')
+        && bytes
+            .iter()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'-' | b'T' | b':' | b'.' | b'Z'))
+}
+
 fn valid_development_host_denylist(value: &DevelopmentHostDenylist) -> bool {
     value.schema_version == 1
-        && !value.development_host_fingerprints.is_empty()
+        && value.development_host_fingerprints.len() == 1
         && value
             .development_host_fingerprints
             .iter()
@@ -926,6 +1088,9 @@ fn read_target_approval(path: &std::path::Path) -> Option<ValidationTargetApprov
             .ok()
             .map(ValidationTargetApprovalDocument::Legacy),
         Some(2) => serde_json::from_value(value)
+            .ok()
+            .map(ValidationTargetApprovalDocument::Scoped),
+        Some(3) => serde_json::from_value(value)
             .ok()
             .map(ValidationTargetApprovalDocument::Scoped),
         _ => None,
@@ -1028,11 +1193,7 @@ fn scoped_target_approval_is_complete(
     value: &ScopedValidationTargetApproval,
     now_epoch_ms: u64,
 ) -> bool {
-    let target_disposition_confirmed = match value.target_type {
-        ValidationTargetType::VirtualMachine => value.disposable_confirmed == Some(true),
-        ValidationTargetType::PhysicalLaptop => value.expendable_confirmed == Some(true),
-    };
-    value.schema_version == 2
+    let common_complete = matches!(value.schema_version, 2 | 3)
         && value.record_kind == TargetRecordKind::Approval
         && value.approval_status == TargetApprovalStatus::Approved
         && !value.approval_id.trim().is_empty()
@@ -1055,8 +1216,6 @@ fn scoped_target_approval_is_complete(
             value.recovery_readiness,
             RecoveryReadiness::Ready | RecoveryReadiness::ReadyWithWarnings
         )
-        && value.important_data_confirmed
-        && value.backup_confirmed
         && value.reinstallation_accepted
         && value.winre_verified
         && matches!(
@@ -1078,8 +1237,76 @@ fn scoped_target_approval_is_complete(
             .expires_at_epoch_ms
             .is_some_and(|expiration| expiration > now_epoch_ms)
         && !value.restore_or_reimage_procedure.trim().is_empty()
-        && !value.validation_maturity.trim().is_empty()
-        && target_disposition_confirmed
+        && !value.validation_maturity.trim().is_empty();
+
+    if !common_complete {
+        return false;
+    }
+
+    match (value.schema_version, value.target_type) {
+        (2 | 3, ValidationTargetType::VirtualMachine) => {
+            value.disposable_confirmed == Some(true)
+                && value.important_data_confirmed
+                && value.backup_confirmed
+        }
+        (3, ValidationTargetType::PhysicalLaptop) => {
+            physical_target_approval_is_complete(value, now_epoch_ms)
+        }
+        _ => false,
+    }
+}
+
+fn physical_target_approval_is_complete(
+    value: &ScopedValidationTargetApproval,
+    now_epoch_ms: u64,
+) -> bool {
+    let approval_start = value.approval_granted_at_epoch_ms;
+    let expiration = value.expires_at_epoch_ms;
+    value.expendable_confirmed == Some(true)
+        && matches!(
+            value.account_class.as_str(),
+            "local_administrator" | "standard_user"
+        )
+        && value.recovery_readiness == RecoveryReadiness::Ready
+        && value.important_data_confirmed
+        && matches!(
+            value.important_data_state,
+            Some(ImportantDataState::Absent | ImportantDataState::PresentBackedUp)
+        )
+        && (value.important_data_state == Some(ImportantDataState::Absent)
+            || value.backup_confirmed)
+        && value.reinstallation_accepted
+        && value.winre_verified
+        && matches!(
+            value.recovery_route_state,
+            Some(
+                RecoveryRouteState::RecoveryPartitionVerified
+                    | RecoveryRouteState::EquivalentRouteVerified
+            )
+        )
+        && value.recovery_media_state == RecoveryMediaState::Available
+        && value.alternate_recovery_device_available == Some(true)
+        && value.restart_pending_state == Some(RestartPendingState::Clear)
+        && matches!(
+            value.bitlocker_recovery_state,
+            BitLockerRecoveryState::NotApplicableUnencrypted
+                | BitLockerRecoveryState::RecoveryMaterialConfirmed
+        )
+        && !value.management_state.domain_joined
+        && !value.management_state.entra_joined
+        && value.management_state.workplace_joined == Some(false)
+        && !value.management_state.mdm_enrolled
+        && value.automatic_repair_disabled == Some(true)
+        && value.final_plan_approval_required == Some(true)
+        && value.final_disposition.is_some()
+        && value
+            .explicit_user_approval_timestamp
+            .as_deref()
+            .is_some_and(is_utc_approval_timestamp)
+        && approval_start.is_some_and(|start| start <= now_epoch_ms)
+        && expiration.zip(approval_start).is_some_and(|(end, start)| {
+            end > now_epoch_ms && end > start && end - start <= MAX_PHYSICAL_APPROVAL_LIFETIME_MS
+        })
 }
 
 fn target_approval_is_complete(value: &ValidationTargetApproval, now_epoch_ms: u64) -> bool {
@@ -1101,12 +1328,8 @@ fn target_approval_is_complete(value: &ValidationTargetApproval, now_epoch_ms: u
             .get(operation.key())
             .is_some_and(|version| !version.trim().is_empty())
     });
-    let target_disposition_confirmed = match value.target_type {
-        ValidationTargetType::VirtualMachine => value.disposable_confirmed == Some(true),
-        ValidationTargetType::PhysicalLaptop => value.expendable_confirmed == Some(true),
-    };
-
     value.schema_version == 1
+        && value.target_type == ValidationTargetType::VirtualMachine
         && value.record_kind == TargetRecordKind::Approval
         && value.approval_status == TargetApprovalStatus::Approved
         && is_sha256(&value.hashed_machine_identity)
@@ -1147,7 +1370,7 @@ fn target_approval_is_complete(value: &ValidationTargetApproval, now_epoch_ms: u
             .is_some_and(|expiration| expiration > now_epoch_ms)
         && !value.restore_or_reimage_procedure.trim().is_empty()
         && !value.validation_maturity.trim().is_empty()
-        && target_disposition_confirmed
+        && value.disposable_confirmed == Some(true)
 }
 
 fn argument_value(arguments: &[String], prefix: &str) -> Option<String> {
@@ -1211,6 +1434,22 @@ fn detect_virtual_machine(
                 .into(),
         )
     }
+}
+
+fn target_type_matches_detection(
+    target_type: ValidationTargetType,
+    detection: VirtualMachineDetectionResult,
+) -> bool {
+    matches!(
+        (target_type, detection),
+        (
+            ValidationTargetType::VirtualMachine,
+            VirtualMachineDetectionResult::Detected
+        ) | (
+            ValidationTargetType::PhysicalLaptop,
+            VirtualMachineDetectionResult::NotDetected
+        )
+    )
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1468,6 +1707,7 @@ mod tests {
             user_sid: None,
             elevated: false,
             domain_joined: Some(false),
+            entra_joined: Some(false),
             workplace_joined: Some(false),
             mdm_enrolled: Some(false),
             is_windows_11: Some(true),
@@ -1501,6 +1741,7 @@ mod tests {
             management_state: TargetManagementState {
                 domain_joined: false,
                 entra_joined: false,
+                workplace_joined: Some(false),
                 mdm_enrolled: false,
             },
             source_checkpoint_commit: "a".repeat(64),
@@ -1530,7 +1771,7 @@ mod tests {
 
     fn valid_scoped_approval() -> ScopedValidationTargetApproval {
         ScopedValidationTargetApproval {
-            schema_version: 2,
+            schema_version: 3,
             record_kind: TargetRecordKind::Approval,
             approval_id: "widgets-enabled-once".into(),
             scenario_id: "physical-readiness".into(),
@@ -1543,6 +1784,7 @@ mod tests {
             management_state: TargetManagementState {
                 domain_joined: false,
                 entra_joined: false,
+                workplace_joined: Some(false),
                 mdm_enrolled: false,
             },
             source_checkpoint_commit: "a".repeat(40),
@@ -1570,13 +1812,38 @@ mod tests {
             expires_at_epoch_ms: Some(current_epoch_ms() + 60_000),
             restore_or_reimage_procedure: "Use approved Windows recovery media.".into(),
             validation_maturity: "read_only_validated".into(),
+            important_data_state: Some(ImportantDataState::Absent),
+            recovery_route_state: Some(RecoveryRouteState::RecoveryPartitionVerified),
+            alternate_recovery_device_available: Some(true),
+            restart_pending_state: Some(RestartPendingState::Clear),
+            automatic_repair_disabled: Some(true),
+            final_plan_approval_required: Some(true),
+            approval_granted_at_epoch_ms: Some(current_epoch_ms()),
+            final_disposition: Some(FinalDisposition::ResetBeforeSale),
             disposable_confirmed: None,
             expendable_confirmed: Some(true),
         }
     }
 
+    fn valid_scoped_vm_approval() -> ScopedValidationTargetApproval {
+        let mut approval = valid_scoped_approval();
+        approval.schema_version = 2;
+        approval.target_type = ValidationTargetType::VirtualMachine;
+        approval.disposable_confirmed = Some(true);
+        approval.expendable_confirmed = None;
+        approval.important_data_state = None;
+        approval.recovery_route_state = None;
+        approval.alternate_recovery_device_available = None;
+        approval.restart_pending_state = None;
+        approval.automatic_repair_disabled = None;
+        approval.final_plan_approval_required = None;
+        approval.approval_granted_at_epoch_ms = None;
+        approval.final_disposition = None;
+        approval
+    }
+
     #[test]
-    fn scoped_v2_widgets_enabled_only_normalizes_without_legacy_promotion() {
+    fn scoped_v3_widgets_enabled_only_normalizes_without_legacy_promotion() {
         let now = current_epoch_ms();
         let approval = valid_scoped_approval();
         assert!(scoped_target_approval_is_complete(&approval, now));
@@ -1618,7 +1885,23 @@ mod tests {
             "deslopper-scoped-approval-{}-{now}.json",
             std::process::id()
         ));
+        let denylist_path = path.with_extension("denylist.json");
         std::fs::write(&path, serde_json::to_vec(&approval).unwrap()).unwrap();
+        std::fs::write(
+            &denylist_path,
+            serde_json::to_vec(&serde_json::json!({
+                "schemaVersion": 1,
+                "developmentHostFingerprints": [approval.development_host_denylist_identity]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let policy = r#"
+live_validation_policy_schema_version = 2
+allow_live_mutation_only_in_explicitly_approved_disposable_target = true
+allowed_live_validation_target_types = ["virtual_machine", "physical_laptop"]
+physical_target_requires_strict_recovery_readiness = true
+"#;
 
         let mut status = LiveValidationGateStatus::test_valid();
         status.approval_id = Some(approval.approval_id.clone());
@@ -1628,6 +1911,8 @@ mod tests {
         status.approved_operation_scopes = approval.approved_operation_scopes.clone();
         status.maximum_plans = approval.maximum_plans;
         status.maximum_executions = approval.maximum_executions;
+        status.approved_target_type = Some(approval.target_type);
+        status.approved_target_identity = Some(approval.hashed_machine_identity.clone());
         status.local_approval_revalidation_required = true;
 
         assert!(scoped_approval_document_allows(
@@ -1635,6 +1920,8 @@ mod tests {
             MutationOperationId::WidgetsVisibility,
             MutationTarget::Enabled,
             &path,
+            &denylist_path,
+            Some(policy),
             now,
         ));
         assert!(!scoped_approval_document_allows(
@@ -1642,8 +1929,53 @@ mod tests {
             MutationOperationId::WidgetsVisibility,
             MutationTarget::Disabled,
             &path,
+            &denylist_path,
+            Some(policy),
             now,
         ));
+
+        let vm_only_policy = policy.replace(
+            "[\"virtual_machine\", \"physical_laptop\"]",
+            "[\"virtual_machine\"]",
+        );
+        assert!(!scoped_approval_document_allows(
+            &status,
+            MutationOperationId::WidgetsVisibility,
+            MutationTarget::Enabled,
+            &path,
+            &denylist_path,
+            Some(&vm_only_policy),
+            now,
+        ));
+        std::fs::remove_file(&denylist_path).unwrap();
+        assert!(!scoped_approval_document_allows(
+            &status,
+            MutationOperationId::WidgetsVisibility,
+            MutationTarget::Enabled,
+            &path,
+            &denylist_path,
+            Some(policy),
+            now,
+        ));
+        std::fs::write(&denylist_path, b"{\"schemaVersion\":1}").unwrap();
+        assert!(!scoped_approval_document_allows(
+            &status,
+            MutationOperationId::WidgetsVisibility,
+            MutationTarget::Enabled,
+            &path,
+            &denylist_path,
+            Some(policy),
+            now,
+        ));
+        std::fs::write(
+            &denylist_path,
+            serde_json::to_vec(&serde_json::json!({
+                "schemaVersion": 1,
+                "developmentHostFingerprints": [approval.development_host_denylist_identity]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
 
         let mut changed = approval;
         changed.approved_operation_scopes[0].allowed_target_states = vec![MutationTarget::Disabled];
@@ -1653,13 +1985,16 @@ mod tests {
             MutationOperationId::WidgetsVisibility,
             MutationTarget::Enabled,
             &path,
+            &denylist_path,
+            Some(policy),
             now,
         ));
         let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(denylist_path);
     }
 
     #[test]
-    fn scoped_v2_rejects_empty_duplicate_malformed_and_exhaustive_defaults() {
+    fn scoped_v3_rejects_empty_duplicate_malformed_and_exhaustive_defaults() {
         let now = current_epoch_ms();
         let mut approval = valid_scoped_approval();
         approval.approved_operation_scopes.clear();
@@ -1692,7 +2027,7 @@ mod tests {
     }
 
     #[test]
-    fn scoped_v2_rejects_unknown_operations_states_and_unknown_fields() {
+    fn scoped_v3_rejects_unknown_operations_states_and_unknown_fields() {
         let value = serde_json::to_value(valid_scoped_approval()).unwrap();
         let mut unknown_operation = value.clone();
         unknown_operation["approvedOperationScopes"][0]["operationId"] =
@@ -1706,13 +2041,22 @@ mod tests {
             serde_json::json!("toggle");
         assert!(serde_json::from_value::<ScopedValidationTargetApproval>(unknown_state).is_err());
 
+        let mut missing_target_type = value.clone();
+        missing_target_type
+            .as_object_mut()
+            .unwrap()
+            .remove("targetType");
+        assert!(
+            serde_json::from_value::<ScopedValidationTargetApproval>(missing_target_type).is_err()
+        );
+
         let mut extra = value;
         extra["approvedOperationScopes"][0]["registryPath"] = serde_json::json!("arbitrary");
         assert!(serde_json::from_value::<ScopedValidationTargetApproval>(extra).is_err());
     }
 
     #[test]
-    fn scoped_v2_rejects_wrong_source_identity_evidence_handler_and_expiry() {
+    fn scoped_v3_rejects_wrong_source_identity_evidence_handler_and_expiry() {
         let now = current_epoch_ms();
         let mut approval = valid_scoped_approval();
         approval.source_checkpoint_commit = "a".repeat(39);
@@ -1729,6 +2073,108 @@ mod tests {
         approval = valid_scoped_approval();
         approval.expires_at_epoch_ms = Some(now);
         assert!(!scoped_target_approval_is_complete(&approval, now));
+    }
+
+    #[test]
+    fn strict_physical_target_eligibility_is_complete_and_fail_closed() {
+        let now = current_epoch_ms();
+        let valid = valid_scoped_approval();
+        assert!(scoped_target_approval_is_complete(&valid, now));
+
+        let mut value = valid.clone();
+        value.expendable_confirmed = Some(false);
+        assert!(!scoped_target_approval_is_complete(&value, now));
+        value = valid.clone();
+        value.development_host_denylist_identity = value.hashed_machine_identity.clone();
+        assert!(!scoped_target_approval_is_complete(&value, now));
+        value = valid.clone();
+        value.important_data_state = Some(ImportantDataState::PresentNotBackedUp);
+        assert!(!scoped_target_approval_is_complete(&value, now));
+        value = valid.clone();
+        value.important_data_state = Some(ImportantDataState::PresentBackedUp);
+        value.backup_confirmed = false;
+        assert!(!scoped_target_approval_is_complete(&value, now));
+        value = valid.clone();
+        value.reinstallation_accepted = false;
+        assert!(!scoped_target_approval_is_complete(&value, now));
+        value = valid.clone();
+        value.winre_verified = false;
+        assert!(!scoped_target_approval_is_complete(&value, now));
+        value = valid.clone();
+        value.recovery_route_state = Some(RecoveryRouteState::Missing);
+        assert!(!scoped_target_approval_is_complete(&value, now));
+        value = valid.clone();
+        value.recovery_media_state = RecoveryMediaState::Missing;
+        assert!(!scoped_target_approval_is_complete(&value, now));
+        value = valid.clone();
+        value.alternate_recovery_device_available = Some(false);
+        assert!(!scoped_target_approval_is_complete(&value, now));
+        value = valid.clone();
+        value.restart_pending_state = Some(RestartPendingState::Pending);
+        assert!(!scoped_target_approval_is_complete(&value, now));
+        value = valid.clone();
+        value.bitlocker_recovery_state = BitLockerRecoveryState::Unknown;
+        assert!(!scoped_target_approval_is_complete(&value, now));
+        value = valid.clone();
+        value.management_state.domain_joined = true;
+        assert!(!scoped_target_approval_is_complete(&value, now));
+        value = valid.clone();
+        value.management_state.entra_joined = true;
+        assert!(!scoped_target_approval_is_complete(&value, now));
+        value = valid.clone();
+        value.management_state.workplace_joined = Some(true);
+        assert!(!scoped_target_approval_is_complete(&value, now));
+        value = valid.clone();
+        value.management_state.workplace_joined = None;
+        assert!(!scoped_target_approval_is_complete(&value, now));
+        value = valid.clone();
+        value.management_state.mdm_enrolled = true;
+        assert!(!scoped_target_approval_is_complete(&value, now));
+        value = valid.clone();
+        value.account_class = "domain_administrator".into();
+        assert!(!scoped_target_approval_is_complete(&value, now));
+        value = valid.clone();
+        value.automatic_repair_disabled = Some(false);
+        assert!(!scoped_target_approval_is_complete(&value, now));
+        value = valid.clone();
+        value.final_plan_approval_required = Some(false);
+        assert!(!scoped_target_approval_is_complete(&value, now));
+        value = valid.clone();
+        value.final_disposition = None;
+        assert!(!scoped_target_approval_is_complete(&value, now));
+        value = valid.clone();
+        value.explicit_user_approval_timestamp = Some("not-a-timestamp".into());
+        assert!(!scoped_target_approval_is_complete(&value, now));
+        value = valid.clone();
+        value.restore_or_reimage_procedure.clear();
+        assert!(!scoped_target_approval_is_complete(&value, now));
+        value = valid.clone();
+        value.approval_granted_at_epoch_ms = Some(now - MAX_PHYSICAL_APPROVAL_LIFETIME_MS - 1);
+        assert!(!scoped_target_approval_is_complete(&value, now));
+        value = valid;
+        value.expires_at_epoch_ms = Some(now);
+        assert!(!scoped_target_approval_is_complete(&value, now));
+    }
+
+    #[test]
+    fn scoped_v2_remains_vm_only_and_physical_fields_cannot_substitute() {
+        let now = current_epoch_ms();
+        assert!(scoped_target_approval_is_complete(
+            &valid_scoped_vm_approval(),
+            now
+        ));
+        let mut physical_v2 = valid_scoped_approval();
+        physical_v2.schema_version = 2;
+        assert!(!scoped_target_approval_is_complete(&physical_v2, now));
+
+        let mut vm_without_checkpoint_recovery = valid_scoped_vm_approval();
+        vm_without_checkpoint_recovery
+            .restore_or_reimage_procedure
+            .clear();
+        assert!(!scoped_target_approval_is_complete(
+            &vm_without_checkpoint_recovery,
+            now
+        ));
     }
 
     #[test]
@@ -1800,12 +2246,26 @@ mod tests {
     fn virtual_machine_detection_is_informational() {
         let (result, _) = detect_virtual_machine(Some(&platform("GUEST", "Professional", 26100)));
         assert_eq!(result, VirtualMachineDetectionResult::Detected);
+        assert!(target_type_matches_detection(
+            ValidationTargetType::VirtualMachine,
+            VirtualMachineDetectionResult::Detected
+        ));
+        assert!(!target_type_matches_detection(
+            ValidationTargetType::PhysicalLaptop,
+            VirtualMachineDetectionResult::Detected
+        ));
+        assert!(!target_type_matches_detection(
+            ValidationTargetType::VirtualMachine,
+            VirtualMachineDetectionResult::NotDetected
+        ));
     }
 
     #[test]
     fn live_gate_rejects_missing_opt_in_and_identity_scenario_checkpoint_mismatches() {
         let valid = || GateFacts {
             command_line_opt_in: true,
+            governance_policy_loaded: true,
+            target_type_policy_allowed: true,
             manifest_loaded: true,
             target_approval_loaded: true,
             denylist_loaded: true,
@@ -1824,6 +2284,12 @@ mod tests {
         let mut missing_flag = valid();
         missing_flag.command_line_opt_in = false;
         assert!(!evaluate_gate(&missing_flag).0);
+        let mut missing_policy = valid();
+        missing_policy.governance_policy_loaded = false;
+        assert!(evaluate_gate(&missing_policy).1.contains("policy"));
+        let mut disallowed_target = valid();
+        disallowed_target.target_type_policy_allowed = false;
+        assert!(evaluate_gate(&disallowed_target).1.contains("target type"));
         let mut wrong_identity = valid();
         wrong_identity.machine_identity_matches = false;
         assert!(
@@ -1879,9 +2345,13 @@ mod tests {
     }
 
     #[test]
-    fn physical_target_recovery_confirmations_are_all_fail_closed() {
+    fn legacy_v1_is_vm_only_and_recovery_confirmations_are_fail_closed() {
         let now = current_epoch_ms();
-        let mut approval = valid_target_approval(ValidationTargetType::PhysicalLaptop);
+        assert!(!target_approval_is_complete(
+            &valid_target_approval(ValidationTargetType::PhysicalLaptop),
+            now
+        ));
+        let mut approval = valid_target_approval(ValidationTargetType::VirtualMachine);
         assert!(target_approval_is_complete(&approval, now));
 
         approval.backup_confirmed = false;
@@ -1900,7 +2370,7 @@ mod tests {
     #[test]
     fn preparation_missing_host_protection_and_expiration_cannot_approve_mutation() {
         let now = current_epoch_ms();
-        let mut approval = valid_target_approval(ValidationTargetType::PhysicalLaptop);
+        let mut approval = valid_target_approval(ValidationTargetType::VirtualMachine);
         approval.record_kind = TargetRecordKind::Preparation;
         approval.approval_status = TargetApprovalStatus::Pending;
         assert!(!target_approval_is_complete(&approval, now));
@@ -1919,7 +2389,7 @@ mod tests {
     #[test]
     fn source_checkpoint_accepts_git_sha1_or_sha256_but_nothing_else() {
         let now = current_epoch_ms();
-        let mut approval = valid_target_approval(ValidationTargetType::PhysicalLaptop);
+        let mut approval = valid_target_approval(ValidationTargetType::VirtualMachine);
         approval.source_checkpoint_commit = "a".repeat(40);
         assert!(target_approval_is_complete(&approval, now));
         approval.source_checkpoint_commit = "a".repeat(39);
@@ -2095,9 +2565,14 @@ mod tests {
     }
 
     #[test]
-    fn scoped_v2_schemas_are_additive_strict_and_nonempty() {
+    fn scoped_v3_schema_is_strict_and_v2_is_explicit_vm_compatibility() {
         let validation = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("validation");
         let approval: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(validation.join("approved-validation-targets-v3.schema.json"))
+                .unwrap(),
+        )
+        .unwrap();
+        let approval_v2: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(validation.join("approved-validation-targets-v2.schema.json"))
                 .unwrap(),
         )
@@ -2112,13 +2587,37 @@ mod tests {
         )
         .unwrap();
 
-        for schema in [&approval, &scenario, &draft] {
+        assert_eq!(approval["properties"]["schemaVersion"]["const"], 3);
+        assert_eq!(
+            approval_v2["properties"]["targetType"]["const"],
+            "virtual_machine"
+        );
+        for schema in [&scenario, &draft] {
             assert_eq!(schema["properties"]["schemaVersion"]["const"], 2);
             assert_eq!(
                 schema["properties"]["approvedOperationScopes"]["minItems"],
                 1
             );
             assert_eq!(schema["additionalProperties"], false);
+        }
+        assert_eq!(
+            approval["properties"]["approvedOperationScopes"]["minItems"],
+            1
+        );
+        assert_eq!(approval["additionalProperties"], false);
+        let physical_required = approval["allOf"][1]["then"]["required"].as_array().unwrap();
+        for field in [
+            "expendableConfirmed",
+            "importantDataState",
+            "recoveryRouteState",
+            "alternateRecoveryDeviceAvailable",
+            "restartPendingState",
+            "automaticRepairDisabled",
+            "finalPlanApprovalRequired",
+            "approvalGrantedAtEpochMs",
+            "finalDisposition",
+        ] {
+            assert!(physical_required.iter().any(|candidate| candidate == field));
         }
         assert_eq!(
             approval["$defs"]["operationScope"]["oneOf"][0]["properties"]["handlerVersion"]["const"],

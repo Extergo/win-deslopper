@@ -19,9 +19,11 @@ that a handler works live.
 
 The first execution handoff exposed and correctly stopped at the legacy
 approval model's all-three-operations/both-directions requirement. Scoped
-schema version 2 now represents Widgets-to-enabled only, with a one-plan/
-one-execution limit and transaction-bound exact rollback. This implementation
-does not authorize or execute the test.
+schema version 2 introduced Widgets-to-enabled-only scope. It now remains a
+VM-only compatibility format; the strict version 3 format is required for any
+physical approval. The one-plan/one-execution proposal and transaction-bound
+exact rollback remain unchanged. This governance implementation does not
+authorize or execute the test.
 
 `validation/matrix.json` is the target inventory. Each checked-in scenario must record OS edition/build/UBR, account type, domain/MDM evidence, OneDrive state, expected component applicability, package registration and provisioning, policy/preference precedence, authority/confidence, limitations, and manual verification steps.
 

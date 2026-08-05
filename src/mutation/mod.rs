@@ -1,6 +1,7 @@
 //! Internal-only, feature-gated mutation broker.
 
 pub mod broker;
+pub mod governance;
 pub mod handlers;
 pub mod journal;
 pub mod live_validation;

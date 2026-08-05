@@ -25,6 +25,7 @@
       "account": "local_administrator",
       "domain": false,
       "entra": false,
+      "workplace": false,
       "mdm": false,
       "availabilityStatus": "available_for_approval_review",
       "availabilityNote": "Temporarily available only for a separate Widgets approval review before the final device reset.",
@@ -85,6 +86,19 @@
           "approvalStatus": "not_approved",
           "mutationStatus": "mutation_not_attempted",
           "liveScenarios": 0,
+          "countsAsLiveHandlerEvidence": false
+        },
+        {
+          "event": "explicit_physical_target_governance_committed",
+          "date": "2026-08-05",
+          "reason": "replace_vm_only_policy_with_explicit_fail_closed_target_allowlist",
+          "requiredApprovalSchemaVersion": 3,
+          "allowedScope": "widgets_visibility_enabled_only_if_separately_approved",
+          "currentStatus": "ready_for_approval_review",
+          "approvalStatus": "not_approved",
+          "mutationStatus": "mutation_not_attempted",
+          "liveScenarios": 0,
+          "governanceChangeGrantsApproval": false,
           "countsAsLiveHandlerEvidence": false
         }
       ]

@@ -34,6 +34,27 @@ A behavioural, architectural, security, dependency, or visual-system change is i
 
 A helper script is still shell execution. A hidden feature flag is still an implemented capability. A disabled control wired to destructive code is still destructive code. Test-only production pathways count if shipped. Calling PowerShell through another executable is still PowerShell execution. A backend returning executable instructions is remote command execution. Moving unsafe code to another crate does not remove the unsafe-code concern. Disabling a lint globally is not a fix. Catching and ignoring an error is not error handling. A `preview` label does not excuse misleading behaviour. Splitting a prohibited operation across modules does not permit it. Indirect dependencies still require review. Generated code does not excuse security or licensing review.
 
+## Internal live-validation targets
+
+Live mutation is permitted only on an explicitly approved disposable validation
+target whose target type is allowed by the committed repository policy. The
+currently allowed types are a disposable `virtual_machine` and an expendable
+`physical_laptop`. A physical target is exceptional, internal, and local-only;
+all strict recovery, identity, management, approval, expiry, reinstallation,
+and final-disposition requirements must pass. Missing, stale, malformed, or
+contradictory evidence requires stopping.
+
+The original development PC is permanently prohibited from live mutation. It
+may be used for development, compilation, read-only inspection, and synthetic
+testing only. The development-host denylist has no override flag, and neither a
+maintainer CLI switch nor a prompt may bypass it.
+
+Governance changes require a committed maintainer-approved source change before
+execution. The authorizing approval and execution must bind to the same
+committed code. A live-execution handoff cannot override repository governance
+by prompt alone, and changing governance grants no target or operation
+approval.
+
 ## Pre-change checklist
 
 - [ ] Read `AGENTS.md` and all governance documents relevant to the task.
@@ -52,4 +73,3 @@ A helper script is still shell execution. A hidden feature flag is still an impl
 - [ ] Confirm no prohibited Windows operation or capability was introduced.
 - [ ] Confirm documentation remains accurate and no unnecessary dependency was added.
 - [ ] Review the complete Git diff and report files, commands, failures, and limitations.
-

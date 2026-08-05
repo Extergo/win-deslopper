@@ -52,19 +52,25 @@ journals each transition, and offers separately approved exact rollback.
 Cross-process locking prevents concurrent app instances. Interrupted operations
 become recovery-required and are never silently replayed.
 
-Physical live validation additionally requires scoped approval schema version
-2. Each approved operation lists its own non-empty target-state set and matching
-handler version; the approval also binds source commit, inspection evidence,
-development-host denylist identity, expiration, and bounded plan/execution
-counts. Broker option filtering is informational defense in depth: plan
+Live-validation policy schema version 2 explicitly allowlists disposable target
+types. Physical live validation additionally requires scoped approval schema
+version 3. Each approved operation lists its own non-empty target-state set and
+matching handler version; the approval also binds source commit, fresh
+inspection evidence, development-host denylist identity, short expiration, and
+bounded plan/execution counts. Physical approval also requires no active
+domain, Entra, workplace, or MDM management, complete recovery and restart
+evidence, disabled automatic repair, final-plan approval, and a recorded final
+disposition. Broker option filtering is informational defense in depth: plan
 generation, execution, and the immediate pre-write boundary independently
-revalidate the exact operation and target against the unchanged local approval.
+revalidate committed policy, the local denylist, and the exact operation and
+target against the unchanged local approval.
 Rollback authority comes only from the durable transaction and captured exact
 pre-state, never from an inferred reverse-direction approval.
 
 SHA-256 records are integrity checks, not signatures against a same-user
 attacker who can rewrite both the database and hashes. The alpha remains
-internal until real disposable-VM coverage and security review are complete.
+internal until real explicitly approved disposable-target coverage and security
+review are complete.
 See `docs/mutation-threat-model.md` for the full analysis.
 
 The environment banner and VM heuristic provide visibility only. Eligibility
@@ -73,6 +79,8 @@ Live eligibility also requires a separate ignored, approved, unexpired generic
 validation-target record. Physical targets fail closed unless stricter recovery
 and user-approval fields are complete. Preparation records never authorize
 mutation.
+The original development PC is permanently denied regardless of an otherwise
+valid manifest or approval. It has no CLI, prompt, or maintainer override.
 The threat boundary does not include a compromised same-user account with
 arbitrary code execution. Live evidence contains typed manual assertions and
 must be reviewed; it is not cryptographically attested visual proof.

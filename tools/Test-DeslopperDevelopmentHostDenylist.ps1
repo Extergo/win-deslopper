@@ -24,8 +24,8 @@ function Test-DenylistRecord {
         throw 'The denylist contains unsupported properties.'
     }
     $hashes = @($Record.developmentHostFingerprints)
-    if ([uint32]$Record.schemaVersion -ne 1 -or $hashes.Count -eq 0) {
-        throw 'The denylist schema is invalid or empty.'
+    if ([uint32]$Record.schemaVersion -ne 1 -or $hashes.Count -ne 1) {
+        throw 'The denylist must contain exactly one development-host identity.'
     }
     if (@($hashes | Where-Object { $_ -notmatch '^[a-f0-9]{64}$' }).Count -ne 0) {
         throw 'The denylist contains an invalid validation identity hash.'
@@ -54,12 +54,13 @@ if ($ParserSelfTest) {
     foreach ($invalid in @(
         [pscustomobject]@{ schemaVersion = 1; developmentHostFingerprints = @() },
         [pscustomobject]@{ schemaVersion = 1; developmentHostFingerprints = @($target) },
-        [pscustomobject]@{ schemaVersion = 1; developmentHostFingerprints = @('invalid') }
+        [pscustomobject]@{ schemaVersion = 1; developmentHostFingerprints = @('invalid') },
+        [pscustomobject]@{ schemaVersion = 1; developmentHostFingerprints = @((('a' * 64) -join ''), (('c' * 64) -join '')) }
     )) {
         try { [void](Test-DenylistRecord -Record $invalid -CurrentTargetHash $target) } catch { $failed++ }
     }
-    if ($failed -ne 3) { throw 'Denylist rejection self-test did not fail closed.' }
-    [pscustomobject]@{ passed = 4; failed = 0; identityHashDisplayed = $false }
+    if ($failed -ne 4) { throw 'Denylist rejection self-test did not fail closed.' }
+    [pscustomobject]@{ passed = 5; failed = 0; identityHashDisplayed = $false }
     return
 }
 
