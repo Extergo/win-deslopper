@@ -89,3 +89,12 @@ Each decision below is accepted for the current architecture. Replacements must 
 - **Decision:** Add a generic local validation-target schema with `virtual_machine` and `physical_laptop` types and explicit `preparation`/`approval` record kinds. Keep the legacy VM inventory for Hyper-V compatibility. Require the live gate to load a separate ignored approved target and reject pending, incomplete, expired, recovery-unready, wrong-type/build/identity, empty-denylist, and development-host-equal states.
 - **Consequences:** A physical preparation may record read-only inspection and recovery-audit facts without becoming an approval. Physical approval requires important-data, backup, reinstall, WinRE, BitLocker recovery, media, expendability, restore/reimage, timestamp, expiration, and development-host protection fields. The original development-host identity remains local-only and mandatory.
 - **Rejected:** Claiming the laptop is a VM, treating a draft as approval, inventing or committing either machine identity, accepting an empty denylist, auto-approving from inspection/audit results, or counting read-only preparation as live mutation evidence.
+
+## D-011 - Ship the useful product as a read-only alpha
+
+- **Status:** Accepted
+- **Date:** 2026-08-05
+- **Context:** The complete inspection engine needed a coherent, useful product surface without weakening the mutation boundary or presenting internal research as a user feature.
+- **Decision:** Expose the 20-component catalogue, honest dashboard, desired-state comparisons, non-executable previews, reviewed/resolved drift, history comparison and retention, and user-reviewed redacted diagnostics. Keep the normal binary feature-off, unelevated, local, and incapable of Windows mutation.
+- **Consequences:** Internal mutation research stays behind its compile and live-validation gates and is absent from the normal product workflow. The former physical laptop is withdrawn because it was sold before approval or mutation; unavailability is not a failed operation and cannot count as mutation evidence.
+- **Rejected:** Health scores that hide uncertainty, an Apply control with no released executor, generic diagnostics dumps, silent uploads, and treating an unavailable target as live validation.

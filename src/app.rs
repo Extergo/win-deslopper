@@ -53,8 +53,70 @@ pub struct PlatformDashboard {
     pub drift_count: usize,
     pub managed_count: usize,
     pub unknown_count: usize,
+    pub permission_limited_count: usize,
+    pub failed_count: usize,
     pub desired_states: Vec<DesiredState>,
+    pub history_retention_days: u32,
     pub database_status: persistence::DatabaseStatus,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProductInfo {
+    pub product_name: &'static str,
+    pub version: &'static str,
+    pub release_label: &'static str,
+    pub build_mode: &'static str,
+    pub mutation_availability: &'static str,
+    pub database_schema_version: u32,
+    pub database_location: &'static str,
+    pub supported_windows: &'static str,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProductComponent {
+    pub component_id: &'static str,
+    pub name: &'static str,
+    pub category: &'static str,
+    pub purpose: &'static str,
+    pub benefit: &'static str,
+    pub support: String,
+    pub risk: String,
+    pub configuration: &'static str,
+    pub restart: String,
+    pub rollback: &'static str,
+    pub privileges: &'static str,
+    pub gaming_notes: &'static str,
+    pub enterprise_notes: &'static str,
+    pub documentation: &'static str,
+    pub is_package: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotChange {
+    pub component_id: &'static str,
+    pub previous_state: PlatformState,
+    pub current_state: PlatformState,
+    pub previous_status: DetectorStatus,
+    pub current_status: DetectorStatus,
+    pub explanation: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotComparison {
+    pub previous_inspection_id: String,
+    pub current_inspection_id: String,
+    pub changes: Vec<SnapshotChange>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DiagnosticsRequest {
+    pub include_history_summary: bool,
+    pub include_redacted_errors: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -292,7 +354,7 @@ pub fn start_inspection(
                 if let Some(snapshot) = current_store.snapshots.last_mut() {
                     snapshot.lifecycle = Some(outcome.lifecycle.clone());
                 }
-                if persistence::save(&current_store).is_err() {
+                if persistence::apply_history_retention(&mut current_store).is_err() {
                     persistence_failed = true;
                 }
             }
@@ -655,7 +717,7 @@ fn validate_desired_request(
         });
     }
     if !request.always_require_approval {
-        warnings.push("The read-only beta records this choice, but every future privileged operation must still obtain approval under the current safety model.".into());
+        warnings.push("The read-only Product Alpha records this choice locally. Automatic restoration is not available in this build.".into());
         status = "valid_with_warnings";
     }
     Ok(DesiredStateValidation { status: status.into(), valid: true, warnings, reason: "The requested state is valid for the current observation, subject to the listed warnings.".into() })
@@ -735,7 +797,7 @@ pub fn generate_preview_plan(
     } else {
         "preview_ready"
     };
-    let preview = serde_json::json!({"componentId":component_id,"currentState":observation.current,"desiredState":desired.state,"authority":observation.authority,"windowsBuild":observation.platform.build,"windowsEdition":observation.platform.edition,"mechanism":definition.configuration,"scope":desired.scope,"elevation":"Future executor dependent","restart":definition.restart,"dataImpact":definition.purpose,"compatibility":definition.enterprise_notes,"dependencies":definition.dependencies,"automaticReconciliationRecommended":definition.auto_reapply,"approvalRequired":definition.approval_required,"rollback":definition.rollback,"rollbackComplete":!matches!(definition.id,platform::ComponentId::Onedrive),"status":status,"executorEnabled":false,"cannotExecute":"The read-only beta contains no mutation broker or operation executor","documentation":definition.documentation});
+    let preview = serde_json::json!({"previewSchemaVersion":1,"componentId":component_id,"sourceInspectionId":store.snapshots.last().map(|snapshot|snapshot.id.clone()),"generatedAt":timestamp(),"currentState":observation.current,"desiredState":desired.state,"authority":observation.authority,"windowsBuild":observation.platform.build,"windowsEdition":observation.platform.edition,"mechanism":definition.configuration,"scope":desired.scope,"elevation":"No authority is requested for this preview","restart":definition.restart,"dataImpact":definition.purpose,"compatibility":definition.enterprise_notes,"knownRisk":definition.risk,"dependencies":definition.dependencies,"automaticReconciliationRecommended":false,"approvalRequired":definition.approval_required,"rollback":definition.rollback,"rollbackComplete":!matches!(definition.id,platform::ComponentId::Onedrive),"status":status,"executorEnabled":false,"createsMutationTransaction":false,"createsApprovalNonce":false,"cannotExecute":"Automatic restoration is not available in the read-only Product Alpha","documentation":definition.documentation});
     persistence::save_preview_plan(&component_id, &preview)
         .map_err(CommandError::invalid_action)?;
     Ok(preview)
@@ -938,11 +1000,11 @@ pub fn acknowledge_drift_event(
         .find(|event| {
             event.component_id == definition.id
                 && event.classification == classification
-                && !event.resolved
+                && !event.reviewed
         })
         .ok_or_else(|| CommandError::invalid_action("No matching active drift event exists."))?;
-    event.resolved = true;
-    event.last_observed = timestamp();
+    event.reviewed = true;
+    event.reviewed_at = Some(timestamp());
     persistence::save(&store).map_err(CommandError::invalid_action)?;
     Ok(store.drift.clone())
 }
@@ -991,6 +1053,296 @@ pub fn get_vm_validation_metadata() -> serde_json::Value {
     serde_json::json!({"fixtureSchemaVersion":1,"applicabilityRuleVersion":crate::applicability::RULE_VERSION,"identityRuleVersion":crate::package_identity::IDENTITY_RULE_VERSION,"driftClassifications":platform::drift_kind_keys(),"matrix":"validation/matrix.json","captureTool":"tools/capture-vm-fixture.ps1","productionFeature":false})
 }
 
+#[tauri::command]
+pub fn get_product_info() -> ProductInfo {
+    ProductInfo {
+        product_name: "Deslopper",
+        version: env!("CARGO_PKG_VERSION"),
+        release_label: "Read-Only Product Alpha",
+        build_mode: if cfg!(feature = "mutation-alpha") {
+            "internal mutation-alpha compile"
+        } else {
+            "normal read-only"
+        },
+        mutation_availability: if cfg!(feature = "mutation-alpha") {
+            "internal compile only; unavailable in Product Alpha"
+        } else {
+            "unavailable in this build"
+        },
+        database_schema_version: persistence::SCHEMA_VERSION,
+        database_location: "%LOCALAPPDATA%\\Deslopper\\deslopper.db",
+        supported_windows: "Windows 11; Windows 10 results are legacy observation only",
+    }
+}
+
+#[tauri::command]
+pub fn get_product_component_catalogue() -> Vec<ProductComponent> {
+    platform::v1_catalogue()
+        .into_iter()
+        .map(|definition| ProductComponent {
+            component_id: definition.id.key(),
+            name: definition.name,
+            category: definition.category,
+            purpose: definition.purpose,
+            benefit: definition.benefit,
+            support: format!("{:?}", definition.support),
+            risk: format!("{:?}", definition.risk),
+            configuration: definition.configuration,
+            restart: format!("{:?}", definition.restart),
+            rollback: definition.rollback,
+            privileges: definition.privileges,
+            gaming_notes: definition.gaming_notes,
+            enterprise_notes: definition.enterprise_notes,
+            documentation: definition.documentation,
+            is_package: definition.is_package,
+        })
+        .collect()
+}
+
+#[tauri::command]
+pub fn compare_inspections(
+    previous_inspection_id: String,
+    current_inspection_id: String,
+    session: State<'_, PlatformSession>,
+) -> Result<SnapshotComparison, CommandError> {
+    if previous_inspection_id == current_inspection_id {
+        return Err(CommandError::invalid_action(
+            "Choose two different inspections to compare.",
+        ));
+    }
+    let store = session
+        .0
+        .lock()
+        .map_err(|_| CommandError::state_unavailable())?;
+    let previous = store
+        .snapshots
+        .iter()
+        .find(|snapshot| snapshot.id == previous_inspection_id)
+        .ok_or_else(|| CommandError::invalid_action("Unknown previous inspection."))?;
+    let current = store
+        .snapshots
+        .iter()
+        .find(|snapshot| snapshot.id == current_inspection_id)
+        .ok_or_else(|| CommandError::invalid_action("Unknown current inspection."))?;
+    if !previous.machine_id.is_empty()
+        && !current.machine_id.is_empty()
+        && previous.machine_id != current.machine_id
+    {
+        return Err(CommandError::invalid_action(
+            "Snapshots from different machine identities cannot be compared.",
+        ));
+    }
+    let mut changes = Vec::new();
+    for definition in platform::v1_catalogue() {
+        let before = previous
+            .observations
+            .iter()
+            .find(|observation| observation.component_id == definition.id);
+        let after = current
+            .observations
+            .iter()
+            .find(|observation| observation.component_id == definition.id);
+        let (Some(before), Some(after)) = (before, after) else {
+            continue;
+        };
+        if before.current == after.current
+            && before.detector_status == after.detector_status
+            && before.authority == after.authority
+            && before.applicability.status == after.applicability.status
+        {
+            continue;
+        }
+        let explanation = if matches!(
+            before.detector_status,
+            DetectorStatus::Failed | DetectorStatus::Cancelled
+        ) || matches!(
+            after.detector_status,
+            DetectorStatus::Failed | DetectorStatus::Cancelled
+        ) {
+            "Detector completeness changed; this is not proof that Windows changed.".into()
+        } else if before.authority != after.authority {
+            "The observed controlling authority changed.".into()
+        } else if before.applicability.status != after.applicability.status {
+            "Build or edition applicability changed.".into()
+        } else {
+            "The observed state changed between these inspections.".into()
+        };
+        changes.push(SnapshotChange {
+            component_id: definition.id.key(),
+            previous_state: before.current.clone(),
+            current_state: after.current.clone(),
+            previous_status: before.detector_status,
+            current_status: after.detector_status,
+            explanation,
+        });
+    }
+    Ok(SnapshotComparison {
+        previous_inspection_id,
+        current_inspection_id,
+        changes,
+    })
+}
+
+#[tauri::command]
+pub fn set_history_retention(
+    days: u32,
+    session: State<'_, PlatformSession>,
+) -> Result<PlatformDashboard, CommandError> {
+    if !matches!(days, 0 | 30 | 90 | 180 | 365) {
+        return Err(CommandError::invalid_action(
+            "History retention must be 30, 90, 180, or 365 days, or kept indefinitely.",
+        ));
+    }
+    let mut store = session
+        .0
+        .lock()
+        .map_err(|_| CommandError::state_unavailable())?;
+    store.preferences.history_retention_days = days;
+    persistence::apply_history_retention(&mut store).map_err(CommandError::invalid_action)?;
+    Ok(dashboard(&store))
+}
+
+#[tauri::command]
+pub fn clear_local_history(
+    confirmed: bool,
+    session: State<'_, PlatformSession>,
+) -> Result<PlatformDashboard, CommandError> {
+    if !confirmed {
+        return Err(CommandError::invalid_action(
+            "Clearing local history requires explicit confirmation.",
+        ));
+    }
+    let mut store = session
+        .0
+        .lock()
+        .map_err(|_| CommandError::state_unavailable())?;
+    persistence::clear_local_history(&mut store).map_err(CommandError::invalid_action)?;
+    Ok(dashboard(&store))
+}
+
+#[tauri::command]
+pub fn generate_diagnostics_export(
+    request: DiagnosticsRequest,
+    session: State<'_, PlatformSession>,
+) -> Result<serde_json::Value, CommandError> {
+    let store = session
+        .0
+        .lock()
+        .map_err(|_| CommandError::state_unavailable())?;
+    Ok(build_diagnostics_export(&store, &request))
+}
+
+fn build_diagnostics_export(store: &Store, request: &DiagnosticsRequest) -> serde_json::Value {
+    let latest = store.snapshots.last();
+    let detectors: Vec<serde_json::Value> = latest
+        .map(|snapshot| {
+            snapshot
+                .observations
+                .iter()
+                .map(|observation| {
+                    let warnings: Vec<String> = observation
+                        .warnings
+                        .iter()
+                        .map(|value| crate::privacy::redact_diagnostic(value))
+                        .collect();
+                    let error = request
+                        .include_redacted_errors
+                        .then(|| {
+                            observation
+                                .error
+                                .as_deref()
+                                .map(crate::privacy::redact_diagnostic)
+                        })
+                        .flatten();
+                    let evidence: Vec<serde_json::Value> = observation
+                        .evidence
+                        .iter()
+                        .map(|item| {
+                            serde_json::json!({
+                                "queryId": item.query_id,
+                                "source": crate::privacy::redact_diagnostic(&item.source),
+                                "detail": crate::privacy::redact_diagnostic(&item.detail),
+                                "confidence": item.confidence,
+                            })
+                        })
+                        .collect();
+                    serde_json::json!({
+                        "componentId": observation.component_id.key(),
+                        "detectorStatus": observation.detector_status,
+                        "authority": observation.authority,
+                        "authorityConfidence": observation.authority_attribution.confidence,
+                        "applicability": observation.applicability.status,
+                        "packageCompleteness": observation.package_completeness,
+                        "warnings": warnings,
+                        "error": error,
+                        "redactedEvidence": evidence,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let history_summary = request.include_history_summary.then(|| {
+        serde_json::json!({
+            "inspectionCount": store.snapshots.len(),
+            "activeDriftCount": store.drift.iter().filter(|event| !event.resolved).count(),
+            "desiredStateCount": store.desired.len(),
+        })
+    });
+    let lifecycle = latest.and_then(|snapshot| snapshot.lifecycle.as_ref());
+    serde_json::json!({
+        "diagnosticsSchemaVersion": 1,
+        "exportedAtEpochMs": timestamp(),
+        "product": {
+            "name": "Deslopper",
+            "version": env!("CARGO_PKG_VERSION"),
+            "release": "Read-Only Product Alpha",
+            "buildMode": if cfg!(feature = "mutation-alpha") { "internal_compile" } else { "normal_read_only" },
+            "mutationAvailability": if cfg!(feature = "mutation-alpha") { "internal_compile_only" } else { "unavailable_in_this_build" },
+        },
+        "windows": latest.map(|snapshot| serde_json::json!({
+            "productName": snapshot.platform.product_name,
+            "edition": snapshot.platform.edition,
+            "build": snapshot.platform.build,
+            "updateBuildRevision": snapshot.platform.update_build_revision,
+            "displayVersion": snapshot.platform.display_version,
+            "architecture": snapshot.platform.architecture,
+        })),
+        "inspectionSummary": latest.map(|snapshot| serde_json::json!({
+            "inspectionId": snapshot.id,
+            "phase": lifecycle.map(|value| format!("{:?}", value.phase)),
+            "successful": lifecycle.map(|value| value.successful_detector_count),
+            "unknown": lifecycle.map(|value| value.unknown_detector_count),
+            "failed": lifecycle.map(|value| value.failed_detector_count),
+            "cancelled": lifecycle.map(|value| value.cancelled_detector_count),
+            "warningCount": lifecycle.map(|value| value.warning_count),
+            "errorCount": lifecycle.map(|value| value.error_count),
+        })),
+        "detectors": detectors,
+        "historySummary": history_summary,
+        "schemas": {
+            "database": persistence::SCHEMA_VERSION,
+            "diagnostics": 1,
+            "applicabilityRules": crate::applicability::RULE_VERSION,
+            "packageIdentityRules": crate::package_identity::IDENTITY_RULE_VERSION,
+        },
+        "capabilities": {
+            "tauriWindow": ["core:event:allow-listen", "core:event:allow-unlisten"],
+            "filesystem": false,
+            "network": false,
+            "shell": false,
+            "mutation": false,
+        },
+        "privacy": {
+            "machineIdentityIncluded": false,
+            "hostnameIncluded": false,
+            "developmentHostDenylistIncluded": false,
+            "approvalManifestIncluded": false,
+            "rawProfilePathsIncluded": false,
+            "automaticUpload": false,
+        }
+    })
+}
+
 fn dashboard(store: &Store) -> PlatformDashboard {
     let latest = store.snapshots.last().cloned();
     PlatformDashboard {
@@ -1022,7 +1374,39 @@ fn dashboard(store: &Store) -> PlatformDashboard {
                     .count()
             })
             .unwrap_or(0),
+        permission_limited_count: latest
+            .as_ref()
+            .map(|snapshot| {
+                snapshot
+                    .observations
+                    .iter()
+                    .filter(|observation| {
+                        observation.package_completeness
+                            == platform::PackageCompleteness::PermissionLimited
+                            || observation.packages.iter().any(|package| {
+                                package.current_user
+                                    == platform::PackageRegistrationState::PermissionLimited
+                                    || package.other_users
+                                        == platform::PackageRegistrationState::PermissionLimited
+                                    || package.provisioning
+                                        == platform::PackageProvisioningState::PermissionLimited
+                            })
+                    })
+                    .count()
+            })
+            .unwrap_or(0),
+        failed_count: latest
+            .as_ref()
+            .map(|snapshot| {
+                snapshot
+                    .observations
+                    .iter()
+                    .filter(|observation| observation.detector_status == DetectorStatus::Failed)
+                    .count()
+            })
+            .unwrap_or(0),
         desired_states: store.desired.clone(),
+        history_retention_days: store.preferences.history_retention_days,
         database_status: store.database_status.clone(),
     }
 }
@@ -1098,6 +1482,9 @@ fn update_drift(store: &mut Store) {
             let Some(classification) = classification else {
                 continue;
             };
+            if classification == "NormalServicing" {
+                continue;
+            }
             let inference = infer_cause(old, observation, &previous, &current, &classification);
             if let Some(existing) = store.drift.iter_mut().find(|event| {
                 event.component_id == observation.component_id
@@ -1113,6 +1500,8 @@ fn update_drift(store: &mut Store) {
                 existing.alternative_causes = inference.alternatives;
                 existing.inference_rule_version = inference.rule_version;
                 existing.current_inspection_id = Some(current.id.clone());
+                existing.reviewed = false;
+                existing.reviewed_at = None;
                 continue;
             }
             store.drift.push(persistence::DriftEvent {
@@ -1126,6 +1515,9 @@ fn update_drift(store: &mut Store) {
                 first_detected: observation.detected_at.clone(),
                 last_observed: observation.detected_at.clone(),
                 resolved: false,
+                reviewed: false,
+                reviewed_at: None,
+                returned_to_desired: false,
                 occurrence_count: 1,
                 supporting_facts: inference.supporting_facts,
                 alternative_causes: inference.alternatives,
@@ -1133,6 +1525,30 @@ fn update_drift(store: &mut Store) {
                 previous_inspection_id: Some(previous.id.clone()),
                 current_inspection_id: Some(current.id.clone()),
             });
+        }
+    }
+    for event in &mut store.drift {
+        if event.resolved {
+            continue;
+        }
+        let Some(desired) = event.desired.as_ref() else {
+            continue;
+        };
+        let returned = current
+            .observations
+            .iter()
+            .find(|observation| observation.component_id == event.component_id)
+            .is_some_and(|observation| {
+                !matches!(
+                    observation.detector_status,
+                    DetectorStatus::Failed | DetectorStatus::Cancelled | DetectorStatus::Unknown
+                ) && &observation.current == desired
+            });
+        if returned {
+            event.resolved = true;
+            event.returned_to_desired = true;
+            event.last_observed = current.timestamp.clone();
+            event.current_inspection_id = Some(current.id.clone());
         }
     }
 }
@@ -1362,7 +1778,13 @@ pub fn run() -> tauri::Result<()> {
             clear_desired_state,
             generate_preview_plan,
             get_migration_status,
-            get_vm_validation_metadata
+            get_vm_validation_metadata,
+            get_product_info,
+            get_product_component_catalogue,
+            compare_inspections,
+            set_history_retention,
+            clear_local_history,
+            generate_diagnostics_export
         ])
         .build(tauri::generate_context!())?;
     app.run(|handle, event| {
@@ -1677,6 +2099,12 @@ pub fn run() -> tauri::Result<()> {
             generate_preview_plan,
             get_migration_status,
             get_vm_validation_metadata,
+            get_product_info,
+            get_product_component_catalogue,
+            compare_inspections,
+            set_history_retention,
+            clear_local_history,
+            generate_diagnostics_export,
             get_mutation_alpha_status,
             acknowledge_mutation_alpha_warning,
             get_mutation_operation_options,
@@ -1745,5 +2173,64 @@ mod tests {
 
         assert_eq!(error.code, "invalid_action");
         assert_eq!(state.filter(), CatalogueFilter::All);
+    }
+
+    #[test]
+    fn product_alpha_catalogue_exposes_all_twenty_read_only_components() {
+        let catalogue = get_product_component_catalogue();
+        assert_eq!(catalogue.len(), 20);
+        assert!(catalogue.iter().all(|component| !component.name.is_empty()));
+    }
+
+    #[test]
+    fn normal_command_registration_contains_no_mutation_surface() {
+        let source = include_str!("app.rs");
+        let normal = source
+            .split("#[cfg(not(feature = \"mutation-alpha\"))]")
+            .nth(1)
+            .and_then(|value| value.split("#[cfg(feature = \"mutation-alpha\")]").next())
+            .expect("normal run block should remain visible to the safety test");
+        for prohibited in [
+            "get_mutation_alpha_status",
+            "generate_mutation_plan",
+            "approve_and_execute_mutation",
+            "rollback_mutation",
+            "export_live_validation_evidence",
+        ] {
+            assert!(
+                !normal.contains(prohibited),
+                "normal block exposed {prohibited}"
+            );
+        }
+    }
+
+    #[test]
+    fn diagnostics_contract_omits_machine_identity_and_private_validation_data() {
+        let export = build_diagnostics_export(
+            &Store::default(),
+            &DiagnosticsRequest {
+                include_history_summary: true,
+                include_redacted_errors: true,
+            },
+        );
+        let serialized = export.to_string().to_ascii_lowercase();
+        for prohibited in [
+            "machine_id",
+            "computername",
+            "device_name",
+            "development-host-denylist",
+            "validation_identity_hash",
+            "github",
+        ] {
+            assert!(
+                !serialized.contains(prohibited),
+                "diagnostics included {prohibited}"
+            );
+        }
+        assert_eq!(export["capabilities"]["mutation"], false);
+        assert_eq!(export["privacy"]["automaticUpload"], false);
+        assert_eq!(export["privacy"]["machineIdentityIncluded"], false);
+        assert_eq!(export["privacy"]["hostnameIncluded"], false);
+        assert_eq!(export["privacy"]["approvalManifestIncluded"], false);
     }
 }

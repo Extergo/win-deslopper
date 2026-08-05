@@ -101,6 +101,7 @@ try {
         "- Live mutation evidence bundles: $($liveEvidence.Count)",
         "- Defined matrix targets: $($matrix.targets.Count)",
         "- Physical preparation targets (not mutation evidence): $(@($matrix.preparationTargets).Count)",
+        "- Withdrawn preparation targets: $(@($matrix.preparationTargets | Where-Object { $_.availabilityStatus -eq 'withdrawn_sold' }).Count)",
         '- Runner: Rust production parsers and detectors',
         '- Mutation boundary: Fixture replay only; no Windows mutation or query execution',
         "- Live mutation VM scenarios completed: $(@($matrix.targets | Where-Object { $_.mutationStatus -in @('passed','passed_with_limitations','failed','handler_removed') }).Count)",
@@ -163,10 +164,10 @@ try {
     $lines += ''
     $lines += 'Read-only preparation targets (excluded from completed mutation coverage):'
     $lines += ''
-    $lines += '| Target | Read-only | Preparation | Recovery | Approval | Mutation | Counts as completed mutation |'
-    $lines += '|---|---|---|---|---|---|---|'
+    $lines += '| Target | Availability | Read-only | Preparation | Recovery | Approval | Mutation | Counts as completed mutation |'
+    $lines += '|---|---|---|---|---|---|---|---|'
     $lines += $matrix.preparationTargets | ForEach-Object {
-        "| $($_.id) | $($_.readOnlyStatus.Replace('_', ' ')) | $($_.preparationStatus.Replace('_', ' ')) | $($_.recoveryStatus.Replace('_', ' ')) | $($_.approvalStatus.Replace('_', ' ')) | $($_.mutationStatus.Replace('_', ' ')) | $($_.countsAsCompletedMutationTarget) |"
+        "| $($_.id) | $($_.availabilityStatus.Replace('_', ' ')) | $($_.readOnlyStatus.Replace('_', ' ')) | $($_.preparationStatus.Replace('_', ' ')) | $($_.recoveryStatus.Replace('_', ' ')) | $($_.approvalStatus.Replace('_', ' ')) | $($_.mutationStatus.Replace('_', ' ')) | $($_.countsAsCompletedMutationTarget) |"
     }
     $report = ($lines -join "`n") + "`n"
     [System.IO.File]::WriteAllText((Join-Path $repository 'validation\report.md'), $report, [System.Text.UTF8Encoding]::new($false))

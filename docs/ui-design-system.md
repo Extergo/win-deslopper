@@ -14,7 +14,17 @@ All reusable UI tokens live in `frontend/src/lib/theme.css`.
 
 Navigation has a persistent text label, a non-colour selected marker, hover/pressed feedback, and visible keyboard focus. Cards preserve readable hierarchy and use tonal separation instead of heavy borders. Planned and status states include words, not colour alone. Empty states use simple native shapes and helpful copy. Motion is short, restrained, and never delays input.
 
+Product Alpha navigation uses Overview, Components, Desired states, Drift,
+History, and Settings & About. First-run onboarding is a compact native dialog,
+not a blocking tour. The dashboard leads with a sentence that distinguishes
+observed, unknown, permission-limited, failed, managed, and drifted results;
+there is no opaque health score. Component detail keeps current evidence and
+desired-state comparison visually separate, and labels Apply as unavailable.
+
 The Svelte presentation must remain usable at the configured minimum window size and standard Windows scaling levels. Native buttons, inputs, and dialogs are preferred so keyboard and accessibility semantics do not depend on custom event emulation. Production assets are local; fonts, icons, and styling must not require a remote CDN.
 
-Forbidden: neon, glassmorphism, gamer styling, random gradients, inconsistent radii, arbitrary colours, dense enterprise tables as the default, legacy control-panel imitation, unapproved mixing of Fluent/macOS/Material/gamer styles, scattered hardcoded tokens, decorative blocking animation, and success states for work that did not occur.
+Progress/status changes use an `aria-live` region. Controls retain native
+keyboard semantics, focus remains visible, and `prefers-reduced-motion` removes
+nonessential animation.
 
+Forbidden: neon, glassmorphism, gamer styling, random gradients, inconsistent radii, arbitrary colours, dense enterprise tables as the default, legacy control-panel imitation, unapproved mixing of Fluent/macOS/Material/gamer styles, scattered hardcoded tokens, decorative blocking animation, and success states for work that did not occur.

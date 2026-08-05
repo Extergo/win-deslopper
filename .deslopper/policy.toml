@@ -1,5 +1,5 @@
 project = "Deslopper"
-milestone = "mutation-alpha-live-validation-hardening"
+milestone = "read-only-product-alpha"
 
 allow_real_windows_inspection = true
 allow_fixed_read_only_windows_queries = true
@@ -29,15 +29,18 @@ quality_gates = [
     "bun install --frozen-lockfile",
     "cargo fmt --check",
     "cargo check",
+    "cargo check --all-features",
     "cargo clippy --all-targets --all-features -- -D warnings",
     "cargo test",
-    "cargo test --features mutation-alpha",
+    "cargo test --all-features",
     "bun run check",
     "bun run lint",
     "bun run test",
     "bun run build",
+    "bun run tauri dev",
     "bun run tauri build --debug --no-bundle",
     "bun run tauri build --debug --no-bundle --features mutation-alpha",
-    "bun run tauri dev",
+    "bun run tauri build --no-bundle",
+    "bun run tauri build",
     "powershell -ExecutionPolicy Bypass -File tools/scan-mutation-boundary.ps1",
 ]
