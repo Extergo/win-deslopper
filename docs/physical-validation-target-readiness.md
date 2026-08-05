@@ -35,7 +35,10 @@ live scenarios. Task View and Show Desktop are outside this preparation scope.
 The preparation reached `ready_for_approval_review` without creating an
 approval or live scenario. A fresh ignored review draft is limited to the fixed
 Widgets visibility handler, one plan, one execution, and no more than 30
-minutes. Its pre-state records
+minutes. The governed integration upgrades that non-authorizing local draft to
+schema version 3 under committed policy schema version 2 and requires strict
+physical recovery, unmanaged-state, restart-clear, identity-separation, and
+`reset_before_sale` evidence. Its pre-state records
 an absent `TaskbarDa` value, no configured Widgets policy, a conservative
 detector result of unknown, and the user's confirmation that the Widgets button
 is not visible. The proposed opposite state is enabled; exact rollback is value

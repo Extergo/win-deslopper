@@ -2592,14 +2592,19 @@ physical_target_requires_strict_recovery_readiness = true
             approval_v2["properties"]["targetType"]["const"],
             "virtual_machine"
         );
-        for schema in [&scenario, &draft] {
-            assert_eq!(schema["properties"]["schemaVersion"]["const"], 2);
-            assert_eq!(
-                schema["properties"]["approvedOperationScopes"]["minItems"],
-                1
-            );
-            assert_eq!(schema["additionalProperties"], false);
-        }
+        assert_eq!(scenario["properties"]["schemaVersion"]["const"], 2);
+        assert_eq!(
+            scenario["properties"]["approvedOperationScopes"]["minItems"],
+            1
+        );
+        assert_eq!(scenario["additionalProperties"], false);
+        assert_eq!(draft["properties"]["schemaVersion"]["const"], 3);
+        assert_eq!(draft["properties"]["policySchemaVersion"]["const"], 2);
+        assert_eq!(
+            draft["properties"]["approvedOperationScopes"]["minItems"],
+            1
+        );
+        assert_eq!(draft["additionalProperties"], false);
         assert_eq!(
             approval["properties"]["approvedOperationScopes"]["minItems"],
             1
@@ -2625,6 +2630,14 @@ physical_target_requires_strict_recovery_readiness = true
         );
         assert_eq!(draft["properties"]["mutationAllowed"]["const"], false);
         assert_eq!(draft["properties"]["executed"]["const"], false);
+        assert_eq!(draft["properties"]["authorizing"]["const"], false);
+        assert_eq!(draft["properties"]["executionAuthorized"]["const"], false);
+        assert_eq!(draft["properties"]["maximumPlans"]["const"], 1);
+        assert_eq!(draft["properties"]["maximumExecutions"]["const"], 1);
+        assert_eq!(
+            draft["properties"]["finalDisposition"]["const"],
+            "reset_before_sale"
+        );
     }
 
     fn test_bundle(build: u32, plan_hash: &str) -> LiveEvidenceBundle {

@@ -66,11 +66,15 @@ by preparation-only reactivation. Neither event contributes to completed or
 failed live-mutation counts, approved-target counts, or evidence that a handler
 works live.
 
-The separate Widgets approval-review draft schema is non-authorizing. It fixes
+The separate schema-v3 physical Widgets approval-review draft is
+non-authorizing and binds committed policy schema version 2. It fixes
 the scope to one Widgets visibility handler, requires the opposite of the
 user-confirmed visible state, preserves the exact original representation for
 rollback, expires within 30 minutes, and requires mutation, elevation, Explorer
 termination, automatic repair, and generic registry paths to remain disabled.
+It also requires strict recovery, important-data, restart, unmanaged-target,
+identity-separation, and reset-before-sale evidence while excluding approval
+timestamps, plans, nonces, and transactions.
 
 Preparation-schema coverage requires structured states for all nine user-only
 recovery confirmations, restart verification, redacted recovery audit summary,

@@ -79,6 +79,15 @@ review draft is one Widgets scope, enabled only, at most one plan and one
 execution, and no more than 30 minutes of review lifetime. Zero live scenarios
 remain completed.
 
+The physical review-draft schema is version 3 and records policy schema 2,
+strict unmanaged/recovery/restart/data/disposition evidence, explicit
+non-authorizing and execution-disabled states, exact source inspection and
+commit bindings, and transaction-bound restoration of the captured pre-state.
+The generator independently rejects a live approval manifest, a matching
+development-host identity, active management, pending restart, a configured
+Widgets/taskbar policy, stale recovery evidence, or a changed Widgets
+representation. The ignored draft cannot be renamed into an approval.
+
 ## Guest preparation
 
 The exact developer handoff, VM approval template, checkpoint

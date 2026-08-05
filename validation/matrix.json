@@ -100,6 +100,23 @@
           "liveScenarios": 0,
           "governanceChangeGrantsApproval": false,
           "countsAsLiveHandlerEvidence": false
+        },
+        {
+          "event": "governed_widgets_review_integration_completed",
+          "date": "2026-08-05",
+          "policySchemaVersion": 2,
+          "physicalApprovalSchemaVersion": 3,
+          "approvalReviewDraftSchemaVersion": 3,
+          "allowedScope": "widgets_visibility_enabled_only_if_separately_approved",
+          "maximumPlans": 1,
+          "maximumExecutions": 1,
+          "currentStatus": "ready_for_approval_review",
+          "approvalStatus": "not_approved",
+          "mutationStatus": "mutation_not_attempted",
+          "liveScenarios": 0,
+          "finalDisposition": "reset_before_sale",
+          "governanceChangeGrantsApproval": false,
+          "countsAsLiveHandlerEvidence": false
         }
       ]
     }

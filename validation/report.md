@@ -1,6 +1,6 @@
 # Deslopper VM fixture validation report
 
-Generated: 2026-08-05T21:42:58Z
+Generated: 2026-08-05T22:16:56Z
 
 - Result: Passed
 - Checked-in fixture bundles: 1
@@ -12,6 +12,7 @@ Generated: 2026-08-05T21:42:58Z
 - Current approval-review-ready preparation targets: 1
 - Scoped approval-model correction events: 1
 - Explicit physical-target governance events: 1
+- Governed Widgets review integration events: 1
 - Physical-target live mutation scenarios: 0
 - Runner: Rust production parsers and detectors
 - Mutation boundary: Fixture replay only; no Windows mutation or query execution
@@ -26,8 +27,8 @@ Generated: 2026-08-05T21:42:58Z
 - Handler removed: 0
 - Host protection audit: Passed
 - Development-host denylist present: True
-- Current host fingerprint denied: True
-- Current host is protected prepared target: False
+- Current host fingerprint denied: False
+- Current host is protected prepared target: True
 - Deslopper processes running: 0
 - Live scenario manifest present: False
 - Live scenario targets development host: False
@@ -87,4 +88,4 @@ Read-only preparation targets (excluded from completed mutation coverage):
 |---|---|---|---|---|---|---|---:|---|---|---|---|
 | physical-laptop-win11-pro-25h2-read-only | available for approval review | read only validated | ready for approval review | recovery ready | not approved | mutation not attempted | 0 | False | False | False | False |
 
-The physical target was retired before mutation because the hardware is being sold, then explicitly reactivated for bounded Widgets preparation before its final reset. Retirement remains in chronological history. The first execution handoff stopped at the overbroad version 1 approval boundary; scoped version 2 introduced Widgets-enabled-only scope, and the explicit-target governance change now requires strict version 3 for physical approval. The source change grants no approval: the proposed one-plan/one-execution Widgets test remains ready for approval review, non-authorizing, and unexecuted. Read-only Windows 11 Pro 25H2 inspection, Tauri event permission, OneDrive detection, MDM evidence, and permission-limited AppX findings remain useful; no handler has live evidence and zero mutation occurred.
+The physical target was retired before mutation because the hardware is being sold, then explicitly reactivated for bounded Widgets preparation before its final reset. Retirement remains in chronological history. The first execution handoff stopped at the overbroad version 1 approval boundary; scoped version 2 introduced Widgets-enabled-only scope, and the explicit-target governance change now requires strict version 3 for physical approval. The integrated schema-v3 review-draft path remains local, ignored, non-authorizing, limited to one Widgets-enabled plan and one execution, and bound to reset-before-sale disposition. The source change grants no approval: Widgets remains unexecuted, no handler has live evidence, and zero mutation occurred. Read-only Windows 11 Pro 25H2 inspection, Tauri event permission, OneDrive detection, MDM evidence, and permission-limited AppX findings remain useful.
