@@ -17,8 +17,8 @@ use super::{
     journal::MutationJournal,
     live_validation::{
         EvidenceExportRequest, LiveEvidenceBundle, LiveValidationGateStatus, ValidationMaturity,
-        ValidationScenarioManifest, load_local_manifest, local_scoped_approval_allows,
-        local_validation_directory,
+        ValidationScenarioManifest, ValidationTargetType, load_local_manifest,
+        local_scoped_approval_allows, local_validation_directory,
     },
     plan::{CapturedState, MutationPlan, hash_serializable, hash_text},
     request::{AlphaGateStatus, MutationOperationId, MutationTarget, PlanRequest, RollbackRequest},
@@ -43,6 +43,10 @@ pub struct BrokerContext {
     pub source_observation_id: String,
     pub windows_build: u32,
     pub edition: String,
+    pub domain_joined: Option<bool>,
+    pub entra_joined: Option<bool>,
+    pub workplace_joined: Option<bool>,
+    pub mdm_enrolled: Option<bool>,
     pub authority: String,
     pub authority_acceptable: bool,
     pub confidence: String,
@@ -280,6 +284,7 @@ impl Broker {
     ) -> Result<IssuedPlan, BrokerError> {
         self.require_gate()?;
         self.require_authorized(request.operation_id, request.target)?;
+        self.require_target_eligibility(context)?;
         let approval_class = self.approval_class()?;
         let _cross_process = MutationProcessLock::acquire(self.journal.lock_path())
             .map_err(|message| BrokerError::new("cross_process_lock_unavailable", message))?;
@@ -392,6 +397,7 @@ impl Broker {
         context: &BrokerContext,
     ) -> Result<MutationTransaction, BrokerError> {
         self.require_gate()?;
+        self.require_target_eligibility(context)?;
         if !request.acknowledged {
             return Err(BrokerError::new(
                 "approval_required",
@@ -539,6 +545,7 @@ impl Broker {
         if pre_state.effective_enabled != plan.target_state.enabled() {
             self.require_gate()?;
             self.require_authorized(plan.operation_id, plan.target_state)?;
+            self.require_target_eligibility(context)?;
             self.fault(FaultPoint::BeforeWrite)?;
             transition(
                 &self.journal,
@@ -1092,6 +1099,39 @@ impl Broker {
         }
     }
 
+    fn require_target_eligibility(&self, context: &BrokerContext) -> Result<(), BrokerError> {
+        let Some(target_type) = self.live_validation.approved_target_type else {
+            return Err(BrokerError::new(
+                "target_type_not_approved",
+                "The scoped approval has no bound validation target type.",
+            ));
+        };
+        let Some(expected) = self.live_validation.approved_target_management.as_ref() else {
+            return Err(BrokerError::new(
+                "target_management_not_approved",
+                "The scoped approval has no bound target management state.",
+            ));
+        };
+        let expected_workplace = expected.workplace_joined.unwrap_or(expected.entra_joined);
+        let matches = context.domain_joined == Some(expected.domain_joined)
+            && context.entra_joined == Some(expected.entra_joined)
+            && context.workplace_joined == Some(expected_workplace)
+            && context.mdm_enrolled == Some(expected.mdm_enrolled);
+        let strict_physical = target_type != ValidationTargetType::PhysicalLaptop
+            || (context.domain_joined == Some(false)
+                && context.entra_joined == Some(false)
+                && context.workplace_joined == Some(false)
+                && context.mdm_enrolled == Some(false));
+        if matches && strict_physical {
+            Ok(())
+        } else {
+            Err(BrokerError::new(
+                "target_management_changed",
+                "Fresh target management evidence does not match the approved target eligibility.",
+            ))
+        }
+    }
+
     fn fault(&self, point: FaultPoint) -> Result<(), BrokerError> {
         let active = self
             .fault_point
@@ -1598,6 +1638,10 @@ mod tests {
             source_observation_id: "inspection-1:taskbar_widgets".into(),
             windows_build: 26_100,
             edition: "Professional".into(),
+            domain_joined: Some(false),
+            entra_joined: Some(false),
+            workplace_joined: Some(false),
+            mdm_enrolled: Some(false),
             authority: "user".into(),
             authority_acceptable: true,
             confidence: "confirmed_representation".into(),
@@ -1794,6 +1838,36 @@ mod tests {
             FakeBackend::read(&backend.widgets).unwrap(),
             CapturedRepresentation::Missing
         );
+        cleanup(&path);
+    }
+
+    #[test]
+    fn physical_target_management_is_revalidated_for_plan_execution_and_prewrite() {
+        let (mut broker, _, path) = scoped_broker("physical-management", 1, 1);
+        broker.live_validation.approved_target_type = Some(ValidationTargetType::PhysicalLaptop);
+        let clean = context();
+        assert!(broker.require_target_eligibility(&clean).is_ok());
+
+        for managed in ["domain", "entra", "workplace", "mdm"] {
+            let mut changed = clean.clone();
+            match managed {
+                "domain" => changed.domain_joined = Some(true),
+                "entra" => changed.entra_joined = Some(true),
+                "workplace" => changed.workplace_joined = Some(true),
+                "mdm" => changed.mdm_enrolled = Some(true),
+                _ => unreachable!(),
+            }
+            assert_eq!(
+                broker
+                    .require_target_eligibility(&changed)
+                    .unwrap_err()
+                    .code,
+                "target_management_changed"
+            );
+        }
+        let mut unknown = clean;
+        unknown.entra_joined = None;
+        assert!(broker.require_target_eligibility(&unknown).is_err());
         cleanup(&path);
     }
 

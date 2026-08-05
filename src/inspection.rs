@@ -264,7 +264,7 @@ fn powershell_script(query_id: QueryId) -> &'static str {
             r#"$ErrorActionPreference='Stop';@(Get-AppxProvisionedPackage -Online|Select-Object DisplayName,PackageName,Version,Architecture,PublisherId,ResourceId)|ConvertTo-Json -Depth 5 -Compress"#
         }
         QueryId::ManagementContext => {
-            r#"$ErrorActionPreference='SilentlyContinue';$cs=Get-CimInstance Win32_ComputerSystem;$work=@(Get-ChildItem 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\WorkplaceJoin\JoinInfo');$metadata=@(Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Enrollments'|ForEach-Object{$p=Get-ItemProperty $_.PSPath;if($p.ProviderID){[pscustomobject]@{Id=$_.PSChildName;Properties=$p}}});$enroll=@($metadata|Where-Object{$id=$_.Id;$p=$_.Properties;$account=Test-Path "HKLM:\SOFTWARE\Microsoft\Provisioning\OMADM\Accounts\$id";$task=Test-Path "$env:windir\System32\Tasks\Microsoft\Windows\EnterpriseMgmt\$id";$certificate=-not[string]::IsNullOrWhiteSpace([string]$p.DMPCertThumbPrint);$account -or $task -or $certificate});$providers=@(Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\PolicyManager\Providers');$history=@(Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Group Policy\History' -Recurse|ForEach-Object{Get-ItemProperty $_.PSPath}|Where-Object{$_.DSPath -like 'LDAP://*'});[pscustomobject]@{DomainJoined=[bool]$cs.PartOfDomain;WorkplaceJoined=($work.Count -gt 0);MdmEnrollmentCount=$enroll.Count;MdmEnrollmentMetadataCount=$metadata.Count;MdmPolicyProviderCount=$providers.Count;DomainGpoHistoryCount=$history.Count;LocalPolicyStorePresent=(Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Group Policy')}|ConvertTo-Json -Compress"#
+            r#"$ErrorActionPreference='SilentlyContinue';$cs=Get-CimInstance Win32_ComputerSystem;$entra=@(Get-ChildItem 'HKLM:\SYSTEM\CurrentControlSet\Control\CloudDomainJoin\JoinInfo');$work=@(Get-ChildItem 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\WorkplaceJoin\JoinInfo');$metadata=@(Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Enrollments'|ForEach-Object{$p=Get-ItemProperty $_.PSPath;if($p.ProviderID){[pscustomobject]@{Id=$_.PSChildName;Properties=$p}}});$enroll=@($metadata|Where-Object{$id=$_.Id;$p=$_.Properties;$account=Test-Path "HKLM:\SOFTWARE\Microsoft\Provisioning\OMADM\Accounts\$id";$task=Test-Path "$env:windir\System32\Tasks\Microsoft\Windows\EnterpriseMgmt\$id";$certificate=-not[string]::IsNullOrWhiteSpace([string]$p.DMPCertThumbPrint);$account -or $task -or $certificate});$providers=@(Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\PolicyManager\Providers');$history=@(Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Group Policy\History' -Recurse|ForEach-Object{Get-ItemProperty $_.PSPath}|Where-Object{$_.DSPath -like 'LDAP://*'});[pscustomobject]@{DomainJoined=[bool]$cs.PartOfDomain;EntraJoined=($entra.Count -gt 0);WorkplaceJoined=($work.Count -gt 0);MdmEnrollmentCount=$enroll.Count;MdmEnrollmentMetadataCount=$metadata.Count;MdmPolicyProviderCount=$providers.Count;DomainGpoHistoryCount=$history.Count;LocalPolicyStorePresent=(Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Group Policy')}|ConvertTo-Json -Compress"#
         }
         QueryId::PolicyRegistry => {
             r#"$ErrorActionPreference='SilentlyContinue';function V($p,$n){try{Get-ItemPropertyValue -LiteralPath $p -Name $n -ErrorAction Stop}catch{$null}};[pscustomobject]@{Widgets=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Dsh' 'AllowNewsAndInterests');ConsumerExperiences=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent' 'DisableWindowsConsumerFeatures');Welcome=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent' 'DisableWindowsSpotlightWindowsWelcomeExperience');Tips=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent' 'DisableSoftLanding');LockScreen=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent' 'ConfigureWindowsSpotlight');StartRecommendations=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Explorer' 'HideRecommendedSection');NotificationSuggestions=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent' 'DisableWindowsSpotlightOnActionCenter');SettingsSuggestions=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent' 'DisableWindowsSpotlightOnSettings');SearchWeb=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search' 'DisableWebSearch');SearchHighlights=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search' 'EnableDynamicContentInWSB')}|ConvertTo-Json -Compress"#
@@ -665,6 +665,7 @@ fn parse_inventory(value: Option<&Value>) -> PlatformInfo {
         user_sid: None,
         elevated: false,
         domain_joined: value["DomainJoined"].as_bool(),
+        entra_joined: None,
         workplace_joined: None,
         mdm_enrolled: None,
         is_windows_11: value["Windows11"].as_bool(),
@@ -693,6 +694,7 @@ pub fn default_platform() -> PlatformInfo {
         user_sid: None,
         elevated: false,
         domain_joined: None,
+        entra_joined: None,
         workplace_joined: None,
         mdm_enrolled: None,
         is_windows_11: None,
@@ -1519,6 +1521,7 @@ pub fn run_inspection<F: FnMut(InspectionProgress)>(
     let mut platform = parse_inventory(inventory);
     if let Ok(management) = query_state(&context, QueryId::ManagementContext) {
         platform.domain_joined = management["DomainJoined"].as_bool();
+        platform.entra_joined = management["EntraJoined"].as_bool();
         platform.workplace_joined = management["WorkplaceJoined"].as_bool();
         platform.mdm_enrolled = Some(management["MdmEnrollmentCount"].as_u64().unwrap_or(0) > 0);
     }
@@ -1987,6 +1990,8 @@ mod tests {
         assert!(script.contains("Provisioning\\OMADM\\Accounts"));
         assert!(script.contains("Windows\\EnterpriseMgmt"));
         assert!(script.contains("DMPCertThumbPrint"));
+        assert!(script.contains("CloudDomainJoin\\JoinInfo"));
+        assert!(script.contains("EntraJoined=($entra.Count -gt 0)"));
         assert!(!script.contains("MdmEnrollmentCount=$metadata.Count"));
     }
 

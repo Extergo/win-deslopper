@@ -48,12 +48,22 @@ remains supported by Hyper-V host tooling.
 ## Scoped approval formats
 
 The generic version 1 target schema remains readable only through the
-deliberate legacy virtual-machine path. Physical live validation requires
-`validation/approved-validation-targets-v2.schema.json`. Version 2 has explicit
-operation-specific target states, matching handler versions, source
-commit/inspection/evidence binding, denylist binding, expiration, and positive
-bounded plan/execution limits. A missing scope never authorizes compiled
+deliberate legacy virtual-machine path. Scoped version 2 is also VM-only
+compatibility. Physical live validation requires
+`validation/approved-validation-targets-v3.schema.json`. Version 3 retains
+operation-specific target states, matching handler versions, exact source/
+inspection/evidence and denylist binding, and positive bounded plan/execution
+limits. It additionally requires explicit important-data status, recovery
+route and media, another recovery-capable device, clear restart state, safe
+BitLocker state, unmanaged domain/Entra/workplace/MDM state, disabled automatic
+repair, final-plan approval, a maximum 30-minute approval lifetime, reimage
+procedure, and final disposition. A missing scope never authorizes compiled
 handlers.
+
+The committed live-validation policy is parsed in internal mutation builds and
+explicitly allowlists `virtual_machine` and `physical_laptop`. A missing,
+malformed, legacy VM-only, empty, or unknown-type policy fails closed. Policy
+permission is necessary but never sufficient: it creates no approval.
 
 `tools/New-DeslopperLiveScenarioManifest.ps1` therefore requires at least one
 explicit `-OperationScope`, such as
@@ -62,15 +72,16 @@ explicit `-OperationScope`, such as
 operations and states fail closed.
 
 The first physical execution handoff stopped correctly because version 1 could
-not express the explicit Widgets-to-enabled-only boundary. Version 2 corrects
-that source limitation without approving or executing the test. The intended
+not express the explicit Widgets-to-enabled-only boundary. Version 2 corrected
+that scope limitation; version 3 carries it into the stricter physical-target
+model without approving or executing the test. The intended
 review draft is one Widgets scope, enabled only, at most one plan and one
 execution, and no more than 30 minutes of review lifetime. Zero live scenarios
 remain completed.
 
 ## Guest preparation
 
-The exact developer handoff, schema-version-two approval template, checkpoint
+The exact developer handoff, VM approval template, checkpoint
 commands, and evidence transfer steps are in `docs/manual-vm-provisioning.md`.
 
 1. Provision a licensed disposable Windows VM manually and add it to the local,
@@ -95,6 +106,11 @@ The live gate requires the CLI flag, selected scenario, checkpoint identifier,
 machine fingerprint, edition, build, optional UBR, guest-owned database,
 denylist, normal alpha gates, and explicit UI acknowledgement. VM detection is
 informational only and cannot make an environment eligible.
+
+The original development PC may perform development, compilation, read-only
+inspection, and synthetic tests, but it is permanently ineligible for live
+mutation. The local denylist overrides policy, approval, target type, and CLI
+arguments and has no bypass.
 
 ## Physical-laptop preparation
 

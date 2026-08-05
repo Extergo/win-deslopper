@@ -295,6 +295,8 @@ pub struct PlatformInfo {
     pub elevated: bool,
     #[serde(alias = "domain_joined")]
     pub domain_joined: Option<bool>,
+    #[serde(default, alias = "entra_joined")]
+    pub entra_joined: Option<bool>,
     #[serde(alias = "workplace_joined")]
     pub workplace_joined: Option<bool>,
     #[serde(alias = "mdm_enrolled")]

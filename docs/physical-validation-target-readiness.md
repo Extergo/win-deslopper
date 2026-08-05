@@ -58,11 +58,19 @@ Desktop, and standalone Widgets-disabled authority are absent. Exact restoration
 to the original absent representation is authorized only by a consumed durable
 transaction, not by adding disabled to the approval.
 
-The version 1 format remains deliberate legacy virtual-machine compatibility;
-physical live validation requires the scoped version 2 schema and exact source
-commit, inspection/evidence, handler, platform, identity, and development-host
-denylist bindings. The Widgets test remains unexecuted, unapproved, and at zero
-live scenarios.
+The version 1 format remains deliberate legacy virtual-machine compatibility.
+Version 2 preserves scoped VM approval. Physical live validation now requires
+version 3, which retains exact source commit, inspection/evidence, handler,
+platform, identity, development-host denylist, operation, and direction
+bindings while adding strict recovery route/media, alternate-device, restart,
+BitLocker, unmanaged domain/Entra/workplace/MDM, automatic-repair,
+final-plan-approval, reimage, short-expiry, and final-disposition evidence.
+
+This governance change does not approve the laptop or any operation. The sold/
+withdrawn retirement event remains immutable history, and the later
+reactivation remains a separate preparation event. Widgets remains
+`ready_for_approval_review`, unexecuted, unapproved, and at zero live scenarios.
+Task View and Show Desktop remain outside the proposed scope.
 
 ## Read-only application result
 

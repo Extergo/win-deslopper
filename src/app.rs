@@ -2014,6 +2014,10 @@ fn mutation_context(
         "machineId": snapshot.machine_id,
         "build": snapshot.platform.build,
         "edition": snapshot.platform.edition,
+        "domainJoined": snapshot.platform.domain_joined,
+        "entraJoined": snapshot.platform.entra_joined,
+        "workplaceJoined": snapshot.platform.workplace_joined,
+        "mdmEnrolled": snapshot.platform.mdm_enrolled,
         "subject": subject,
         "widgetsPolicy": widgets_policy.map(|observation| serde_json::json!({
             "policyState": observation.policy_state,
@@ -2030,6 +2034,10 @@ fn mutation_context(
         source_observation_id: format!("{}:{subject}", snapshot.id),
         windows_build: snapshot.platform.build,
         edition: snapshot.platform.edition.clone(),
+        domain_joined: snapshot.platform.domain_joined,
+        entra_joined: snapshot.platform.entra_joined,
+        workplace_joined: snapshot.platform.workplace_joined,
+        mdm_enrolled: snapshot.platform.mdm_enrolled,
         authority: if externally_managed {
             "external_policy".into()
         } else {

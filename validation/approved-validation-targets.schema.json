@@ -292,7 +292,7 @@
         },
         "required": ["targetType", "approvalStatus"]
       },
-      "then": { "properties": { "expendableConfirmed": { "const": true } } }
+      "then": false
     }
   ],
   "$defs": {
