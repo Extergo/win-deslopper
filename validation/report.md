@@ -1,6 +1,6 @@
 # Deslopper VM fixture validation report
 
-Generated: 2026-08-03T13:34:27Z
+Generated: 2026-08-05T15:26:25Z
 
 - Result: Passed
 - Checked-in fixture bundles: 1
@@ -8,6 +8,7 @@ Generated: 2026-08-03T13:34:27Z
 - Live mutation evidence bundles: 0
 - Defined matrix targets: 13
 - Physical preparation targets (not mutation evidence): 1
+- Withdrawn preparation targets: 1
 - Runner: Rust production parsers and detectors
 - Mutation boundary: Fixture replay only; no Windows mutation or query execution
 - Live mutation VM scenarios completed: 0
@@ -19,9 +20,9 @@ Generated: 2026-08-03T13:34:27Z
 - Failed: 0
 - Blocked: 0
 - Handler removed: 0
-- Host protection audit: Failed closed / requires review
-- Development-host denylist present: False
-- Current host fingerprint denied: False
+- Host protection audit: Passed
+- Development-host denylist present: True
+- Current host fingerprint denied: True
 - Deslopper processes running: 0
 - Live scenario manifest present: False
 - Live scenario targets development host: False
@@ -77,6 +78,6 @@ Scenario status:
 
 Read-only preparation targets (excluded from completed mutation coverage):
 
-| Target | Read-only | Preparation | Recovery | Approval | Mutation | Counts as completed mutation |
-|---|---|---|---|---|---|---|
-| physical-laptop-win11-pro-25h2-read-only | read only validated | preparation incomplete | recovery not ready | not approved | mutation not attempted | False |
+| Target | Availability | Read-only | Preparation | Recovery | Approval | Mutation | Counts as completed mutation |
+|---|---|---|---|---|---|---|---|
+| physical-laptop-win11-pro-25h2-read-only | withdrawn sold | read only validated | preparation incomplete | recovery not ready | not approved | mutation not attempted | False |

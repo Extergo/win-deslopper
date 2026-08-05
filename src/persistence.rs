@@ -13,7 +13,7 @@ use std::{
     path::PathBuf,
 };
 
-pub const SCHEMA_VERSION: u32 = 3;
+pub const SCHEMA_VERSION: u32 = 4;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -23,7 +23,22 @@ pub struct Store {
     pub desired: Vec<DesiredState>,
     pub drift: Vec<DriftEvent>,
     pub desired_revisions: Vec<DesiredStateRevision>,
+    pub preferences: ProductPreferences,
     pub database_status: DatabaseStatus,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ProductPreferences {
+    pub history_retention_days: u32,
+}
+
+impl Default for ProductPreferences {
+    fn default() -> Self {
+        Self {
+            history_retention_days: 180,
+        }
+    }
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
@@ -136,6 +151,9 @@ pub struct DriftEvent {
     pub first_detected: String,
     pub last_observed: String,
     pub resolved: bool,
+    pub reviewed: bool,
+    pub reviewed_at: Option<String>,
+    pub returned_to_desired: bool,
     pub occurrence_count: u32,
     pub supporting_facts: Vec<String>,
     pub alternative_causes: Vec<String>,
@@ -161,6 +179,9 @@ impl Default for DriftEvent {
             first_detected: String::new(),
             last_observed: String::new(),
             resolved: false,
+            reviewed: false,
+            reviewed_at: None,
+            returned_to_desired: false,
             occurrence_count: 1,
             supporting_facts: Vec::new(),
             alternative_causes: Vec::new(),
@@ -207,11 +228,69 @@ pub fn save(store: &Store) -> Result<(), String> {
     tx.commit().map_err(|e| e.to_string())
 }
 
+pub fn apply_history_retention(store: &mut Store) -> Result<(), String> {
+    retain_history(store, crate::inspection::timestamp().parse().unwrap_or(0));
+    replace_read_only_data_at(store, &path())
+}
+
+fn retain_history(store: &mut Store, now: u128) {
+    let days = store.preferences.history_retention_days;
+    if days == 0 || store.snapshots.len() <= 1 {
+        return;
+    }
+    let cutoff = now.saturating_sub(u128::from(days) * 86_400_000);
+    let latest_id = store.snapshots.last().map(|snapshot| snapshot.id.clone());
+    store.snapshots.retain(|snapshot| {
+        Some(&snapshot.id) == latest_id.as_ref()
+            || snapshot
+                .timestamp
+                .parse::<u128>()
+                .is_ok_and(|timestamp| timestamp >= cutoff)
+    });
+    let retained_ids: Vec<&str> = store
+        .snapshots
+        .iter()
+        .map(|snapshot| snapshot.id.as_str())
+        .collect();
+    store.drift.retain(|event| {
+        event
+            .current_inspection_id
+            .as_deref()
+            .is_none_or(|id| retained_ids.contains(&id))
+    });
+}
+
+pub fn clear_local_history(store: &mut Store) -> Result<(), String> {
+    store.snapshots.clear();
+    store.desired.clear();
+    store.desired_revisions.clear();
+    store.drift.clear();
+    replace_read_only_data_at(store, &path())
+}
+
+fn replace_read_only_data_at(store: &Store, target: &std::path::Path) -> Result<(), String> {
+    let mut conn = open_at(target).map_err(|error| error.to_string())?;
+    let tx = conn.transaction().map_err(|error| error.to_string())?;
+    tx.execute_batch(
+        "DELETE FROM package_observations;
+         DELETE FROM component_observations;
+         DELETE FROM drift_events;
+         DELETE FROM preview_plans;
+         DELETE FROM desired_state_revisions;
+         DELETE FROM desired_states;
+         DELETE FROM inspections;
+         DELETE FROM machines;",
+    )
+    .map_err(|error| error.to_string())?;
+    persist(&tx, store).map_err(|error| error.to_string())?;
+    tx.commit().map_err(|error| error.to_string())
+}
+
 pub fn save_preview_plan(component_id: &str, preview: &serde_json::Value) -> Result<(), String> {
     let conn = open().map_err(|e| e.to_string())?;
     let now = crate::inspection::timestamp();
     let id = format!("plan-{component_id}-{now}");
-    conn.execute("INSERT INTO preview_plans(id,component_id,source_observation_id,generated_at,status,preview_json,execution_unavailable_reason) VALUES(?1,?2,(SELECT id FROM component_observations WHERE component_id=?2 ORDER BY id DESC LIMIT 1),?3,'preview_only',?4,'Read-only beta has no executor')",params![id,component_id,now,preview.to_string()]).map_err(|e|e.to_string())?;
+    conn.execute("INSERT INTO preview_plans(id,component_id,source_observation_id,generated_at,status,preview_json,execution_unavailable_reason) VALUES(?1,?2,(SELECT id FROM component_observations WHERE component_id=?2 ORDER BY id DESC LIMIT 1),?3,'preview_only',?4,'Automatic restoration is unavailable in Product Alpha')",params![id,component_id,now,preview.to_string()]).map_err(|e|e.to_string())?;
     Ok(())
 }
 
@@ -267,6 +346,9 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     if existing_version < 3 {
         migrate_v3(conn)?;
     }
+    if existing_version < 4 {
+        migrate_v4(conn)?;
+    }
     let now = crate::inspection::timestamp();
     conn.execute(
         "INSERT OR REPLACE INTO database_metadata(key,value) VALUES('schema_version',?1)",
@@ -285,6 +367,35 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         [env!("CARGO_PKG_VERSION")],
     )?;
     Ok(())
+}
+
+fn migrate_v4(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch("BEGIN IMMEDIATE;")?;
+    let result = (|| {
+        add_column(conn, "drift_events", "reviewed INTEGER NOT NULL DEFAULT 0")?;
+        add_column(conn, "drift_events", "reviewed_at TEXT")?;
+        add_column(
+            conn,
+            "drift_events",
+            "returned_to_desired INTEGER NOT NULL DEFAULT 0",
+        )?;
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS product_preferences(
+               key TEXT PRIMARY KEY,
+               value TEXT NOT NULL
+             );
+             INSERT OR IGNORE INTO product_preferences(key,value)
+             VALUES('history_retention_days','180');",
+        )?;
+        Ok(())
+    })();
+    match result {
+        Ok(()) => conn.execute_batch("COMMIT;"),
+        Err(error) => {
+            let _ = conn.execute_batch("ROLLBACK;");
+            Err(error)
+        }
+    }
 }
 
 fn migrate_v3(conn: &Connection) -> rusqlite::Result<()> {
@@ -662,8 +773,12 @@ fn persist(tx: &Transaction<'_>, store: &Store) -> rusqlite::Result<()> {
         tx.execute("INSERT OR IGNORE INTO desired_state_revisions(component_id,revision,requested_state_json,scope,changed_at,persistent_remediation,always_require_approval,user_note,validation_status) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)",params![revision.component_id.key(),revision.revision,json(&revision.state)?,revision.scope,revision.changed_at,revision.persistent as i64,revision.approval_required as i64,revision.note,revision.validation_status])?;
     }
     for event in &store.drift {
-        tx.execute("INSERT INTO drift_events(component_id,previous_state_json,current_state_json,desired_state_json,classification,likely_cause,cause_confidence,first_detected,last_observed,resolved,occurrence_count,supporting_facts_json,alternative_causes_json,inference_rule_version,previous_inspection_id,current_inspection_id) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16) ON CONFLICT(component_id,classification,resolved) DO UPDATE SET current_state_json=excluded.current_state_json,last_observed=excluded.last_observed,occurrence_count=MAX(occurrence_count,excluded.occurrence_count),cause_confidence=excluded.cause_confidence,supporting_facts_json=excluded.supporting_facts_json,alternative_causes_json=excluded.alternative_causes_json,inference_rule_version=excluded.inference_rule_version,current_inspection_id=excluded.current_inspection_id",params![event.component_id.key(),json(&event.previous)?,json(&event.current)?,event.desired.as_ref().map(json).transpose()?,event.classification,event.cause,event.confidence,event.first_detected,event.last_observed,event.resolved as i64,event.occurrence_count,json(&event.supporting_facts)?,json(&event.alternative_causes)?,event.inference_rule_version,event.previous_inspection_id,event.current_inspection_id])?;
+        tx.execute("INSERT INTO drift_events(component_id,previous_state_json,current_state_json,desired_state_json,classification,likely_cause,cause_confidence,first_detected,last_observed,resolved,occurrence_count,supporting_facts_json,alternative_causes_json,inference_rule_version,previous_inspection_id,current_inspection_id,reviewed,reviewed_at,returned_to_desired) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19) ON CONFLICT(component_id,classification,resolved) DO UPDATE SET current_state_json=excluded.current_state_json,last_observed=excluded.last_observed,occurrence_count=MAX(occurrence_count,excluded.occurrence_count),cause_confidence=excluded.cause_confidence,supporting_facts_json=excluded.supporting_facts_json,alternative_causes_json=excluded.alternative_causes_json,inference_rule_version=excluded.inference_rule_version,current_inspection_id=excluded.current_inspection_id,reviewed=excluded.reviewed,reviewed_at=excluded.reviewed_at,returned_to_desired=excluded.returned_to_desired",params![event.component_id.key(),json(&event.previous)?,json(&event.current)?,event.desired.as_ref().map(json).transpose()?,event.classification,event.cause,event.confidence,event.first_detected,event.last_observed,event.resolved as i64,event.occurrence_count,json(&event.supporting_facts)?,json(&event.alternative_causes)?,event.inference_rule_version,event.previous_inspection_id,event.current_inspection_id,event.reviewed as i64,event.reviewed_at,event.returned_to_desired as i64])?;
     }
+    tx.execute(
+        "INSERT INTO product_preferences(key,value) VALUES('history_retention_days',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        [store.preferences.history_retention_days.to_string()],
+    )?;
     Ok(())
 }
 
@@ -688,6 +803,15 @@ fn load_store(conn: &Connection) -> rusqlite::Result<Store> {
         database_status: DatabaseStatus::default(),
         ..Default::default()
     };
+    store.preferences.history_retention_days = conn
+        .query_row(
+            "SELECT value FROM product_preferences WHERE key='history_retention_days'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(180);
     let mut stmt = conn
         .prepare("SELECT id,started_at,platform_json,lifecycle_json,query_failures_json,machine_id FROM inspections ORDER BY completed_at")?;
     let rows = stmt.query_map([], |r| {
@@ -842,7 +966,7 @@ fn load_store(conn: &Connection) -> rusqlite::Result<Store> {
         }
     }
     load_desired_revisions(conn, &mut store)?;
-    let mut stmt=conn.prepare("SELECT component_id,previous_state_json,current_state_json,desired_state_json,classification,likely_cause,cause_confidence,first_detected,last_observed,resolved,occurrence_count,supporting_facts_json,alternative_causes_json,inference_rule_version,previous_inspection_id,current_inspection_id FROM drift_events ORDER BY first_detected")?;
+    let mut stmt=conn.prepare("SELECT component_id,previous_state_json,current_state_json,desired_state_json,classification,likely_cause,cause_confidence,first_detected,last_observed,resolved,occurrence_count,supporting_facts_json,alternative_causes_json,inference_rule_version,previous_inspection_id,current_inspection_id,reviewed,reviewed_at,returned_to_desired FROM drift_events ORDER BY first_detected")?;
     let rows = stmt.query_map([], |r| {
         Ok((
             r.get::<_, String>(0)?,
@@ -861,6 +985,9 @@ fn load_store(conn: &Connection) -> rusqlite::Result<Store> {
             r.get::<_, u32>(13)?,
             r.get::<_, Option<String>>(14)?,
             r.get::<_, Option<String>>(15)?,
+            r.get::<_, i64>(16)?,
+            r.get::<_, Option<String>>(17)?,
+            r.get::<_, i64>(18)?,
         ))
     })?;
     for row in rows {
@@ -881,6 +1008,9 @@ fn load_store(conn: &Connection) -> rusqlite::Result<Store> {
             inference_rule_version,
             previous_inspection_id,
             current_inspection_id,
+            reviewed,
+            reviewed_at,
+            returned_to_desired,
         ) = row?;
         if let Some(component_id) = component_from_key(&key) {
             store.drift.push(DriftEvent {
@@ -898,6 +1028,9 @@ fn load_store(conn: &Connection) -> rusqlite::Result<Store> {
                 first_detected,
                 last_observed,
                 resolved: resolved != 0,
+                reviewed: reviewed != 0,
+                reviewed_at,
+                returned_to_desired: returned_to_desired != 0,
                 occurrence_count,
                 supporting_facts: serde_json::from_str(&supporting_facts).unwrap_or_default(),
                 alternative_causes: serde_json::from_str(&alternative_causes).unwrap_or_default(),
@@ -1239,6 +1372,7 @@ mod tests {
             "mutation_steps",
             "mutation_state_captures",
             "mutation_rollbacks",
+            "product_preferences",
         ] {
             let found: Option<String> = conn
                 .query_row(
@@ -1289,7 +1423,9 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, "3");
+        assert_eq!(version, SCHEMA_VERSION.to_string());
+        assert!(column_exists(&conn, "drift_events", "reviewed").unwrap());
+        assert!(column_exists(&conn, "drift_events", "returned_to_desired").unwrap());
     }
 
     #[test]
@@ -1347,6 +1483,85 @@ mod tests {
                 .unwrap();
             assert_eq!(found.as_deref(), Some(table));
         }
+    }
+
+    #[test]
+    fn version_three_upgrades_to_product_preferences_without_losing_history() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO drift_events(component_id,previous_state_json,current_state_json,classification,likely_cause,cause_confidence,first_detected,last_observed,resolved,occurrence_count) VALUES('onedrive','{}','{}','Preference','User action','Weak','1','2',0,1)",
+            [],
+        )
+        .unwrap();
+        conn.execute_batch(
+            "DROP TABLE product_preferences;
+             UPDATE database_metadata SET value='3' WHERE key='schema_version';",
+        )
+        .unwrap();
+
+        migrate(&conn).unwrap();
+
+        let drift_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM drift_events", [], |row| row.get(0))
+            .unwrap();
+        let retention: String = conn
+            .query_row(
+                "SELECT value FROM product_preferences WHERE key='history_retention_days'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(drift_count, 1);
+        assert_eq!(retention, "180");
+        assert!(column_exists(&conn, "drift_events", "reviewed_at").unwrap());
+    }
+
+    #[test]
+    fn retention_keeps_recent_and_latest_snapshots_without_touching_desired_state() {
+        let mut store = fixture_store();
+        let mut old = store.snapshots[0].clone();
+        old.id = "old-inspection".into();
+        old.timestamp = "1000".into();
+        let mut recent = store.snapshots[0].clone();
+        recent.id = "recent-inspection".into();
+        recent.timestamp = (40_u128 * 86_400_000).to_string();
+        store.snapshots = vec![old, recent];
+        store.preferences.history_retention_days = 30;
+        let desired_count = store.desired.len();
+
+        retain_history(&mut store, 45_u128 * 86_400_000);
+
+        assert_eq!(store.snapshots.len(), 1);
+        assert_eq!(store.snapshots[0].id, "recent-inspection");
+        assert_eq!(store.desired.len(), desired_count);
+    }
+
+    #[test]
+    fn clearing_read_only_data_preserves_internal_mutation_audit_tables() {
+        let target = temp_path("clear-history", "db");
+        let conn = open_at(&target).unwrap();
+        conn.execute("INSERT INTO mutation_plans(id,machine_id,source_inspection_id,source_observation_id,component_id,operation_id,generated_at,expires_at,plan_hash,approval_nonce_hash,plan_json) VALUES('plan','machine','inspection','observation','component','operation','1','2','hash','nonce','{}')",[]).unwrap();
+        drop(conn);
+        let mut store = fixture_store();
+        replace_read_only_data_at(&store, &target).unwrap();
+        store.snapshots.clear();
+        store.desired.clear();
+        store.desired_revisions.clear();
+        store.drift.clear();
+        replace_read_only_data_at(&store, &target).unwrap();
+
+        let conn = Connection::open(&target).unwrap();
+        let inspections: i64 = conn
+            .query_row("SELECT COUNT(*) FROM inspections", [], |row| row.get(0))
+            .unwrap();
+        let mutation_plans: i64 = conn
+            .query_row("SELECT COUNT(*) FROM mutation_plans", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(inspections, 0);
+        assert_eq!(mutation_plans, 1);
+        drop(conn);
+        let _ = fs::remove_file(target);
     }
 
     #[test]

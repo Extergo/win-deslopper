@@ -1,62 +1,46 @@
-# Spare-laptop validation handoff
+# Read-Only Product Alpha handoff
 
-This checkpoint contains the completed read-only beta and the internal-only
-Mutation Broker Alpha. Normal builds remain read-only. The alpha contains
-exactly three closed current-user operations: Widgets taskbar visibility, Task
-View visibility, and Show Desktop corner. All mutation testing is synthetic;
-zero live scenarios are complete, all 13 validation targets remain
-`not_provisioned`, and no handler is production-ready.
+The active product milestone is Deslopper `0.1.0-alpha.1`, a normal-feature,
+read-only Windows application. The branch starts from readiness commit
+`aad404e690175857a69085554e3223c078ded2e6`.
 
-The original development host is recorded in the ignored local denylist and
-must never be used for live mutation. No spare laptop, VM, or other machine is
-currently approved. Do not copy a machine identity, approval manifest, or live
-evidence between computers.
+Read `AGENTS.md`, `.deslopper/policy.toml`, `README.md`, `ARCHITECTURE.md`,
+`SECURITY.md`, `docs/read-only-product-alpha.md`, `docs/inspection-pipeline.md`,
+and `docs/testing-strategy.md` before acting.
 
-## Required reading
+## Safety status
 
-Before acting, read `AGENTS.md`, `.deslopper/policy.toml`, `README.md`,
-`ROADMAP.md`, `ARCHITECTURE.md`, `SECURITY.md`,
-`docs/mutation-threat-model.md`, `docs/mutation-broker-alpha.md`,
-`docs/live-validation-environment.md`, `docs/manual-vm-provisioning.md`,
-`docs/vm-mutation-protocol.md`, and `validation/report.md`.
+- The normal build registers only read-only inspection, local persistence,
+  desired-state preview, snapshot comparison, diagnostics, and local-data
+  commands.
+- The main window capability remains exactly event listen/unlisten.
+- Diagnostics are generated in Rust, exclude machine identity and validation
+  files, and are saved only after user review through a system file picker.
+- Product previews are explicitly non-executable and create no mutation
+  transaction or approval nonce.
+- The original development host remains permanently denied by an ignored,
+  local-only fingerprint file.
+- Mutation alpha remains separately compiled and synthetic-tested only. Zero
+  live-validated handlers exist.
 
-## Next exact phase
+## Withdrawn physical target
 
-1. Clone the private GitHub repository on the spare laptop.
-2. Check out the `mutation-alpha` branch.
-3. Verify the annotated `mutation-alpha-synthetic-v1` tag before proceeding.
-4. Install the documented Rust, Bun, Node/Tauri, WebView2, and Windows build
-   prerequisites without adding project dependencies.
-5. Build the normal read-only application first and run all repository quality
-   and mutation-boundary gates.
-6. Run a complete read-only inspection and confirm the resulting SQLite
-   database is owned by the spare laptop environment.
-7. Confirm the laptop has a current backup or can be cleanly reinstalled, and
-   document the recovery procedure before considering it disposable.
-8. Generate the laptop's machine fingerprint locally. Do not commit or transmit
-   the unhashed identity inputs.
-9. Create the ignored approval manifest for that exact laptop using
-   `validation/approved-validation-vms.schema.json` and the template in
-   `docs/manual-vm-provisioning.md`.
-10. Record the exact Windows edition, build, UBR, account class, management
-    context, approved target states, evidence location, checkpoint/recovery
-    equivalent, and restoration procedure in the ignored manifest.
-11. Copy or recreate the original development-host denylist through a secure
-    local handoff and confirm the original host remains denied. Do not replace
-    it with the laptop fingerprint.
-12. Only after every identity, recovery, database, CLI, build, scenario, and UI
-    gate passes may the internal live-validation gates be considered.
-13. Validate only Widgets, Task View, and Show Desktop corner. Do not add
-    operations or generic registry/script execution.
-14. Capture truthful redacted evidence for apply, representation, detector and
-    visible state, least disruptive refresh, reboot persistence, exact rollback,
-    drift, conflict, and crash recovery.
-15. Keep production mutation disabled until reviewed live evidence passes the
-    required build, edition, policy-managed, standard-user, lifecycle, rollback,
-    and recovery matrix.
+The former physical laptop completed read-only validation but was withdrawn
+because the hardware was sold. It was never approved for mutation, never
+received the development-host identity, never used mutation flags, and never
+performed a registry write. This was a target-availability decision, not a
+mutation failure. A future disposable target or VM needs a new preparation and
+approval record from scratch.
 
-Do not claim the spare laptop is approved or disposable until steps 6 through
-11 have been completed on that machine. If exact rollback fails, visible state
-disagrees, policy ownership is unsafe, or Explorer termination is required,
-record the failure and reject the affected handler rather than weakening a
-gate.
+## Next safe work
+
+Continue Product Alpha quality and real-world read-only compatibility work:
+
+1. Expand read-only fixtures across Home, Pro, Enterprise, 24H2, 25H2, managed,
+   and standard-user environments.
+2. Review keyboard navigation, screen readers, and 125%/150%/200% Windows
+   scaling on additional machines.
+3. Exercise install/uninstall and database recovery with disposable local data.
+4. Keep permission-limited AppX scopes and unsupported preview surfaces honest.
+5. Do not begin live mutation without a new approved disposable target and a
+   separately authorized milestone.

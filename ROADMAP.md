@@ -3,81 +3,47 @@
 This roadmap records sequencing, not authorization. `AGENTS.md`, `SECURITY.md`,
 `ARCHITECTURE.md`, and `.deslopper/policy.toml` remain authoritative.
 
-## Current milestone — internal mutation broker alpha
+## Current milestone - Read-Only Product Alpha
 
-**Status:** Implemented behind internal gates; real mutation VM validation remains pending.
+**Status:** Implemented on `read-only-product-alpha`; validation and packaging
+gates must pass before the milestone tag is created.
 
-The beta provides bounded, non-elevated Windows inspection for the complete
-20-component catalogue; structured applicability, package, authority, and
-precedence evidence; SQLite history and migration; desired-state recording;
-drift inference; cancellation and progress; fixture replay; and dedicated
-history and drift UI. The application does not mutate Windows, elevate,
-download code, or execute arbitrary commands.
+The Product Alpha turns the 20-component read-only engine into a useful Windows
+application: compact onboarding, an honest system summary, component browsing,
+desired-state validation, non-executable previews, reviewed/resolved drift,
+snapshot comparison, retained history, privacy-safe diagnostics, local settings,
+and a normal feature-off installer.
 
-The checked-in fixture is continuously replayed by Rust tests. The broader
-Windows Home/Pro/Enterprise, domain, MDM, OneDrive, servicing, and
-permission-limited matrix is defined in `validation/matrix.json` and must be
-captured on real VMs before platform support claims are promoted. See
-`docs/vm-validation.md` and `validation/report.md`.
+The normal build remains unelevated and has no usable mutation surface. It does
+not claim optimisation, removal, repair, production readiness, or universal
+Windows support.
 
-The alpha adds exactly three current-user taskbar operations behind compile,
-debug, CLI, acknowledgement, inspection, plan, and approval gates. Search mode
-and Search Highlights were replaced with documented Task View and Show Desktop
-settings. Normal-build mutation remains prohibited. See
-`docs/mutation-broker-alpha.md` and `docs/vm-mutation-protocol.md`.
+## Read-only validation and hardening
 
-All mutation results remain synthetic and no handler is production-ready. Zero
-live scenarios are complete and no disposable machine is currently approved.
-The next intended validation target is a separately backed-up and explicitly
-approved spare laptop after cloning the private checkpoint; its identity must
-not be recorded in the repository. Production mutation remains disabled until
-the required live-validation matrix passes.
+- Capture Home, Pro, Enterprise, 24H2, 25H2, managed, OneDrive, Store-serviced,
+  and permission-limited standard-user fixtures.
+- Validate keyboard/screen-reader behavior and 125%/150%/200% scaling on more
+  Windows systems.
+- Exercise disk-full, locked database, interrupted migration, installer,
+  uninstall, and retained-user-data behavior with disposable data.
+- Keep detector source review dates and Windows applicability current.
+- Add private Windows CI without creating live mutation pathways.
 
-## Next — beta validation and hardening
+## Internal mutation research remains separate
 
-- Capture and review every required VM scenario without changing detector code
-  merely to fit a fixture.
-- Expand frontend rendering and accessibility tests for inspection progress,
-  history, drift filters, and narrow layouts.
-- Exercise database lock, disk-full, interrupted migration, and cancellation
-  behavior in packaged Windows builds in addition to deterministic unit tests.
-- Keep the detector matrix and applicability source review dates current.
-- Add Windows CI for formatting, Clippy, Rust tests, frontend checks, fixture
-  replay, and a debug Tauri build.
-
-## Later — compatibility and preview planning
-
-Convert eligible, high-confidence observations into immutable proposed-change
-plans. Plans must use typed operations, state exact prerequisites and rollback
-sources, and remain unavailable for unsupported, unknown, failed, cancelled,
-permission-incomplete, or externally controlled states. This milestone still
-does not authorize Apply.
-
-## Later — rollback and privileged-operation design
-
-Design original-state capture, immutable receipts, result verification,
-partial-failure handling, rollback verification, and a narrow authenticated
-helper protocol. Architecture and security review are required before any
-implementation. The main UI must remain unelevated.
-
-## Later — first reversible Windows operation
-
-Only after explicit approval and policy changes, implement one documented,
-allow-listed, verifiable, reversible operation. Broad AppX removal, wildcards,
-arbitrary scripts, Explorer termination, and generic “debloat” execution are
-not acceptable first operations.
-
-## Later — extensions foundation
-
-An extension system requires out-of-process isolation, signed packages,
-versioned protocols, explicit capabilities, verified updates, and revocation.
-It must never grant arbitrary shell or administrator access.
+The compile-gated broker still contains exactly three closed taskbar operations.
+All evidence is synthetic and zero handlers are live validated. The former
+physical target was withdrawn because it was sold before approval or mutation;
+no mutation failure occurred. Any future work requires a new disposable target,
+complete recovery evidence, explicit approval, and a separately authorized
+milestone. The original development host is permanently prohibited.
 
 ## Sequencing rules
 
 - Inspection failure is never absence.
-- Do not begin mutation before compatibility planning and rollback design are
-  complete and explicitly approved.
+- Normal package version servicing is not configuration drift.
+- Preview state is never represented as completed work.
+- No automatic restoration or Apply control appears until an explicitly
+  authorized, tested, reversible operation reaches the normal product boundary.
 - Do not weaken gaming, anti-cheat, Xbox, Game Pass, or Windows security
   compatibility to increase removal coverage.
-- Keep milestones small enough that safety claims can be tested.

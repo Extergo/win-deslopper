@@ -1,5 +1,11 @@
 # Physical validation-target readiness
 
+> **Withdrawn 2026-08-05:** The laptop was sold before mutation approval or
+> any mutation attempt and is no longer available. This is historical read-only
+> preparation evidence, not a mutation failure, approval, or completed target.
+> No local draft, audit record, or earlier preparation state authorizes work on
+> a replacement device.
+
 The first real Windows 11 Pro 25H2 physical-laptop pass was performed on
 2026-08-03. This is read-only preparation evidence, not a live mutation target
 approval. No live mutation, mutation-alpha launch, mutation runtime flag,
@@ -104,9 +110,9 @@ equal to a denylisted development-host identity. The original development-host
 hash is not available on this laptop and must be transferred locally from the
 original PC; it must never be committed.
 
-The local physical-laptop draft and recovery audit remain ignored. Its status
-is `preparation_incomplete`, `recovery_not_ready`, `not_approved`, and
-`mutation_not_attempted`. The physical preparation row in
+The historical local physical-laptop draft and recovery audit were ignored.
+The checked-in row is now `withdrawn_sold`, `preparation_incomplete`,
+`recovery_not_ready`, `not_approved`, and `mutation_not_attempted`. The physical preparation row in
 `validation/matrix.json` does not count as a completed mutation target.
 
 The earlier MDM result was a detector false positive. Three provider-backed
