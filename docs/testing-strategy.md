@@ -50,6 +50,16 @@ and must state that no live write occurred. Fault injection is Rust-test-only.
 All-feature test or compile commands must never be paired with mutation runtime
 flags on the development host.
 
+Vitest also exercises the internal UI workflow with a mocked typed backend:
+feature-off and development-host denial, missing approval, Widgets-enabled-only
+scope, single-operation plan defense, expiry/elevation/Explorer-termination
+rejection, exact phrase approval, journaled execution phases, manual visual
+confirmation without a second write, transaction-bound absence rollback,
+terminal reuse prevention, history redaction, and plain-language safety errors.
+The Product Alpha source regression confirms that the entry point is selected
+only by exact Rust build metadata and that the normal page makes no direct
+mutation command call.
+
 Live-validation hardening tests cover the separate gate, development-host
 refusal, scenario/machine/checkpoint/database mismatch, validation maturity,
 rejected handlers, three-dimensional visual outcomes, Settings disagreement,

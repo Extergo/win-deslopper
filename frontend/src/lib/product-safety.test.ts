@@ -1,13 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
+import mutationPanel from './MutationAlphaPanel.svelte?raw';
 import productPage from '../routes/+page.svelte?raw';
 
 describe('normal Product Alpha presentation boundary', () => {
-  it('contains no callable or visible mutation workflow', () => {
+  it('contains no direct mutation calls and gates the internal entry point on build metadata', () => {
     expect(productPage).not.toMatch(/getMutation|executeMutation|rollbackMutation|mutationAlpha/);
-    expect(productPage).not.toMatch(/Approve, apply|Apply changes|enable this session/);
+    expect(productPage).toMatch(/productInfo\.buildMode === 'internal mutation-alpha compile'/);
+    expect(productPage).toMatch(/Experimental Apply & Undo/);
     expect(productPage).toMatch(/Read-Only Product Alpha/);
     expect(productPage).toMatch(/Automatic restoration is not available/);
+    expect(mutationPanel).toMatch(/Internal Mutation Alpha/);
+    expect(mutationPanel).toMatch(/This development machine is permanently blocked/);
+    const historyMarkup = mutationPanel.split('Mutation transaction history')[1] ?? '';
+    expect(historyMarkup).not.toMatch(/machineId|approvalNonce|approvalEvidenceSha256/);
   });
 
   it('contains no automatic network or upload path for diagnostics', () => {

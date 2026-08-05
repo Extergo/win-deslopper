@@ -36,8 +36,14 @@ contract.
 
 The repository retains a separately compiled internal `mutation-alpha` feature
 for exactly three closed current-user taskbar experiments. It is not part of the
-normal Product Alpha command registration or presentation. All mutation results
-remain synthetic: zero handlers are live validated and none is production-ready.
+normal Product Alpha command registration or presentation. Internal builds now
+show a compact Experimental Apply & Undo workflow only when Rust build metadata
+reports the mutation feature. The panel reads backend gate status, renders only
+backend-authorized options, reviews one-use plans, requires the backend-provided
+exact phrase, follows durable transaction state, records manual visual outcomes
+through live evidence, and offers only transaction-bound exact rollback. All
+mutation results remain synthetic: zero handlers are live validated and none is
+production-ready.
 
 The physical validation laptop completed read-only preparation and was then
 retired before mutation because the hardware was being sold. That event remains

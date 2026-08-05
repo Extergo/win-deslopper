@@ -17,6 +17,7 @@
     type ProductInfo,
     type SnapshotComparison
   } from '$lib/backend';
+  import MutationAlphaPanel from '$lib/MutationAlphaPanel.svelte';
   import {
     installInspectionProgressListener,
     isTerminalInspectionPhase
@@ -37,25 +38,29 @@
   import '$lib/theme.css';
 
   const backend = createBackendClient();
-  const sections: Array<{ id: ProductSection; label: string; glyph: string; description: string }> =
-    [
-      { id: 'overview', label: 'Overview', glyph: 'O', description: 'Current system summary' },
-      { id: 'components', label: 'Components', glyph: 'C', description: '20 observed surfaces' },
-      {
-        id: 'desired',
-        label: 'Desired states',
-        glyph: 'P',
-        description: 'Preview-only preferences'
-      },
-      { id: 'drift', label: 'Drift', glyph: 'D', description: 'Changes over time' },
-      { id: 'history', label: 'History', glyph: 'H', description: 'Saved inspections' },
-      {
-        id: 'settings',
-        label: 'Settings & About',
-        glyph: 'S',
-        description: 'Privacy and local data'
-      }
-    ];
+  const productSections: Array<{
+    id: ProductSection;
+    label: string;
+    glyph: string;
+    description: string;
+  }> = [
+    { id: 'overview', label: 'Overview', glyph: 'O', description: 'Current system summary' },
+    { id: 'components', label: 'Components', glyph: 'C', description: '20 observed surfaces' },
+    {
+      id: 'desired',
+      label: 'Desired states',
+      glyph: 'P',
+      description: 'Preview-only preferences'
+    },
+    { id: 'drift', label: 'Drift', glyph: 'D', description: 'Changes over time' },
+    { id: 'history', label: 'History', glyph: 'H', description: 'Saved inspections' },
+    {
+      id: 'settings',
+      label: 'Settings & About',
+      glyph: 'S',
+      description: 'Privacy and local data'
+    }
+  ];
   const componentFilters: Array<{ id: ComponentFilter; label: string }> = [
     { id: 'all', label: 'All' },
     { id: 'changed', label: 'Changed' },
@@ -103,6 +108,18 @@
   let clearingHistory = false;
 
   $: observations = platform?.snapshot?.observations ?? [];
+  $: sections =
+    productInfo?.buildMode === 'internal mutation-alpha compile'
+      ? [
+          ...productSections,
+          {
+            id: 'mutation_alpha' as const,
+            label: 'Experimental Apply & Undo',
+            glyph: 'X',
+            description: 'Internal Mutation Alpha'
+          }
+        ]
+      : productSections;
   $: desiredStates = platform?.desiredStates ?? [];
   $: filteredComponents = filterComponents(
     catalogue,
@@ -399,7 +416,13 @@
     <aside class="sidebar" aria-label="Primary navigation">
       <div class="brand">
         <div class="logo" aria-hidden="true">D</div>
-        <div><strong>Deslopper</strong><span>Read-Only Product Alpha</span></div>
+        <div>
+          <strong>Deslopper</strong><span
+            >{productInfo.buildMode === 'internal mutation-alpha compile'
+              ? 'Internal Mutation Alpha'
+              : 'Read-Only Product Alpha'}</span
+          >
+        </div>
       </div>
       <nav>
         {#each sections as section (section.id)}
@@ -414,10 +437,17 @@
         {/each}
       </nav>
       <div class="sidebar-spacer"></div>
-      <section class="safety-note" aria-label="Build safety status">
-        <strong><span aria-hidden="true">●</span> Read-only</strong>
-        <p>I inspect and explain. I do not apply Windows changes in this build.</p>
-      </section>
+      {#if productInfo.buildMode === 'internal mutation-alpha compile'}
+        <section class="safety-note internal" aria-label="Build safety status">
+          <strong><span aria-hidden="true">●</span> Internal build</strong>
+          <p>Mutation remains unavailable unless every backend safety gate passes.</p>
+        </section>
+      {:else}
+        <section class="safety-note" aria-label="Build safety status">
+          <strong><span aria-hidden="true">●</span> Read-only</strong>
+          <p>I inspect and explain. I do not apply Windows changes in this build.</p>
+        </section>
+      {/if}
     </aside>
 
     <main class="workspace" aria-busy={inspectionRunning}>
@@ -1066,7 +1096,7 @@
               </div>{/each}
           </div>
         </section>
-      {:else}
+      {:else if activeSection === 'settings'}
         <section aria-labelledby="settings-title">
           <header class="page-header">
             <div>
@@ -1174,6 +1204,11 @@
             </section>
           </div>
         </section>
+      {:else if productInfo.buildMode === 'internal mutation-alpha compile'}
+        <MutationAlphaPanel
+          buildMode={productInfo.buildMode}
+          sourceInspectionId={platform.snapshot?.id ?? null}
+        />
       {/if}
     </main>
   </div>

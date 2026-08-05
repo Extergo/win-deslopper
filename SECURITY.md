@@ -85,6 +85,15 @@ The threat boundary does not include a compromised same-user account with
 arbitrary code execution. Live evidence contains typed manual assertions and
 must be reviewed; it is not cryptographically attested visual proof.
 
+The internal frontend entry point is selected only by Rust-provided build
+metadata. It does not call mutation status in a normal build, and normal command
+registration remains the hard boundary. The panel cannot infer handler scope:
+it renders only returned operation/target options, rejects unsafe or expired
+one-operation plans as defense in depth, requires an exact backend-provided
+phrase, redacts plan and nonce display, and sends only the existing closed
+requests. Undo supplies only a durable transaction ID. Machine identities,
+approval hashes, and raw nonces are not rendered in history.
+
 ## Reporting
 
 Use a private repository security advisory or maintainers' private owner

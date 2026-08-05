@@ -279,8 +279,11 @@ export interface MutationAlphaStatus {
   debugBuild: boolean;
   commandLineOptIn: boolean;
   warningAcknowledged: boolean;
+  warningText: string;
   liveValidation: {
     commandLineOptIn: boolean;
+    governancePolicyLoaded: boolean;
+    targetTypePolicyAllowed: boolean;
     manifestLoaded: boolean;
     targetApprovalLoaded: boolean;
     denylistLoaded: boolean;
@@ -299,6 +302,7 @@ export interface MutationAlphaStatus {
     maximumPlans: number;
     maximumExecutions: number;
     approvalExpiresAtEpochMs: number | null;
+    approvedTargetType: 'virtual_machine' | 'physical_laptop' | null;
     rollbackEnvironmentAvailable: boolean;
     localApprovalRevalidationRequired: boolean;
     available: boolean;
@@ -400,15 +404,20 @@ export interface LiveEvidenceBundle {
 export interface MutationPlan {
   planId: string;
   sourceInspectionId: string;
+  subjectId: string;
   operationId: MutationOperationId;
   targetState: MutationTarget;
   currentState: MutationCapturedState;
+  authority: string;
+  applicability: string;
   generatedAt: string;
   expiresAt: string;
   requiredPrivilege: string;
   expectedSideEffects: string[];
   restartRequirement: string;
   rollbackMethod: string;
+  handlerVersion: string;
+  automaticRemediationEligible: boolean;
   documentation: string[];
   planHash: string;
 }
@@ -417,6 +426,8 @@ export interface IssuedMutationPlan {
   plan: MutationPlan;
   approvalNonce: string;
   confirmationText: string;
+  approvalPhrase: string;
+  proposedRepresentation: MutationCapturedState['representation'];
 }
 
 export interface MutationTransaction {
@@ -442,7 +453,16 @@ export interface MutationTransaction {
   errorCategory: string | null;
   errorSummary: string | null;
   recoveryRequirement: string | null;
-  steps: Array<{ sequence: number; stepType: string; status: string }>;
+  steps: Array<{
+    sequence: number;
+    stepType: string;
+    startedAt: string;
+    completedAt: string | null;
+    status: string;
+    redactedEvidence: string[];
+    errorCategory: string | null;
+    errorSummary: string | null;
+  }>;
   rollback: {
     available: boolean;
     complete: boolean;

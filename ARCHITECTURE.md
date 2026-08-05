@@ -10,7 +10,11 @@ three documented taskbar presentation settings.
    component browsing, desired-state previews, drift/history comparison,
    diagnostics review, and local settings. The Product Alpha presentation has
    no mutation workflow and never owns Windows paths, values, scripts,
-   applicability, authority, or redaction rules.
+   applicability, authority, or redaction rules. The same frontend instantiates
+   its internal Experimental Apply & Undo panel only when Rust's immutable build
+   metadata reports a `mutation-alpha` compile. That panel is an untrusted
+   transport client: Rust owns gate status, authorized operations and targets,
+   exact representations, approval phrases, transaction state, and rollback.
 2. **Application orchestration.** Rust owns inspection coordination, progress,
    desired-state validation, drift, feature-gated command transport, and fresh
    pre/post-operation inspection. Tauri handlers do not execute settings.
@@ -74,6 +78,12 @@ Normal builds do not compile live-validation evidence commands.
 The normal main-window capability contains only the Tauri listen and unlisten
 commands required for Rust-emitted inspection progress. Frontend event emission
 is not part of the presentation boundary.
+
+Mutation execution emits no frontend event. The internal panel reads the durable
+transaction history while an existing apply or rollback command is pending and
+renders only journaled steps. Manual visual confirmation never triggers a second
+write and is exported only through the existing evidence command after exact
+transaction-bound rollback.
 
 See `docs/read-only-product-alpha.md`, `docs/mutation-threat-model.md`,
 `docs/mutation-broker-alpha.md`, and D-011.

@@ -15,6 +15,33 @@ host denylist. The internal UI always shows computer name, machine-ID prefix,
 platform, informational VM detection, and scenario. All three operations remain
 “Internal alpha - not live validated.”
 
+The internal Experimental Apply & Undo panel is instantiated only when
+`get_product_info` reports `internal mutation-alpha compile`. The normal binary's
+separate Tauri registration still omits every command below, so frontend code is
+not an authorization boundary. A denied development host receives a permanent
+block without executable controls. A permitted target must acknowledge the
+backend warning before the panel requests the backend-filtered options.
+
+### Frontend command contract
+
+| Frontend action | Tauri command | Request | Response |
+|---|---|---|---|
+| Read gate/banner | `get_mutation_alpha_status` | none | `AlphaGateStatus` |
+| Acknowledge warning | `acknowledge_mutation_alpha_warning` | `acknowledged: bool` | `AlphaGateStatus` |
+| Read approved choices | `get_mutation_operation_options` | none | `Vec<OperationOption>` |
+| Create one plan | `generate_mutation_plan` | `PlanRequest` | `IssuedPlan` |
+| Exact approval and apply | `approve_and_execute_mutation` | `ApprovalRequest` | `MutationTransaction` |
+| Read durable progress/history | `get_mutation_history` | none | `Vec<MutationTransaction>` |
+| Cancel before mutation | `cancel_mutation_plan` | `plan_id` | `MutationTransaction` |
+| Exact transaction rollback | `rollback_mutation` | `RollbackRequest` | `MutationTransaction` |
+| Export manual outcome | `export_live_validation_evidence` | `EvidenceExportRequest` | `LiveEvidenceBundle` |
+
+`IssuedPlan` carries the descriptive confirmation text, a short exact approval
+phrase, and the handler-derived proposed representation. These response-only
+review facts do not change the persisted plan schema or approval request: the
+broker still accepts only plan ID, one-time nonce, and acknowledgement. The UI
+requires an exact phrase match before sending that closed request.
+
 ## Scoped live approvals and explicit target policy
 
 Scoped version 2 introduced operation-direction approval and remains an
@@ -151,6 +178,14 @@ The guest validation runner is this same application path, not a handler
 shortcut. Typed manual visual observations can be exported only after a durable
 transaction. See `live-validation-environment.md` and
 `live-evidence-format.md`.
+
+The internal panel polls the existing durable history while apply or rollback is
+pending because the broker emits no mutation event. It labels pre-write
+revalidation, capture, write, readback, detector verification, and transaction
+state from journaled steps. A manual Changed/Did not change choice remains UI
+state until exact rollback completes; the user can then persist it only through
+the existing evidence export. Visual failure never creates an opposite plan or
+second write.
 
 ## Future-operation checklist
 

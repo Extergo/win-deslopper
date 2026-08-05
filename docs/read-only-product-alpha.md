@@ -12,6 +12,11 @@ window has only Tauri event listen/unlisten capability for inspection progress.
 There is no shell, filesystem, network, updater, authentication, telemetry,
 plugin, backend, or elevation permission.
 
+The Experimental Apply & Undo navigation entry and banner are absent when
+`get_product_info` reports the normal read-only build mode. The frontend does
+not request mutation status or options in that mode, and runtime flags cannot
+add commands to the separately compiled feature-off registration.
+
 ## First-run and daily use
 
 First run presents a compact boundary explanation:

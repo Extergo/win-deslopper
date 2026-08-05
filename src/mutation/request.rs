@@ -97,6 +97,7 @@ pub struct AlphaGateStatus {
     pub debug_build: bool,
     pub command_line_opt_in: bool,
     pub warning_acknowledged: bool,
+    pub warning_text: &'static str,
     pub live_validation: super::live_validation::LiveValidationGateStatus,
     pub available: bool,
     pub reason: String,

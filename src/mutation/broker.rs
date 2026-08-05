@@ -95,6 +95,8 @@ pub struct IssuedPlan {
     pub plan: MutationPlan,
     pub approval_nonce: String,
     pub confirmation_text: String,
+    pub approval_phrase: String,
+    pub proposed_representation: super::plan::CapturedRepresentation,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -210,6 +212,7 @@ impl Broker {
             debug_build,
             command_line_opt_in: self.command_line_opt_in,
             warning_acknowledged,
+            warning_text: "Internal Mutation Alpha can change the current user's Windows taskbar settings. It is experimental, local-only, and permitted only on an explicitly approved disposable validation target. Acknowledgement is not authorization.",
             live_validation,
             available,
             reason,
@@ -386,6 +389,10 @@ impl Broker {
         )?;
         Ok(IssuedPlan {
             confirmation_text: confirmation_text(request.operation_id, request.target),
+            approval_phrase: approval_phrase(request.operation_id),
+            proposed_representation: super::plan::CapturedRepresentation::Dword(u32::from(
+                request.target.enabled(),
+            )),
             plan,
             approval_nonce: nonce,
         })
@@ -1458,6 +1465,15 @@ fn confirmation_text(operation: MutationOperationId, target: MutationTarget) -> 
     }
 }
 
+fn approval_phrase(operation: MutationOperationId) -> String {
+    match operation {
+        MutationOperationId::WidgetsVisibility => "APPROVE WIDGETS TEST",
+        MutationOperationId::TaskViewVisibility => "APPROVE TASK VIEW TEST",
+        MutationOperationId::ShowDesktopEnabled => "APPROVE SHOW DESKTOP TEST",
+    }
+    .into()
+}
+
 fn now_millis() -> u128 {
     crate::inspection::timestamp().parse().unwrap_or(0)
 }
@@ -1737,6 +1753,32 @@ mod tests {
         assert_eq!(MutationOperationId::ALL.len(), 3);
         let (broker, _, path) = ready_broker("registry");
         assert_eq!(broker.operation_options(&context()).len(), 3);
+        cleanup(&path);
+    }
+
+    #[test]
+    fn issued_plan_serializes_backend_owned_review_facts() {
+        let (broker, _, path) = scoped_broker("issued-review-facts", 1, 1);
+        let issued = issue(
+            &broker,
+            MutationOperationId::WidgetsVisibility,
+            MutationTarget::Enabled,
+            &context(),
+        );
+        let serialized = serde_json::to_value(&issued).unwrap();
+        assert_eq!(serialized["approvalPhrase"], "APPROVE WIDGETS TEST");
+        assert_eq!(serialized["proposedRepresentation"]["dword"], 1);
+        assert!(
+            serialized["confirmationText"]
+                .as_str()
+                .is_some_and(|value| value.contains("exact previous representation"))
+        );
+        assert!(
+            broker
+                .gate_status()
+                .warning_text
+                .contains("not authorization")
+        );
         cleanup(&path);
     }
 

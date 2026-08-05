@@ -8,7 +8,7 @@ import type {
 } from './backend';
 
 export type ProductSection =
-  'overview' | 'components' | 'desired' | 'drift' | 'history' | 'settings';
+  'overview' | 'components' | 'desired' | 'drift' | 'history' | 'settings' | 'mutation_alpha';
 
 export type ComponentFilter =
   | 'all'
