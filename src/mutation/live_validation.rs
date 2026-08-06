@@ -96,6 +96,7 @@ pub enum VerificationDimensionResult {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum VisualVerificationOutcome {
+    NoChangeNeeded,
     FullyVerified,
     RepresentationAndDetectorVerifiedVisualPending,
     SettingsUiDisagrees,
@@ -1054,18 +1055,58 @@ fn is_git_commit_id(value: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
-fn is_utc_approval_timestamp(value: &str) -> bool {
+fn canonical_utc_timestamp_epoch_ms(value: &str) -> Option<u64> {
     let bytes = value.as_bytes();
-    (20..=35).contains(&bytes.len())
-        && bytes.get(4) == Some(&b'-')
-        && bytes.get(7) == Some(&b'-')
-        && bytes.get(10) == Some(&b'T')
-        && bytes.get(13) == Some(&b':')
-        && bytes.get(16) == Some(&b':')
-        && bytes.last() == Some(&b'Z')
-        && bytes
-            .iter()
-            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'-' | b'T' | b':' | b'.' | b'Z'))
+    if bytes.len() != 24
+        || bytes.get(4) != Some(&b'-')
+        || bytes.get(7) != Some(&b'-')
+        || bytes.get(10) != Some(&b'T')
+        || bytes.get(13) != Some(&b':')
+        || bytes.get(16) != Some(&b':')
+        || bytes.get(19) != Some(&b'.')
+        || bytes.get(23) != Some(&b'Z')
+        || bytes.iter().enumerate().any(|(index, byte)| {
+            !matches!(index, 4 | 7 | 10 | 13 | 16 | 19 | 23) && !byte.is_ascii_digit()
+        })
+    {
+        return None;
+    }
+    let number = |start: usize, end: usize| value.get(start..end)?.parse::<u32>().ok();
+    let year = number(0, 4)?;
+    let month = number(5, 7)?;
+    let day = number(8, 10)?;
+    let hour = number(11, 13)?;
+    let minute = number(14, 16)?;
+    let second = number(17, 19)?;
+    let millisecond = number(20, 23)?;
+    let leap = year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400));
+    let days_in_month = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if leap => 29,
+        2 => 28,
+        _ => return None,
+    };
+    if year < 1970 || day == 0 || day > days_in_month || hour > 23 || minute > 59 || second > 59 {
+        return None;
+    }
+
+    // Gregorian civil date to days since 1970-01-01. Keeping this local avoids
+    // locale- or timezone-dependent parsing in the approval binding path.
+    let adjusted_year = i64::from(year) - i64::from(month <= 2);
+    let era = adjusted_year.div_euclid(400);
+    let year_of_era = adjusted_year - era * 400;
+    let shifted_month = i64::from(month) + if month > 2 { -3 } else { 9 };
+    let day_of_year = (153 * shifted_month + 2) / 5 + i64::from(day) - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    let days = era * 146_097 + day_of_era - 719_468;
+    u64::try_from(days)
+        .ok()?
+        .checked_mul(86_400_000)?
+        .checked_add(u64::from(hour) * 3_600_000)?
+        .checked_add(u64::from(minute) * 60_000)?
+        .checked_add(u64::from(second) * 1_000)?
+        .checked_add(u64::from(millisecond))
 }
 
 fn valid_development_host_denylist(value: &DevelopmentHostDenylist) -> bool {
@@ -1193,6 +1234,10 @@ fn scoped_target_approval_is_complete(
     value: &ScopedValidationTargetApproval,
     now_epoch_ms: u64,
 ) -> bool {
+    let approval_timestamp = value
+        .explicit_user_approval_timestamp
+        .as_deref()
+        .and_then(canonical_utc_timestamp_epoch_ms);
     let common_complete = matches!(value.schema_version, 2 | 3)
         && value.record_kind == TargetRecordKind::Approval
         && value.approval_status == TargetApprovalStatus::Approved
@@ -1229,13 +1274,11 @@ fn scoped_target_approval_is_complete(
         )
         && value.development_host_protection_state
             == DevelopmentHostProtectionState::PresentDistinct
-        && value
-            .explicit_user_approval_timestamp
-            .as_ref()
-            .is_some_and(|timestamp| !timestamp.trim().is_empty())
-        && value
-            .expires_at_epoch_ms
-            .is_some_and(|expiration| expiration > now_epoch_ms)
+        && approval_timestamp.is_some_and(|approved| approved <= now_epoch_ms)
+        && value.expires_at_epoch_ms.is_some_and(|expiration| {
+            expiration > now_epoch_ms
+                && approval_timestamp.is_some_and(|approved| expiration > approved)
+        })
         && !value.restore_or_reimage_procedure.trim().is_empty()
         && !value.validation_maturity.trim().is_empty();
 
@@ -1299,17 +1342,24 @@ fn physical_target_approval_is_complete(
         && value.automatic_repair_disabled == Some(true)
         && value.final_plan_approval_required == Some(true)
         && value.final_disposition.is_some()
-        && value
-            .explicit_user_approval_timestamp
-            .as_deref()
-            .is_some_and(is_utc_approval_timestamp)
-        && approval_start.is_some_and(|start| start <= now_epoch_ms)
+        && approval_start.is_some_and(|start| {
+            start <= now_epoch_ms
+                && value
+                    .explicit_user_approval_timestamp
+                    .as_deref()
+                    .and_then(canonical_utc_timestamp_epoch_ms)
+                    == Some(start)
+        })
         && expiration.zip(approval_start).is_some_and(|(end, start)| {
             end > now_epoch_ms && end > start && end - start <= MAX_PHYSICAL_APPROVAL_LIFETIME_MS
         })
 }
 
 fn target_approval_is_complete(value: &ValidationTargetApproval, now_epoch_ms: u64) -> bool {
+    let approval_timestamp = value
+        .explicit_user_approval_timestamp
+        .as_deref()
+        .and_then(canonical_utc_timestamp_epoch_ms);
     let required_operations: HashSet<_> = MutationOperationId::ALL.into_iter().collect();
     let operations: HashSet<_> = value.approved_operations.iter().copied().collect();
     let states_complete = MutationOperationId::ALL.into_iter().all(|operation| {
@@ -1361,13 +1411,11 @@ fn target_approval_is_complete(value: &ValidationTargetApproval, now_epoch_ms: u
         )
         && value.development_host_protection_state
             == DevelopmentHostProtectionState::PresentDistinct
-        && value
-            .explicit_user_approval_timestamp
-            .as_ref()
-            .is_some_and(|timestamp| !timestamp.trim().is_empty())
-        && value
-            .expires_at_epoch_ms
-            .is_some_and(|expiration| expiration > now_epoch_ms)
+        && approval_timestamp.is_some_and(|approved| approved <= now_epoch_ms)
+        && value.expires_at_epoch_ms.is_some_and(|expiration| {
+            expiration > now_epoch_ms
+                && approval_timestamp.is_some_and(|approved| expiration > approved)
+        })
         && !value.restore_or_reimage_procedure.trim().is_empty()
         && !value.validation_maturity.trim().is_empty()
         && value.disposable_confirmed == Some(true)
@@ -1517,23 +1565,35 @@ impl LiveEvidenceBundle {
             .post_state
             .clone()
             .ok_or("Evidence requires a verified post-state capture.")?;
-        let visual_outcome = request.visual_verification.outcome();
+        let no_change_needed = transaction.status == TransactionStatus::NoChangeNeeded
+            && transaction.verification_result.as_deref() == Some("already_compliant")
+            && !transaction.rollback.available
+            && transaction.rollback_state.is_none();
+        let visual_outcome = if no_change_needed {
+            VisualVerificationOutcome::NoChangeNeeded
+        } else {
+            request.visual_verification.outcome()
+        };
         let rollback_verified = transaction.rollback_state.is_some()
             && transaction.rollback.verification_result.as_deref()
                 == Some("exact_pre_state_restored")
             && transaction.status == TransactionStatus::RolledBack;
-        let apply_verified = transaction.verification_result.as_deref()
-            == Some("applied_and_verified")
-            && transaction
-                .steps
-                .iter()
-                .any(|step| step.status == TransactionStatus::RollbackAvailable.key());
-        let final_result = classify_final_result(
-            visual_outcome,
-            request.visual_verification.refresh_requirement,
-            apply_verified,
-            rollback_verified,
-        );
+        let apply_verified = no_change_needed
+            || (transaction.verification_result.as_deref() == Some("applied_and_verified")
+                && transaction
+                    .steps
+                    .iter()
+                    .any(|step| step.status == TransactionStatus::RollbackAvailable.key()));
+        let final_result = if no_change_needed {
+            MatrixScenarioStatus::Passed
+        } else {
+            classify_final_result(
+                visual_outcome,
+                request.visual_verification.refresh_requirement,
+                apply_verified,
+                rollback_verified,
+            )
+        };
         Ok(Self {
             evidence_schema_version: 1,
             scenario_id: manifest.scenario_id.clone(),
@@ -1693,6 +1753,27 @@ fn validate_bundle_redaction(bundle: &LiveEvidenceBundle) -> Result<(), &'static
 mod tests {
     use super::*;
 
+    fn canonical_timestamp(epoch_ms: u64) -> String {
+        let days = i64::try_from(epoch_ms / 86_400_000).unwrap();
+        let day_ms = epoch_ms % 86_400_000;
+        let z = days + 719_468;
+        let era = z.div_euclid(146_097);
+        let day_of_era = z - era * 146_097;
+        let year_of_era =
+            (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+        let mut year = year_of_era + era * 400;
+        let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+        let shifted_month = (5 * day_of_year + 2) / 153;
+        let day = day_of_year - (153 * shifted_month + 2) / 5 + 1;
+        let month = shifted_month + if shifted_month < 10 { 3 } else { -9 };
+        year += i64::from(month <= 2);
+        let hour = day_ms / 3_600_000;
+        let minute = day_ms % 3_600_000 / 60_000;
+        let second = day_ms % 60_000 / 1_000;
+        let millisecond = day_ms % 1_000;
+        format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.{millisecond:03}Z")
+    }
+
     fn platform(name: &str, edition: &str, build: u32) -> PlatformInfo {
         PlatformInfo {
             product_name: "Windows 11 Pro".into(),
@@ -1757,7 +1838,7 @@ mod tests {
             bitlocker_recovery_state: BitLockerRecoveryState::NotApplicableUnencrypted,
             recovery_media_state: RecoveryMediaState::Available,
             development_host_protection_state: DevelopmentHostProtectionState::PresentDistinct,
-            explicit_user_approval_timestamp: Some("2026-08-03T12:00:00Z".into()),
+            explicit_user_approval_timestamp: Some("2026-08-03T12:00:00.000Z".into()),
             approval_status: TargetApprovalStatus::Approved,
             expires_at_epoch_ms: Some(current_epoch_ms() + 60_000),
             restore_or_reimage_procedure: "Use approved Windows recovery media.".into(),
@@ -1770,6 +1851,7 @@ mod tests {
     }
 
     fn valid_scoped_approval() -> ScopedValidationTargetApproval {
+        let approved_at = current_epoch_ms();
         ScopedValidationTargetApproval {
             schema_version: 3,
             record_kind: TargetRecordKind::Approval,
@@ -1807,7 +1889,7 @@ mod tests {
             bitlocker_recovery_state: BitLockerRecoveryState::NotApplicableUnencrypted,
             recovery_media_state: RecoveryMediaState::Available,
             development_host_protection_state: DevelopmentHostProtectionState::PresentDistinct,
-            explicit_user_approval_timestamp: Some("2026-08-05T12:00:00Z".into()),
+            explicit_user_approval_timestamp: Some(canonical_timestamp(approved_at)),
             approval_status: TargetApprovalStatus::Approved,
             expires_at_epoch_ms: Some(current_epoch_ms() + 60_000),
             restore_or_reimage_procedure: "Use approved Windows recovery media.".into(),
@@ -1818,7 +1900,7 @@ mod tests {
             restart_pending_state: Some(RestartPendingState::Clear),
             automatic_repair_disabled: Some(true),
             final_plan_approval_required: Some(true),
-            approval_granted_at_epoch_ms: Some(current_epoch_ms()),
+            approval_granted_at_epoch_ms: Some(approved_at),
             final_disposition: Some(FinalDisposition::ResetBeforeSale),
             disposable_confirmed: None,
             expendable_confirmed: Some(true),
@@ -2072,6 +2154,29 @@ physical_target_requires_strict_recovery_readiness = true
         assert!(!scoped_target_approval_is_complete(&approval, now));
         approval = valid_scoped_approval();
         approval.expires_at_epoch_ms = Some(now);
+        assert!(!scoped_target_approval_is_complete(&approval, now));
+    }
+
+    #[test]
+    fn approval_timestamps_require_canonical_literal_z_and_exact_epoch_binding() {
+        let now = current_epoch_ms();
+        let canonical = canonical_timestamp(now);
+        assert_eq!(canonical_utc_timestamp_epoch_ms(&canonical), Some(now));
+        assert!(canonical_utc_timestamp_epoch_ms("2026-08-05T12:00:00.000+00:00").is_none());
+        assert!(canonical_utc_timestamp_epoch_ms("2026-08-05T13:00:00.000+01:00").is_none());
+        assert!(canonical_utc_timestamp_epoch_ms("2026-08-05T12:00:00.000").is_none());
+        assert!(canonical_utc_timestamp_epoch_ms("2026-02-30T12:00:00.000Z").is_none());
+
+        let mut approval = valid_scoped_approval();
+        approval.explicit_user_approval_timestamp = Some(canonical_timestamp(now + 1));
+        approval.approval_granted_at_epoch_ms = Some(now + 1);
+        approval.expires_at_epoch_ms = Some(now + 60_000);
+        assert!(!scoped_target_approval_is_complete(&approval, now));
+
+        approval = valid_scoped_approval();
+        approval.approval_granted_at_epoch_ms = approval
+            .approval_granted_at_epoch_ms
+            .map(|epoch| epoch.saturating_sub(1));
         assert!(!scoped_target_approval_is_complete(&approval, now));
     }
 
@@ -2644,6 +2749,7 @@ physical_target_requires_strict_recovery_readiness = true
         let state = CapturedState {
             representation: super::super::plan::CapturedRepresentation::Dword(1),
             effective_enabled: true,
+            effective_state_known: true,
             authority: "user".into(),
             confidence: "confirmed_representation".into(),
             captured_at: "0".into(),

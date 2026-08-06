@@ -84,7 +84,7 @@ Exactly three current-user, unelevated operations exist:
 
 | Operation ID | Fixed representation | Verification and rollback |
 |---|---|---|
-| `set_taskbar_widgets_visibility` | HKCU Explorer Advanced `TaskbarDa`, DWORD 0/1 | Re-read; restore exact DWORD or original absence. Never removes Widgets/Web Experience Pack. |
+| `set_taskbar_widgets_visibility` | HKCU Explorer Advanced `TaskbarDa`, DWORD 0/1 | Absence is an unknown/default representation, not enabled. DWORD 0 is disabled and DWORD 1 is enabled; any other type/value blocks. Re-read; restore exact DWORD or original absence. Never removes Widgets/Web Experience Pack. |
 | `set_taskbar_task_view_visibility` | HKCU Explorer Advanced `ShowTaskViewButton`, DWORD 0/1 | Re-read; restore exact representation. Virtual desktops remain available. |
 | `set_taskbar_show_desktop_enabled` | HKCU Explorer Advanced `TaskbarSd`, DWORD 0/1 | Re-read; restore exact representation. Only the far-corner gesture changes. |
 
@@ -145,6 +145,13 @@ writes are never labelled success: `applied` remains a recoverable transitional
 state until that full detector pass advances the transaction to
 `rollback_available`.
 
+If the pre-state is already the exact target DWORD, execution performs no
+handler write or verification writeback. It consumes the one-time plan into the
+terminal `no_change_needed` state with `already_compliant`, leaves rollback
+unavailable, retains the durable audit, and permits a redacted no-op evidence
+export. An absent Widgets value never qualifies for that shortcut: enabling it
+writes DWORD 1, and exact rollback deletes the value to restore absence.
+
 Pre-state captures exact DWORD or absence. Rollback callers cannot submit state.
 The broker rechecks machine/build/edition/authority plus the operation-specific
 fixed policy paths, detects a later change, and requires explicit conflict
@@ -161,7 +168,7 @@ pre-state present, or unexpected/uncertain as `recovery_required`; it never
 silently repeats apply. There is no worker, task, service, startup repair, or
 automatic drift reconciliation.
 
-## SQLite v4 and fault injection
+## SQLite v5 and fault injection
 
 `mutation_plans`, `mutation_transactions`, `mutation_steps`,
 `mutation_state_captures`, and `mutation_rollbacks` store typed audit data,

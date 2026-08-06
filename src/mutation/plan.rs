@@ -15,9 +15,15 @@ pub enum CapturedRepresentation {
 pub struct CapturedState {
     pub representation: CapturedRepresentation,
     pub effective_enabled: bool,
+    #[serde(default = "default_effective_state_known")]
+    pub effective_state_known: bool,
     pub authority: String,
     pub confidence: String,
     pub captured_at: String,
+}
+
+const fn default_effective_state_known() -> bool {
+    true
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

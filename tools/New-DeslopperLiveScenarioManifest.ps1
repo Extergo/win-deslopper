@@ -52,6 +52,23 @@ function ConvertTo-OperationScopes([string[]]$Values) {
     return @($result)
 }
 
+function ConvertFrom-CanonicalUtcTimestamp([string]$Value) {
+    if ($Value -cnotmatch '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$') {
+        throw 'The approval timestamp must use canonical UTC with exactly three fractional digits and literal Z.'
+    }
+    $parsed = [DateTimeOffset]::MinValue
+    $styles = [Globalization.DateTimeStyles]::AssumeUniversal -bor [Globalization.DateTimeStyles]::AdjustToUniversal
+    if (-not [DateTimeOffset]::TryParseExact(
+            $Value,
+            "yyyy-MM-dd'T'HH:mm:ss.fff'Z'",
+            [Globalization.CultureInfo]::InvariantCulture,
+            $styles,
+            [ref]$parsed)) {
+        throw 'The canonical approval timestamp is not a valid Gregorian UTC instant.'
+    }
+    return $parsed
+}
+
 if ($ParserSelfTest) {
     $valid = @(ConvertTo-OperationScopes @('set_taskbar_widgets_visibility=enabled'))
     if ($valid.Count -ne 1 -or $valid[0].allowedTargetStates[0] -ne 'enabled') {
@@ -169,6 +186,7 @@ $recoveryComplete = $target.importantDataConfirmed -eq $true -and
     $target.bitlockerRecoveryState -in @('not_applicable_unencrypted', 'recovery_material_confirmed') -and
     $target.recoveryMediaState -in @('available', 'built_in_verified')
 $nowEpochMs = [uint64][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+$approvalInstantEpochMs = [uint64](ConvertFrom-CanonicalUtcTimestamp ([string]$target.explicitUserApprovalTimestamp)).ToUnixTimeMilliseconds()
 $vmComplete = $target.targetType -eq 'virtual_machine' -and
     [uint32]$target.schemaVersion -in @(2, 3) -and
     $target.disposableConfirmed -eq $true -and $target.backupConfirmed -eq $true
@@ -188,6 +206,7 @@ $physicalComplete = $target.targetType -eq 'physical_laptop' -and
     $target.managementState.mdmEnrolled -eq $false -and
     $target.automaticRepairDisabled -eq $true -and
     $target.finalPlanApprovalRequired -eq $true -and
+    $approvalInstantEpochMs -eq [uint64]$target.approvalGrantedAtEpochMs -and
     [uint64]$target.approvalGrantedAtEpochMs -le $nowEpochMs -and
     [uint64]$target.expiresAtEpochMs -gt [uint64]$target.approvalGrantedAtEpochMs -and
     ([uint64]$target.expiresAtEpochMs - [uint64]$target.approvalGrantedAtEpochMs) -le 1800000 -and
@@ -211,7 +230,8 @@ if ($target.targetType -notin $allowedTargetTypes -or
     [uint32]$target.maximumExecutions -gt [uint32]$target.maximumPlans -or
     $target.developmentHostProtectionState -ne 'present_distinct' -or
     $target.recoveryReadiness -notin @('ready', 'ready_with_warnings') -or
-    [string]::IsNullOrWhiteSpace([string]$target.explicitUserApprovalTimestamp) -or
+    $approvalInstantEpochMs -gt $nowEpochMs -or
+    [uint64]$target.expiresAtEpochMs -le $approvalInstantEpochMs -or
     [uint64]$target.expiresAtEpochMs -le $nowEpochMs -or
     [string]::IsNullOrWhiteSpace([string]$target.restoreOrReimageProcedure) -or
     -not $recoveryComplete -or -not $dispositionConfirmed) {

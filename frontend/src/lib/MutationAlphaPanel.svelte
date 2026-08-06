@@ -10,6 +10,7 @@
   import {
     MutationAlphaWorkflow,
     canUndo,
+    effectiveStateText,
     formatEpoch,
     redactIdentifier,
     representationText,
@@ -38,6 +39,7 @@
     'executing',
     'verifying',
     'applied',
+    'no_change_needed',
     'rolling_back',
     'rolled_back',
     'failed',
@@ -324,7 +326,7 @@
           <div>
             <dt>Current state</dt>
             <dd>
-              {workflow.issuedPlan.plan.currentState.effectiveEnabled ? 'Enabled' : 'Disabled'}
+              {effectiveStateText(workflow.issuedPlan.plan.currentState)}
             </dd>
           </div>
           <div>
@@ -422,7 +424,11 @@
             <span class="status-kicker">Durable broker journal</span>
             <h2 id="transaction-title">Execution and verification</h2>
           </div>
-          <span class="status-pill">{workflow.transaction.status.replaceAll('_', ' ')}</span>
+          <span class="status-pill">
+            {workflow.transaction.status === 'no_change_needed'
+              ? 'no change needed'
+              : workflow.transaction.status.replaceAll('_', ' ')}
+          </span>
         </div>
         <ol class="progress-list">
           {#each durableStages as stage (stage.label)}
@@ -459,7 +465,26 @@
           </div>
         </dl>
 
-        {#if workflow.phase === 'applied'}
+        {#if workflow.phase === 'no_change_needed'}
+          <div class="undo-box success">
+            <strong>No change needed — the exact target representation was already present.</strong>
+            <p>
+              No handler write or rollback was performed. The approval and terminal audit remain
+              durable.
+            </p>
+            {#if !workflow.evidence}
+              <button
+                class="secondary"
+                disabled={workflow.busy}
+                onclick={() =>
+                  void workflow.exportVisualEvidence().then(() => (workflow = workflow))}
+                >Save validation evidence</button
+              >
+            {:else}
+              <small>Validation evidence saved locally: {workflow.evidence.finalResult}</small>
+            {/if}
+          </div>
+        {:else if workflow.phase === 'applied'}
           <div class="visual-box">
             <strong>Did the visible taskbar behavior change?</strong>
             <p>

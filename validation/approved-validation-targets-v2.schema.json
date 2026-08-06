@@ -92,7 +92,11 @@
     },
     "recoveryMediaState": { "enum": ["available", "built_in_verified"] },
     "developmentHostProtectionState": { "const": "present_distinct" },
-    "explicitUserApprovalTimestamp": { "type": "string", "format": "date-time" },
+    "explicitUserApprovalTimestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
     "approvalStatus": { "const": "approved" },
     "expiresAtEpochMs": { "type": "integer", "minimum": 1 },
     "restoreOrReimageProcedure": { "type": "string", "minLength": 1 },

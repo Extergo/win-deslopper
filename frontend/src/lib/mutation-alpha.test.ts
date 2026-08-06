@@ -103,6 +103,7 @@ function widgetsEnabledOption(): MutationOperationOption {
     currentState: {
       representation: 'missing',
       effectiveEnabled: false,
+      effectiveStateKnown: false,
       authority: 'user',
       confidence: 'confirmed_representation',
       capturedAt: String(now)
@@ -125,6 +126,7 @@ function issuedPlan(): IssuedMutationPlan {
       currentState: {
         representation: 'missing',
         effectiveEnabled: false,
+        effectiveStateKnown: false,
         authority: 'user',
         confidence: 'confirmed_representation',
         capturedAt: String(now)
@@ -170,6 +172,7 @@ function transaction(overrides: Partial<MutationTransaction> = {}): MutationTran
     postState: {
       representation: { dword: 1 },
       effectiveEnabled: true,
+      effectiveStateKnown: true,
       authority: 'user',
       confidence: 'confirmed_representation',
       capturedAt: String(now + 1)
@@ -355,6 +358,49 @@ describe('Mutation Alpha plan review and approval', () => {
 });
 
 describe('Mutation Alpha execution, visual confirmation, undo, and errors', () => {
+  it('treats an exact-representation no-op as terminal, durable, exportable, and not undoable', async () => {
+    const exactEnabled = {
+      representation: { dword: 1 as const },
+      effectiveEnabled: true,
+      effectiveStateKnown: true,
+      authority: 'user',
+      confidence: 'confirmed_representation',
+      capturedAt: String(now)
+    };
+    const noChange = transaction({
+      status: 'no_change_needed',
+      verificationResult: 'already_compliant',
+      preState: exactEnabled,
+      postState: exactEnabled,
+      rollback: {
+        available: false,
+        complete: false,
+        attemptedAt: null,
+        result: null,
+        verificationResult: null,
+        conflictDetected: false
+      }
+    });
+    expect(phaseFromTransaction(noChange)).toBe('no_change_needed');
+    expect(canUndo(noChange)).toBe(false);
+
+    const backend = fakeBackend();
+    backend.getMutationHistory.mockResolvedValue([noChange]);
+    const workflow = new MutationAlphaWorkflow(backend, () => now);
+    workflow.transaction = noChange;
+    workflow.phase = phaseFromTransaction(noChange);
+    await workflow.exportVisualEvidence();
+    expect(backend.exportLiveValidationEvidence).toHaveBeenCalledOnce();
+    expect(backend.rollbackMutation).not.toHaveBeenCalled();
+
+    const reloaded = new MutationAlphaWorkflow(backend, () => now);
+    await reloaded.initialise(MUTATION_ALPHA_BUILD_MODE);
+    expect(reloaded.history).toHaveLength(1);
+    expect(reloaded.history[0].status).toBe('no_change_needed');
+    expect(reloaded.transaction?.status).toBe('no_change_needed');
+    expect(reloaded.phase).toBe('no_change_needed');
+  });
+
   it('maps durable execution states and requires a separate visual report', async () => {
     expect(phaseFromTransaction(transaction({ status: 'applying' }))).toBe('executing');
     expect(phaseFromTransaction(transaction({ status: 'verifying' }))).toBe('verifying');

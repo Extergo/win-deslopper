@@ -60,6 +60,13 @@ repair, final-plan approval, a maximum 30-minute approval lifetime, reimage
 procedure, and final disposition. A missing scope never authorizes compiled
 handlers.
 
+Every approval instant uses one canonical representation:
+`YYYY-MM-DDTHH:mm:ss.sssZ`. The three fractional digits and literal `Z` are
+mandatory. `+00:00`, non-UTC offsets, and missing timezones are rejected even
+when they describe the same instant. Runtime validation binds the parsed instant
+to `approvalGrantedAtEpochMs` for physical schema version 3 and rejects future,
+expired, or mismatched approvals.
+
 The committed live-validation policy is parsed in internal mutation builds and
 explicitly allowlists `virtual_machine` and `physical_laptop`. A missing,
 malformed, legacy VM-only, empty, or unknown-type policy fails closed. Policy

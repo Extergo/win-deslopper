@@ -38,6 +38,7 @@
     "target": { "enum": ["enabled", "disabled"] },
     "visualOutcome": {
       "enum": [
+        "no_change_needed",
         "fully_verified",
         "representation_and_detector_verified_visual_pending",
         "settings_ui_disagrees",

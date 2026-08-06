@@ -23,7 +23,7 @@ impl OperationHandler for TaskbarShowDesktopHandler {
     ) -> Result<CapturedState, HandlerError> {
         capture(
             backend.read_show_desktop()?,
-            true,
+            Some(true),
             backend.show_desktop_externally_managed()?,
         )
     }

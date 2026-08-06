@@ -12,7 +12,7 @@ use super::{
     HANDLER_VERSION,
     handlers::{
         HandlerError, MutationBackend as HandlerBackend, OperationHandler,
-        TaskbarShowDesktopHandler, TaskbarTaskViewHandler, TaskbarWidgetsHandler,
+        TaskbarShowDesktopHandler, TaskbarTaskViewHandler, TaskbarWidgetsHandler, expected,
     },
     journal::MutationJournal,
     live_validation::{
@@ -534,8 +534,6 @@ impl Broker {
         transaction.pre_state_hash =
             Some(hash_serializable(&pre_state).map_err(serialization_error)?);
         transaction.pre_state = Some(pre_state.clone());
-        transaction.rollback.available = true;
-        transaction.rollback.complete = true;
         self.journal
             .save_transaction(&transaction)
             .map_err(journal_error)?;
@@ -549,25 +547,47 @@ impl Broker {
             .save_transaction(&transaction)
             .map_err(journal_error)?;
 
-        if pre_state.effective_enabled != plan.target_state.enabled() {
-            self.require_gate()?;
-            self.require_authorized(plan.operation_id, plan.target_state)?;
-            self.require_target_eligibility(context)?;
-            self.fault(FaultPoint::BeforeWrite)?;
+        let write_required = pre_state.representation != expected(plan.target_state)
+            || !pre_state.effective_state_known
+            || pre_state.effective_enabled != plan.target_state.enabled();
+        if !write_required {
+            transaction.post_state_hash = transaction.pre_state_hash.clone();
+            transaction.post_state = Some(pre_state);
+            transaction.verification_result = Some("already_compliant".into());
+            transaction.rollback.available = false;
+            transaction.rollback.complete = false;
+            transaction.completed_at = Some(crate::inspection::timestamp());
             transition(
                 &self.journal,
                 &mut transaction,
-                TransactionStatus::Applying,
-                "apply",
+                TransactionStatus::NoChangeNeeded,
+                "already_compliant",
             )?;
-            if let Err(error) =
-                handler(plan.operation_id).apply(self.backend.as_ref(), plan.target_state)
-            {
-                fail_after_mutation(&self.journal, &mut transaction, &error)?;
-                return Err(handler_error(error));
-            }
-            self.fault(FaultPoint::ImmediatelyAfterWrite)?;
+            return Ok(transaction);
         }
+        transaction.rollback.available = true;
+        transaction.rollback.complete = false;
+        self.journal
+            .save_transaction(&transaction)
+            .map_err(journal_error)?;
+
+        self.require_gate()?;
+        self.require_authorized(plan.operation_id, plan.target_state)?;
+        self.require_target_eligibility(context)?;
+        self.fault(FaultPoint::BeforeWrite)?;
+        transition(
+            &self.journal,
+            &mut transaction,
+            TransactionStatus::Applying,
+            "apply",
+        )?;
+        if let Err(error) =
+            handler(plan.operation_id).apply(self.backend.as_ref(), plan.target_state)
+        {
+            fail_after_mutation(&self.journal, &mut transaction, &error)?;
+            return Err(handler_error(error));
+        }
+        self.fault(FaultPoint::ImmediatelyAfterWrite)?;
         self.fault(FaultPoint::BeforeVerification)?;
         transition(
             &self.journal,
@@ -854,6 +874,9 @@ impl Broker {
         context: &BrokerContext,
     ) -> Result<MutationTransaction, BrokerError> {
         self.validate_transaction_integrity(&transaction)?;
+        if transaction.status == TransactionStatus::NoChangeNeeded {
+            return Ok(transaction);
+        }
         let handler_context_valid = handler(transaction.operation_id)
             .inspect_pre_state(self.backend.as_ref())
             .is_ok_and(|current| {
@@ -1542,6 +1565,10 @@ mod tests {
     use crate::mutation::{
         handlers::{HandlerError, HandlerErrorKind, MutationBackend},
         journal::MutationJournal,
+        live_validation::{
+            MatrixScenarioStatus, RefreshRequirement, VerificationDimensionResult,
+            VisualVerification,
+        },
         plan::CapturedRepresentation,
         request::{ApprovalRequest, PlanRequest, RollbackRequest},
     };
@@ -1742,6 +1769,9 @@ mod tests {
                 context,
             )
             .unwrap();
+        if transaction.status == TransactionStatus::NoChangeNeeded {
+            return transaction;
+        }
         assert_eq!(transaction.status, TransactionStatus::Applied);
         broker
             .complete_effective_verification(transaction, context)
@@ -1986,7 +2016,14 @@ mod tests {
                 let context = context();
                 let issued = issue(&broker, operation, target, &context);
                 let transaction = execute_verified(&broker, issued, &context);
-                assert_eq!(transaction.status, TransactionStatus::RollbackAvailable);
+                assert_eq!(
+                    transaction.status,
+                    if target == MutationTarget::Enabled {
+                        TransactionStatus::NoChangeNeeded
+                    } else {
+                        TransactionStatus::RollbackAvailable
+                    }
+                );
                 cleanup(&path);
             }
         }
@@ -2132,7 +2169,7 @@ mod tests {
     }
 
     #[test]
-    fn already_compliant_is_verified_without_a_write() {
+    fn already_compliant_is_a_durable_terminal_noop_without_write_or_rollback() {
         let (broker, backend, path) = ready_broker("already-compliant");
         let context = context();
         let issued = issue(
@@ -2141,12 +2178,137 @@ mod tests {
             MutationTarget::Enabled,
             &context,
         );
-        let transaction = execute_verified(&broker, issued, &context);
+        let request = ApprovalRequest {
+            plan_id: issued.plan.plan_id.clone(),
+            approval_nonce: issued.approval_nonce.clone(),
+            acknowledged: true,
+        };
+        let transaction = broker.execute(&request, &context).unwrap();
+        assert_eq!(transaction.status, TransactionStatus::NoChangeNeeded);
         assert_eq!(
             transaction.verification_result.as_deref(),
             Some("already_compliant")
         );
+        assert!(!transaction.rollback.available);
+        assert!(!transaction.rollback.complete);
+        assert!(transaction.rollback.result.is_none());
+        assert_eq!(transaction.pre_state, transaction.post_state);
         assert_eq!(backend.write_count.load(Ordering::SeqCst), 0);
+        let terminal = broker
+            .complete_effective_verification(transaction.clone(), &context)
+            .unwrap();
+        assert_eq!(terminal.status, TransactionStatus::NoChangeNeeded);
+        let rollback = broker
+            .rollback(
+                &RollbackRequest {
+                    transaction_id: terminal.transaction_id.clone(),
+                    acknowledged: true,
+                    allow_conflict: false,
+                },
+                &context,
+            )
+            .unwrap_err();
+        assert_eq!(rollback.code, "rollback_unavailable");
+        let replay = broker.execute(&request, &context).unwrap_err();
+        assert_eq!(replay.code, "consumed_plan");
+        let history = broker.history().unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].status, TransactionStatus::NoChangeNeeded);
+        assert_eq!(backend.write_count.load(Ordering::SeqCst), 0);
+        let evidence = LiveEvidenceBundle::from_transaction(
+            &EvidenceExportRequest {
+                transaction_id: terminal.transaction_id,
+                visual_verification: VisualVerification {
+                    representation: VerificationDimensionResult::Verified,
+                    detector: VerificationDimensionResult::NotRun,
+                    user_visible_behavior: VerificationDimensionResult::NotRun,
+                    settings_ui: VerificationDimensionResult::NotRun,
+                    refresh_requirement: RefreshRequirement::Undetermined,
+                    lifecycle_refresh_completed: false,
+                },
+                screenshot_labels: Vec::new(),
+                warnings: vec![
+                    "Exact target representation already present; no write performed.".into(),
+                ],
+            },
+            &history[0],
+            &LiveValidationGateStatus::test_valid(),
+            &ValidationScenarioManifest {
+                schema_version: 2,
+                scenario_id: "noop-evidence".into(),
+                expected_machine_id: "machine-1".into(),
+                expected_edition: "Professional".into(),
+                expected_build: 26_100,
+                expected_update_build_revision: Some(1),
+                checkpoint_id: "checkpoint".into(),
+                account_class: "local".into(),
+                management_context: "none".into(),
+                approval_id: None,
+                source_commit: None,
+                source_inspection_id: None,
+                inspection_evidence_sha256: None,
+                approved_operation_scopes: Vec::new(),
+                maximum_plans: None,
+                maximum_executions: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(evidence.final_result, MatrixScenarioStatus::Passed);
+        assert!(evidence.rollback_representation.is_none());
+        assert!(evidence.rollback_status.is_none());
+        cleanup(&path);
+    }
+
+    #[test]
+    fn widgets_absent_zero_one_and_unexpected_representations_are_not_conflated() {
+        let (broker, backend, path) = ready_broker("widgets-representations");
+        let context = context();
+
+        *backend.widgets.lock().unwrap() = Some(CapturedRepresentation::Missing);
+        let missing = issue(
+            &broker,
+            MutationOperationId::WidgetsVisibility,
+            MutationTarget::Enabled,
+            &context,
+        );
+        assert_eq!(
+            missing.plan.current_state.representation,
+            CapturedRepresentation::Missing
+        );
+        assert!(!missing.plan.current_state.effective_state_known);
+
+        *backend.widgets.lock().unwrap() = Some(CapturedRepresentation::Dword(0));
+        let zero = issue(
+            &broker,
+            MutationOperationId::WidgetsVisibility,
+            MutationTarget::Disabled,
+            &context,
+        );
+        assert!(zero.plan.current_state.effective_state_known);
+        assert!(!zero.plan.current_state.effective_enabled);
+
+        *backend.widgets.lock().unwrap() = Some(CapturedRepresentation::Dword(1));
+        let one = issue(
+            &broker,
+            MutationOperationId::WidgetsVisibility,
+            MutationTarget::Enabled,
+            &context,
+        );
+        assert!(one.plan.current_state.effective_state_known);
+        assert!(one.plan.current_state.effective_enabled);
+
+        *backend.widgets.lock().unwrap() = Some(CapturedRepresentation::Dword(2));
+        let unexpected = broker
+            .generate_plan(
+                &PlanRequest {
+                    operation_id: MutationOperationId::WidgetsVisibility,
+                    target: MutationTarget::Enabled,
+                    source_inspection_id: context.inspection_id.clone(),
+                },
+                &context,
+            )
+            .unwrap_err();
+        assert_eq!(unexpected.code, "handler_error");
         cleanup(&path);
     }
 

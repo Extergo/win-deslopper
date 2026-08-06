@@ -326,6 +326,7 @@ export interface MutationAlphaStatus {
 export interface MutationCapturedState {
   representation: 'missing' | { dword: number };
   effectiveEnabled: boolean;
+  effectiveStateKnown: boolean;
   authority: string;
   confidence: string;
   capturedAt: string;

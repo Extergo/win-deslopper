@@ -23,7 +23,7 @@ impl OperationHandler for TaskbarTaskViewHandler {
     ) -> Result<CapturedState, HandlerError> {
         capture(
             backend.read_task_view()?,
-            true,
+            Some(true),
             backend.task_view_externally_managed()?,
         )
     }

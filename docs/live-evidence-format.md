@@ -5,6 +5,12 @@ Evidence is exported to the fixed ignored `.deslopper/local/live-evidence`
 directory with a content-derived identity and create-new semantics. Duplicate
 identities are rejected rather than overwritten.
 
+A terminal `no_change_needed` transaction is also exportable. Its pre- and
+post-state are the same exact target representation, verification is
+`already_compliant`, rollback fields remain absent, and no visual change claim
+is required. Its visual outcome is `no_change_needed`. This records the consumed approval and no-write result without
+misreporting rollback completion.
+
 The broker derives scenario, VM identity hash, platform, operation, handler,
 typed pre/post/rollback states, transitions, plan/capture hashes, verification,
 and rollback data from the validated manifest and durable transaction. The

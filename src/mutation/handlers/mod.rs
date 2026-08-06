@@ -88,13 +88,16 @@ pub trait OperationHandler: Send + Sync {
 
 fn capture(
     representation: CapturedRepresentation,
-    documented_default: bool,
+    documented_default: Option<bool>,
     externally_managed: bool,
 ) -> Result<CapturedState, HandlerError> {
-    let effective_enabled = match representation {
-        CapturedRepresentation::Missing => documented_default,
-        CapturedRepresentation::Dword(0) => false,
-        CapturedRepresentation::Dword(1) => true,
+    let (effective_enabled, effective_state_known) = match representation {
+        CapturedRepresentation::Missing => (
+            documented_default.unwrap_or(false),
+            documented_default.is_some(),
+        ),
+        CapturedRepresentation::Dword(0) => (false, true),
+        CapturedRepresentation::Dword(1) => (true, true),
         CapturedRepresentation::Dword(_) => {
             return Err(HandlerError::new(
                 HandlerErrorKind::InvalidRepresentation,
@@ -105,6 +108,7 @@ fn capture(
     Ok(CapturedState {
         representation,
         effective_enabled,
+        effective_state_known,
         authority: if externally_managed {
             "external_policy".into()
         } else {
@@ -115,7 +119,7 @@ fn capture(
     })
 }
 
-fn expected(target: MutationTarget) -> CapturedRepresentation {
+pub(super) fn expected(target: MutationTarget) -> CapturedRepresentation {
     CapturedRepresentation::Dword(u32::from(target.enabled()))
 }
 
@@ -124,7 +128,10 @@ fn verify_target(
     target: MutationTarget,
 ) -> Result<CapturedState, HandlerError> {
     require_user_authority(&state)?;
-    if state.effective_enabled == target.enabled() {
+    if state.effective_state_known
+        && state.representation == expected(target)
+        && state.effective_enabled == target.enabled()
+    {
         Ok(state)
     } else {
         Err(HandlerError::new(
@@ -140,6 +147,7 @@ fn verify_exact(
 ) -> Result<CapturedState, HandlerError> {
     require_user_authority(&state)?;
     if state.representation == expected.representation
+        && state.effective_state_known == expected.effective_state_known
         && state.effective_enabled == expected.effective_enabled
     {
         Ok(state)

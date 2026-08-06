@@ -16,6 +16,23 @@ function Test-Hash([object]$Value) {
     return $Value -is [string] -and $Value -cmatch '^[a-f0-9]{64}$'
 }
 
+function ConvertFrom-CanonicalUtcTimestamp([string]$Value) {
+    if ($Value -cnotmatch '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$') {
+        throw 'The approval timestamp must use canonical UTC with exactly three fractional digits and literal Z.'
+    }
+    $parsed = [DateTimeOffset]::MinValue
+    $styles = [Globalization.DateTimeStyles]::AssumeUniversal -bor [Globalization.DateTimeStyles]::AdjustToUniversal
+    if (-not [DateTimeOffset]::TryParseExact(
+            $Value,
+            "yyyy-MM-dd'T'HH:mm:ss.fff'Z'",
+            [Globalization.CultureInfo]::InvariantCulture,
+            $styles,
+            [ref]$parsed)) {
+        throw 'The canonical approval timestamp is not a valid Gregorian UTC instant.'
+    }
+    return $parsed
+}
+
 function Test-Representation([object]$Value) {
     if ($null -eq $Value) { return $false }
     $names = @($Value.PSObject.Properties.Name)
@@ -135,7 +152,7 @@ function Assert-DraftShape([object]$Draft, [long]$NowEpochMs) {
         [long]$Draft.detectorState.evidenceTimestampEpochMs -lt 1) {
         throw 'The Widgets detector state is incomplete or conflicting.'
     }
-    $created = [DateTimeOffset]::Parse([string]$Draft.createdAtUtc).ToUnixTimeMilliseconds()
+    $created = (ConvertFrom-CanonicalUtcTimestamp ([string]$Draft.createdAtUtc)).ToUnixTimeMilliseconds()
     $expires = [long]$Draft.expiresAtEpochMs
     if ($created -gt $NowEpochMs -or $expires -le $NowEpochMs -or $expires -gt ($created + 1800000)) {
         throw 'The approval-review draft is expired, future-dated, or valid for longer than 30 minutes.'
@@ -163,7 +180,7 @@ if ($SelfTest) {
         finalDisposition = 'reset_before_sale'; originalRepresentation = [pscustomobject]@{ kind = 'missing' }
         detectorState = [pscustomobject]@{ effectiveState = 'unknown'; authority = 'unknown'; policyState = 'not_configured'; conflict = $false; evidenceTimestampEpochMs = $now }
         userObservedState = 'not_visible'; rollbackRepresentation = [pscustomobject]@{ kind = 'missing' }
-        rollbackAuthority = 'transaction_bound_exact_pre_state'; createdAtUtc = [DateTimeOffset]::FromUnixTimeMilliseconds($now - 1000).ToString('o')
+        rollbackAuthority = 'transaction_bound_exact_pre_state'; createdAtUtc = [DateTimeOffset]::FromUnixTimeMilliseconds($now - 1000).ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", [Globalization.CultureInfo]::InvariantCulture)
         expiresAtEpochMs = $now + 1000; elevation = $false
         explorerTermination = $false; restart = $false; genericRegistryPath = $false
     }
@@ -189,6 +206,9 @@ if ($SelfTest) {
         @{ hashedMachineIdentity = ('f' * 64) },
         @{ developmentHostDenylistIdentity = $null },
         @{ developmentHostDenylistIdentity = ('a' * 64) },
+        @{ createdAtUtc = '2026-08-05T12:00:00.000+00:00' },
+        @{ createdAtUtc = '2026-08-05T13:00:00.000+01:00' },
+        @{ createdAtUtc = '2026-08-05T12:00:00.000' },
         @{ expiresAtEpochMs = $now - 1 },
         @{ maximumPlans = 2 },
         @{ maximumExecutions = 2 },
@@ -214,8 +234,8 @@ if ($SelfTest) {
             }
         } catch { $rejections++ }
     }
-    if ($rejections -ne 28) { throw "Approval-review self-test rejected $rejections of 28 invalid drafts." }
-    Write-Host 'Schema-v3 physical approval-review self-test passed (valid=1, rejected=28).'
+    if ($rejections -ne 31) { throw "Approval-review self-test rejected $rejections of 31 invalid drafts." }
+    Write-Host 'Schema-v3 physical approval-review self-test passed (valid=1, rejected=31).'
     return
 }
 

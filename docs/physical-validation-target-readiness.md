@@ -166,6 +166,11 @@ WinRE verification, safe BitLocker recovery state, recovery media,
 expendability, restore/reimage procedure, explicit approval timestamp,
 expiration, and validation maturity.
 
+The approval timestamp is canonical UTC in
+`YYYY-MM-DDTHH:mm:ss.sssZ` form and, for physical schema version 3, must identify
+the exact same millisecond as `approvalGrantedAtEpochMs`. Offset forms,
+timezone-less values, future instants, and expired approvals fail closed.
+
 The live gate additionally requires an ignored
 `.deslopper/local/approved-validation-target.json`. It rejects a preparation
 draft, incomplete recovery fields, an expired approval, a wrong target

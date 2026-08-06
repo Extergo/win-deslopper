@@ -132,7 +132,11 @@
     "userObservedState": { "enum": ["visible", "not_visible"] },
     "rollbackRepresentation": { "$ref": "#/$defs/representation" },
     "rollbackAuthority": { "const": "transaction_bound_exact_pre_state" },
-    "createdAtUtc": { "type": "string", "format": "date-time" },
+    "createdAtUtc": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
     "expiresAtEpochMs": { "type": "integer", "minimum": 1 },
     "elevation": { "const": false },
     "explorerTermination": { "const": false },

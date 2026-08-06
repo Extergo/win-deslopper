@@ -13,7 +13,7 @@ use std::{
     path::PathBuf,
 };
 
-pub const SCHEMA_VERSION: u32 = 4;
+pub const SCHEMA_VERSION: u32 = 5;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -349,6 +349,9 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     if existing_version < 4 {
         migrate_v4(conn)?;
     }
+    if existing_version < 5 {
+        migrate_v5(conn)?;
+    }
     let now = crate::inspection::timestamp();
     conn.execute(
         "INSERT OR REPLACE INTO database_metadata(key,value) VALUES('schema_version',?1)",
@@ -367,6 +370,59 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         [env!("CARGO_PKG_VERSION")],
     )?;
     Ok(())
+}
+
+fn migrate_v5(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch("PRAGMA foreign_keys=OFF; BEGIN IMMEDIATE;")?;
+    let result = conn.execute_batch(
+        "CREATE TABLE mutation_transactions_v5(
+           id TEXT PRIMARY KEY,
+           plan_id TEXT NOT NULL UNIQUE,
+           machine_id TEXT NOT NULL,
+           component_id TEXT NOT NULL,
+           operation_id TEXT NOT NULL,
+           source_inspection_id TEXT NOT NULL,
+           source_observation_id TEXT NOT NULL,
+           desired_state_revision_id INTEGER,
+           created_at TEXT NOT NULL,
+           approved_at TEXT,
+           started_at TEXT,
+           completed_at TEXT,
+           status TEXT NOT NULL CHECK(status IN (
+             'created','validating','awaiting_approval','approved','capturing_pre_state',
+             'applying','verifying','applied','no_change_needed','verification_failed','rollback_available',
+             'rolling_back','rolled_back','rollback_verification_failed',
+             'failed_before_mutation','failed_after_mutation','recovery_required',
+             'cancelled_before_mutation')),
+           required_privilege TEXT NOT NULL,
+           handler_version TEXT NOT NULL,
+           application_version TEXT NOT NULL,
+           windows_build INTEGER NOT NULL,
+           windows_edition TEXT NOT NULL,
+           plan_hash TEXT NOT NULL,
+           pre_state_hash TEXT,
+           post_state_hash TEXT,
+           rollback_state_hash TEXT,
+           verification_result TEXT,
+           error_category TEXT,
+           error_summary TEXT,
+           recovery_requirement TEXT,
+           transaction_json TEXT NOT NULL,
+           FOREIGN KEY(plan_id) REFERENCES mutation_plans(id)
+         );
+         INSERT INTO mutation_transactions_v5
+         SELECT * FROM mutation_transactions;
+         DROP TABLE mutation_transactions;
+         ALTER TABLE mutation_transactions_v5 RENAME TO mutation_transactions;
+         CREATE INDEX IF NOT EXISTS idx_mutation_history ON mutation_transactions(created_at DESC);
+         CREATE INDEX IF NOT EXISTS idx_mutation_recovery ON mutation_transactions(status,started_at);
+         COMMIT;",
+    );
+    if result.is_err() {
+        let _ = conn.execute_batch("ROLLBACK;");
+    }
+    let foreign_keys = conn.execute_batch("PRAGMA foreign_keys=ON;");
+    result.and(foreign_keys)
 }
 
 fn migrate_v4(conn: &Connection) -> rusqlite::Result<()> {
@@ -430,7 +486,7 @@ fn migrate_v3(conn: &Connection) -> rusqlite::Result<()> {
            completed_at TEXT,
            status TEXT NOT NULL CHECK(status IN (
              'created','validating','awaiting_approval','approved','capturing_pre_state',
-             'applying','verifying','applied','verification_failed','rollback_available',
+             'applying','verifying','applied','no_change_needed','verification_failed','rollback_available',
              'rolling_back','rolled_back','rollback_verification_failed',
              'failed_before_mutation','failed_after_mutation','recovery_required',
              'cancelled_before_mutation')),
@@ -1515,6 +1571,39 @@ mod tests {
         assert_eq!(drift_count, 1);
         assert_eq!(retention, "180");
         assert!(column_exists(&conn, "drift_events", "reviewed_at").unwrap());
+    }
+
+    #[test]
+    fn version_four_upgrade_preserves_mutation_history_and_adds_terminal_noop_status() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        conn.execute("INSERT INTO mutation_plans(id,machine_id,source_inspection_id,source_observation_id,component_id,operation_id,generated_at,expires_at,plan_hash,approval_nonce_hash,plan_json) VALUES('p','m','i','o','c','op','1','2','h','n','{}')",[]).unwrap();
+        conn.execute("INSERT INTO mutation_transactions(id,plan_id,machine_id,component_id,operation_id,source_inspection_id,source_observation_id,created_at,status,required_privilege,handler_version,application_version,windows_build,windows_edition,plan_hash,transaction_json) VALUES('t','p','m','c','op','i','o','1','applied','user','v','v',26100,'Pro','h','{}')",[]).unwrap();
+        conn.execute(
+            "UPDATE database_metadata SET value='4' WHERE key='schema_version'",
+            [],
+        )
+        .unwrap();
+
+        migrate(&conn).unwrap();
+
+        let retained: i64 = conn
+            .query_row("SELECT COUNT(*) FROM mutation_transactions", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(retained, 1);
+        conn.execute(
+            "UPDATE mutation_transactions SET status='no_change_needed' WHERE id='t'",
+            [],
+        )
+        .unwrap();
+        let foreign_key_errors: i64 = conn
+            .query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(foreign_key_errors, 0);
     }
 
     #[test]

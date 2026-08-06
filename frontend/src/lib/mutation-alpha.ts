@@ -21,6 +21,7 @@ export type MutationPhase =
   | 'executing'
   | 'verifying'
   | 'applied'
+  | 'no_change_needed'
   | 'rolling_back'
   | 'rolled_back'
   | 'failed'
@@ -69,6 +70,11 @@ export function representationText(
   if (representation === undefined) return 'Not captured';
   if (representation === 'missing') return 'Value absent';
   return `DWORD ${representation.dword}`;
+}
+
+export function effectiveStateText(state: MutationCapturedState | null | undefined): string {
+  if (!state?.effectiveStateKnown) return 'Unknown (value absent or unsupported)';
+  return state.effectiveEnabled ? 'Enabled' : 'Disabled';
 }
 
 export function rollbackText(state: MutationCapturedState | null | undefined): string {
@@ -152,6 +158,8 @@ export function phaseFromTransaction(transaction: MutationTransaction): Mutation
       return 'verifying';
     case 'rollback_available':
       return 'applied';
+    case 'no_change_needed':
+      return 'no_change_needed';
     case 'rolling_back':
       return 'rolling_back';
     case 'rolled_back':
@@ -218,6 +226,12 @@ export class MutationAlphaWorkflow {
         this.backend.getMutationAlphaStatus(),
         this.backend.getMutationHistory()
       ]);
+      const latest = this.history[0];
+      if (latest) {
+        this.transaction = latest;
+        this.phase = phaseFromTransaction(latest);
+        this.planConsumed = latest.status !== 'awaiting_approval';
+      }
       if (this.canRequestOptions()) this.options = await this.backend.getMutationOperationOptions();
     } catch (error) {
       this.error = mutationError(error);
@@ -384,10 +398,11 @@ export class MutationAlphaWorkflow {
   }
 
   async exportVisualEvidence(): Promise<void> {
+    const noChangeNeeded = this.transaction?.status === 'no_change_needed';
     if (
       !this.transaction ||
-      this.transaction.status !== 'rolled_back' ||
-      !this.visualReport ||
+      (!noChangeNeeded && this.transaction.status !== 'rolled_back') ||
+      (!noChangeNeeded && !this.visualReport) ||
       this.evidence
     ) {
       return;
@@ -400,9 +415,11 @@ export class MutationAlphaWorkflow {
         visualVerification(this.transaction, this.visualReport),
         [],
         [
-          this.visualReport === 'changed_as_expected'
-            ? 'User reported that the taskbar changed as expected.'
-            : 'User reported that the taskbar did not change as expected.'
+          noChangeNeeded
+            ? 'No write was needed because the exact target representation was already present.'
+            : this.visualReport === 'changed_as_expected'
+              ? 'User reported that the taskbar changed as expected.'
+              : 'User reported that the taskbar did not change as expected.'
         ]
       );
     } catch (error) {
@@ -462,8 +479,18 @@ function isClosedRepresentation(representation: MutationCapturedState['represent
 
 function visualVerification(
   transaction: MutationTransaction,
-  report: VisualReport
+  report: VisualReport | null
 ): VisualVerification {
+  if (transaction.status === 'no_change_needed') {
+    return {
+      representation: 'verified',
+      detector: 'not_run',
+      userVisibleBehavior: 'not_run',
+      settingsUi: 'not_run',
+      refreshRequirement: 'undetermined',
+      lifecycleRefreshCompleted: false
+    };
+  }
   const backendVerified = transaction.verificationResult === 'applied_and_verified';
   return {
     representation: backendVerified ? 'verified' : 'uncertain',

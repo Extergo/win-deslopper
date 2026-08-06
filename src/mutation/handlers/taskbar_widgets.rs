@@ -19,7 +19,7 @@ impl OperationHandler for TaskbarWidgetsHandler {
     ) -> Result<CapturedState, HandlerError> {
         capture(
             backend.read_widgets()?,
-            true,
+            None,
             backend.widgets_externally_managed()?,
         )
     }

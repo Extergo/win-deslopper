@@ -1227,11 +1227,26 @@ fn setting_detection(
             .ok()
             .and_then(|value| value[policy_field].as_i64())
     };
-    let preference_value = preference_field.and_then(|field| {
+    let preference_raw = preference_field.and_then(|field| {
         query_state(context, QueryId::UserPreferences)
             .ok()
-            .and_then(|value| value[field].as_i64())
+            .and_then(|value| value.get(field).cloned())
     });
+    let preference_value = preference_raw.as_ref().and_then(serde_json::Value::as_i64);
+    if id == ComponentId::TaskbarWidgets
+        && preference_raw
+            .as_ref()
+            .is_some_and(|value| !value.is_null() && !matches!(value.as_i64(), Some(0 | 1)))
+    {
+        return base_unknown(
+            id,
+            info,
+            DetectorStatus::Unknown,
+            "TaskbarDa contained an unsupported value; no effective state was inferred",
+            QueryId::UserPreferences,
+            QueryErrorKind::SchemaMismatch,
+        );
+    }
     if policy_value.is_none() && preference_value.is_none() {
         let query_failed = query_state(context, QueryId::PolicyRegistry).is_err()
             && query_state(context, QueryId::UserPreferences).is_err();
@@ -1614,6 +1629,53 @@ pub fn complete_lifecycle(lifecycle: &mut InspectionLifecycle, persistence_faile
 mod tests {
     use super::*;
     use std::sync::Mutex;
+
+    fn widgets_detection(preference: serde_json::Value) -> DetectionResult {
+        let mut values = BTreeMap::new();
+        values.insert(
+            QueryId::PolicyRegistry,
+            Ok(serde_json::json!({ "Widgets": null })),
+        );
+        values.insert(
+            QueryId::UserPreferences,
+            Ok(serde_json::json!({ "TaskbarWidgets": preference })),
+        );
+        setting_detection(
+            ComponentId::TaskbarWidgets,
+            &default_platform(),
+            &SharedContext {
+                values,
+                executions: BTreeMap::new(),
+            },
+        )
+    }
+
+    #[test]
+    fn taskbar_widgets_detector_does_not_infer_absence_or_invalid_values_as_compliance() {
+        let absent = widgets_detection(serde_json::Value::Null);
+        assert_eq!(absent.detector_status, DetectorStatus::Unknown);
+        assert!(matches!(absent.current, State::Unknown { .. }));
+
+        let disabled = widgets_detection(serde_json::json!(0));
+        assert_eq!(disabled.detector_status, DetectorStatus::Successful);
+        assert!(matches!(
+            disabled.current,
+            State::UserPreference { enabled: false }
+        ));
+
+        let enabled = widgets_detection(serde_json::json!(1));
+        assert_eq!(enabled.detector_status, DetectorStatus::Successful);
+        assert!(matches!(
+            enabled.current,
+            State::UserPreference { enabled: true }
+        ));
+
+        for invalid in [serde_json::json!(2), serde_json::json!("1")] {
+            let detection = widgets_detection(invalid);
+            assert_eq!(detection.detector_status, DetectorStatus::Unknown);
+            assert!(matches!(detection.current, State::Unknown { .. }));
+        }
+    }
 
     struct FixtureRunner {
         counts: Mutex<BTreeMap<QueryId, usize>>,
