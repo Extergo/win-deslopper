@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Deslopper local schema-v3 physical approval-review draft",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "policySchemaVersion",
+    "recordKind",
+    "approvalStatus",
+    "authorizing",
+    "executionAuthorized",
+    "mutationAllowed",
+    "executed",
+    "scenarioId",
+    "targetType",
+    "hashedMachineIdentity",
+    "windowsEdition",
+    "windowsBuild",
+    "windowsUbr",
+    "managementState",
+    "sourceCheckpointCommit",
+    "inspectionId",
+    "inspectionEvidenceSha256",
+    "developmentHostDenylistIdentity",
+    "approvedOperationScopes",
+    "maximumPlans",
+    "maximumExecutions",
+    "recoveryReadiness",
+    "importantDataConfirmed",
+    "backupConfirmed",
+    "reinstallationAccepted",
+    "winreVerified",
+    "bitlockerRecoveryState",
+    "recoveryMediaState",
+    "developmentHostProtectionState",
+    "expendableConfirmed",
+    "importantDataState",
+    "recoveryRouteState",
+    "alternateRecoveryDeviceAvailable",
+    "restartPendingState",
+    "automaticRepairDisabled",
+    "finalPlanApprovalRequired",
+    "restoreOrReimageProcedure",
+    "finalDisposition",
+    "originalRepresentation",
+    "detectorState",
+    "userObservedState",
+    "rollbackRepresentation",
+    "rollbackAuthority",
+    "createdAtUtc",
+    "expiresAtEpochMs",
+    "elevation",
+    "explorerTermination",
+    "restart",
+    "genericRegistryPath"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 3 },
+    "policySchemaVersion": { "const": 2 },
+    "recordKind": { "const": "approval_review_draft" },
+    "approvalStatus": { "const": "ready_for_approval_review" },
+    "authorizing": { "const": false },
+    "executionAuthorized": { "const": false },
+    "mutationAllowed": { "const": false },
+    "executed": { "const": false },
+    "scenarioId": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+    "targetType": { "const": "physical_laptop" },
+    "hashedMachineIdentity": { "$ref": "#/$defs/hash" },
+    "windowsEdition": { "type": "string", "minLength": 1 },
+    "windowsBuild": { "type": "integer", "minimum": 22000 },
+    "windowsUbr": { "type": "integer", "minimum": 0 },
+    "managementState": {
+      "type": "object",
+      "required": ["domainJoined", "entraJoined", "workplaceJoined", "mdmEnrolled"],
+      "properties": {
+        "domainJoined": { "const": false },
+        "entraJoined": { "const": false },
+        "workplaceJoined": { "const": false },
+        "mdmEnrolled": { "const": false }
+      },
+      "additionalProperties": false
+    },
+    "sourceCheckpointCommit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+    "inspectionId": { "type": "string", "pattern": "^inspection-[a-zA-Z0-9-]+$" },
+    "inspectionEvidenceSha256": { "$ref": "#/$defs/hash" },
+    "developmentHostDenylistIdentity": { "$ref": "#/$defs/hash" },
+    "approvedOperationScopes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": { "$ref": "approved-validation-targets-v3.schema.json#/$defs/operationScope" }
+    },
+    "maximumPlans": { "const": 1 },
+    "maximumExecutions": { "const": 1 },
+    "recoveryReadiness": { "const": "ready" },
+    "importantDataConfirmed": { "const": true },
+    "backupConfirmed": { "type": "boolean" },
+    "reinstallationAccepted": { "const": true },
+    "winreVerified": { "const": true },
+    "bitlockerRecoveryState": { "const": "not_applicable_unencrypted" },
+    "recoveryMediaState": { "const": "available" },
+    "developmentHostProtectionState": { "const": "present_distinct" },
+    "expendableConfirmed": { "const": true },
+    "importantDataState": { "enum": ["absent", "present_backed_up"] },
+    "recoveryRouteState": { "enum": ["recovery_partition_verified", "equivalent_route_verified"] },
+    "alternateRecoveryDeviceAvailable": { "const": true },
+    "restartPendingState": { "const": "clear" },
+    "automaticRepairDisabled": { "const": true },
+    "finalPlanApprovalRequired": { "const": true },
+    "restoreOrReimageProcedure": { "type": "string", "minLength": 1 },
+    "finalDisposition": { "const": "reset_before_sale" },
+    "originalRepresentation": { "$ref": "#/$defs/representation" },
+    "detectorState": {
+      "type": "object",
+      "required": [
+        "effectiveState",
+        "authority",
+        "policyState",
+        "conflict",
+        "evidenceTimestampEpochMs"
+      ],
+      "properties": {
+        "effectiveState": { "enum": ["enabled", "disabled", "unknown"] },
+        "authority": { "enum": ["user", "local_policy", "domain", "mdm", "unknown"] },
+        "policyState": { "enum": ["not_configured", "enabled", "disabled", "unknown"] },
+        "conflict": { "type": "boolean" },
+        "evidenceTimestampEpochMs": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "userObservedState": { "enum": ["visible", "not_visible"] },
+    "rollbackRepresentation": { "$ref": "#/$defs/representation" },
+    "rollbackAuthority": { "const": "transaction_bound_exact_pre_state" },
+    "createdAtUtc": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "expiresAtEpochMs": { "type": "integer", "minimum": 1 },
+    "elevation": { "const": false },
+    "explorerTermination": { "const": false },
+    "restart": { "const": false },
+    "genericRegistryPath": { "const": false }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "representation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": { "kind": { "const": "missing" } },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind", "value"],
+          "properties": {
+            "kind": { "const": "dword" },
+            "value": { "enum": [0, 1] }
+          },
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "importantDataState": { "const": "present_backed_up" } }, "required": ["importantDataState"] },
+      "then": { "properties": { "backupConfirmed": { "const": true } } }
+    }
+  ],
+  "additionalProperties": false
+}

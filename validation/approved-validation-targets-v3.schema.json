@@ -1,0 +1,205 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Deslopper explicit-target live-validation approval",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "recordKind",
+    "approvalId",
+    "scenarioId",
+    "targetType",
+    "hashedMachineIdentity",
+    "windowsEdition",
+    "windowsBuild",
+    "windowsUbr",
+    "accountClass",
+    "managementState",
+    "sourceCheckpointCommit",
+    "sourceInspectionId",
+    "inspectionEvidenceSha256",
+    "developmentHostDenylistIdentity",
+    "approvedOperationScopes",
+    "maximumPlans",
+    "maximumExecutions",
+    "evidenceOutputLocation",
+    "recoveryReadiness",
+    "importantDataConfirmed",
+    "backupConfirmed",
+    "reinstallationAccepted",
+    "winreVerified",
+    "bitlockerRecoveryState",
+    "recoveryMediaState",
+    "developmentHostProtectionState",
+    "explicitUserApprovalTimestamp",
+    "approvalStatus",
+    "expiresAtEpochMs",
+    "restoreOrReimageProcedure",
+    "validationMaturity"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 3 },
+    "recordKind": { "const": "approval" },
+    "approvalId": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+    "scenarioId": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+    "targetType": { "enum": ["virtual_machine", "physical_laptop"] },
+    "hashedMachineIdentity": { "$ref": "#/$defs/hash" },
+    "windowsEdition": { "type": "string", "minLength": 1 },
+    "windowsBuild": { "type": "integer", "minimum": 22000 },
+    "windowsUbr": { "type": "integer", "minimum": 0 },
+    "accountClass": {
+      "enum": ["local_administrator", "standard_user", "microsoft_account_administrator", "domain_administrator", "mdm_administrator"]
+    },
+    "managementState": {
+      "type": "object",
+      "required": ["domainJoined", "entraJoined", "workplaceJoined", "mdmEnrolled"],
+      "properties": {
+        "domainJoined": { "type": "boolean" },
+        "entraJoined": { "type": "boolean" },
+        "workplaceJoined": { "type": "boolean" },
+        "mdmEnrolled": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "sourceCheckpointCommit": { "$ref": "#/$defs/gitCommit" },
+    "sourceInspectionId": { "type": "string", "pattern": "^inspection-[a-zA-Z0-9-]+$" },
+    "inspectionEvidenceSha256": { "$ref": "#/$defs/hash" },
+    "developmentHostDenylistIdentity": { "$ref": "#/$defs/hash" },
+    "approvedOperationScopes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/operationScope" }
+    },
+    "maximumPlans": { "type": "integer", "minimum": 1, "maximum": 32 },
+    "maximumExecutions": { "type": "integer", "minimum": 1, "maximum": 32 },
+    "evidenceOutputLocation": { "type": "string", "pattern": "^\\.deslopper[\\\\/]local[\\\\/]" },
+    "recoveryReadiness": { "enum": ["ready_with_warnings", "ready"] },
+    "importantDataConfirmed": { "const": true },
+    "backupConfirmed": { "type": "boolean" },
+    "reinstallationAccepted": { "const": true },
+    "winreVerified": { "const": true },
+    "bitlockerRecoveryState": { "enum": ["not_applicable_unencrypted", "recovery_material_confirmed"] },
+    "recoveryMediaState": { "enum": ["available", "built_in_verified"] },
+    "developmentHostProtectionState": { "const": "present_distinct" },
+    "explicitUserApprovalTimestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "approvalStatus": { "const": "approved" },
+    "expiresAtEpochMs": { "type": "integer", "minimum": 1 },
+    "restoreOrReimageProcedure": { "type": "string", "minLength": 1 },
+    "validationMaturity": {
+      "enum": ["unvalidated", "synthetic_tested", "read_only_validated", "live_tested_single_build", "live_tested_multi_build", "live_tested_multi_edition", "policy_conflict_tested", "recovery_tested", "alpha_validated", "rejected"]
+    },
+    "disposableConfirmed": { "type": "boolean" },
+    "expendableConfirmed": { "type": "boolean" },
+    "importantDataState": { "enum": ["absent", "present_backed_up", "present_not_backed_up", "unknown"] },
+    "recoveryRouteState": { "enum": ["recovery_partition_verified", "equivalent_route_verified", "missing", "unknown"] },
+    "alternateRecoveryDeviceAvailable": { "type": "boolean" },
+    "restartPendingState": { "enum": ["clear", "pending", "unknown"] },
+    "automaticRepairDisabled": { "type": "boolean" },
+    "finalPlanApprovalRequired": { "type": "boolean" },
+    "approvalGrantedAtEpochMs": { "type": "integer", "minimum": 1 },
+    "finalDisposition": { "enum": ["reset_before_sale", "reimage_after_validation"] }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "targetType": { "const": "virtual_machine" } }, "required": ["targetType"] },
+      "then": {
+        "required": ["disposableConfirmed"],
+        "properties": {
+          "disposableConfirmed": { "const": true },
+          "backupConfirmed": { "const": true }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "targetType": { "const": "physical_laptop" } }, "required": ["targetType"] },
+      "then": {
+        "required": [
+          "expendableConfirmed",
+          "importantDataState",
+          "recoveryRouteState",
+          "alternateRecoveryDeviceAvailable",
+          "restartPendingState",
+          "automaticRepairDisabled",
+          "finalPlanApprovalRequired",
+          "approvalGrantedAtEpochMs",
+          "finalDisposition"
+        ],
+        "properties": {
+          "accountClass": { "enum": ["local_administrator", "standard_user"] },
+          "managementState": {
+            "properties": {
+              "domainJoined": { "const": false },
+              "entraJoined": { "const": false },
+              "workplaceJoined": { "const": false },
+              "mdmEnrolled": { "const": false }
+            }
+          },
+          "recoveryReadiness": { "const": "ready" },
+          "recoveryMediaState": { "const": "available" },
+          "expendableConfirmed": { "const": true },
+          "importantDataState": { "enum": ["absent", "present_backed_up"] },
+          "recoveryRouteState": { "enum": ["recovery_partition_verified", "equivalent_route_verified"] },
+          "alternateRecoveryDeviceAvailable": { "const": true },
+          "restartPendingState": { "const": "clear" },
+          "automaticRepairDisabled": { "const": true },
+          "finalPlanApprovalRequired": { "const": true }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "importantDataState": { "const": "present_backed_up" } }, "required": ["importantDataState"] },
+      "then": { "properties": { "backupConfirmed": { "const": true } } }
+    }
+  ],
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "gitCommit": { "type": "string", "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$" },
+    "targetStates": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": { "enum": ["enabled", "disabled"] }
+    },
+    "operationScope": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["operationId", "allowedTargetStates", "handlerVersion"],
+          "properties": {
+            "operationId": { "const": "set_taskbar_widgets_visibility" },
+            "allowedTargetStates": { "$ref": "#/$defs/targetStates" },
+            "handlerVersion": { "const": "mutation-alpha.1" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["operationId", "allowedTargetStates", "handlerVersion"],
+          "properties": {
+            "operationId": { "const": "set_taskbar_task_view_visibility" },
+            "allowedTargetStates": { "$ref": "#/$defs/targetStates" },
+            "handlerVersion": { "const": "mutation-alpha.1" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["operationId", "allowedTargetStates", "handlerVersion"],
+          "properties": {
+            "operationId": { "const": "set_taskbar_show_desktop_enabled" },
+            "allowedTargetStates": { "$ref": "#/$defs/targetStates" },
+            "handlerVersion": { "const": "mutation-alpha.1" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
+  "additionalProperties": false
+}

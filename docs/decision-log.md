@@ -52,3 +52,76 @@ Each decision below is accepted for the current architecture. Replacements must 
 - **Security boundary:** Only the main local window receives the core Tauri capability. Custom IPC can read or change in-memory preview state only. It cannot inspect or modify Windows, execute commands, persist data, elevate, authenticate, make payments, load plugins, collect telemetry, or contact a backend.
 - **Alternatives:** Keeping Slint did not satisfy the requested migration. A hosted or server-rendered frontend would introduce an unnecessary runtime network boundary. Exposing broad Tauri plugins or moving domain state into TypeScript would weaken the current safety and architecture boundaries.
 
+## D-007 — Read-only inspection beta boundary
+
+- **Status:** Accepted
+- **Date:** 2026-08-01
+- **Context:** The accepted inspection alpha needed lifecycle control, honest partiality, historical comparison, structured applicability, and repeatable Windows validation before privileged design could begin.
+- **Decision:** Keep Windows discovery in fixed Rust-owned query definitions; execute shared queries once with timeout, output, parser, and cancellation contracts; persist normalized lifecycle, component, package, desired-revision, and drift records in versioned SQLite; expose typed Tauri APIs and progress events; keep VM capture developer-only.
+- **Consequences:** The main process performs real read-only PowerShell inspection without elevation. Failed, cancelled, timed-out, permission-limited, unsupported, and absent states remain distinct. Svelte does not duplicate Windows rules. SQLite corruption is preserved and surfaced rather than recreated.
+- **Security boundary:** There is no operation executor, Windows writer, arbitrary shell endpoint, elevation manifest, privileged helper, or hidden mutation command. Preview plans explicitly report `executorEnabled: false`.
+- **Alternatives:** Polling the entire dashboard, Boolean absence, fuzzy package matching, frontend applicability tables, and unbounded child processes were rejected.
+
+## D-008 — Feature-gated mutation broker alpha
+
+- **Status:** Accepted for internal alpha only
+- **Date:** 2026-08-02
+- **Context:** Prove the safety lifecycle with a minimal reversible operation set without weakening the normal read-only release.
+- **Decision:** Compile mutation only behind `mutation-alpha`; also require debug build, CLI opt-in, warning acknowledgement, fresh inspection, an expiring SHA-256-bound one-use plan, and explicit approval. Implement only fixed current-user Widgets, Task View, and Show Desktop handlers.
+- **Substitution:** Search mode lacks a documented stable current-user setter, while Search Highlights is documented device policy. Task View and Show Desktop are documented unelevated substitutes.
+- **Consequences:** SQLite v3 journals plans, transactions, steps, captures, rollback, and recovery. Optional `sha2` and `winreg` dependencies are reviewed. Real VM evidence remains mandatory.
+- **Rejected:** Generic registry APIs, PowerShell actions, elevation, machine policy writes, VM detection as a security boundary, Apply All, automatic repair, and silent crash retry.
+
+## D-009 - Live validation uses the normal broker with fail-closed guest identity
+
+- **Status:** Accepted for internal validation
+- **Date:** 2026-08-02
+- **Context:** Live handler proof must never turn the development host or a merely detected VM into an eligible target.
+- **Decision:** Keep the feature-gated application as the only guest runner. Add a separate live flag, fixed ignored manifest, exact scenario/machine/checkpoint, edition/build/UBR, guest-owned database, local development-host denylist, and visible environment banner. Keep VM detection informational. Host Hyper-V tooling reads an ignored explicit VM inventory, requires confirmation for state changes, and cannot invoke mutation. Evidence combines durable broker facts with closed manual visual states and label-only screenshots.
+- **Consequences:** All three handlers remain `SyntheticTested` and visibly not live validated. No unavailable target counts as passed. Normal builds remain unchanged and read-only.
+- **Rejected:** Direct handler test paths, VM detection as authorization, automatic VM creation/download, automatic acknowledgement, host mutation, arbitrary evidence paths, and treating registry reread as visual proof.
+
+## D-010 - Validation targets separate preparation from approval
+
+- **Status:** Accepted for validation readiness
+- **Date:** 2026-08-03
+- **Context:** The first physical-laptop read-only pass could not honestly use a disposable-VM approval schema, and a physical target needs stronger recovery evidence and explicit user confirmations.
+- **Decision:** Add a generic local validation-target schema with `virtual_machine` and `physical_laptop` types and explicit `preparation`/`approval` record kinds. Keep the legacy VM inventory for Hyper-V compatibility. Require the live gate to load a separate ignored approved target and reject pending, incomplete, expired, recovery-unready, wrong-type/build/identity, empty-denylist, and development-host-equal states.
+- **Consequences:** A physical preparation may record read-only inspection and recovery-audit facts without becoming an approval. Physical approval requires important-data, backup, reinstall, WinRE, BitLocker recovery, media, expendability, restore/reimage, timestamp, expiration, and development-host protection fields. The original development-host identity remains local-only and mandatory.
+- **Rejected:** Claiming the laptop is a VM, treating a draft as approval, inventing or committing either machine identity, accepting an empty denylist, auto-approving from inspection/audit results, or counting read-only preparation as live mutation evidence.
+
+## D-011 - Ship the useful product as a read-only alpha
+
+- **Status:** Accepted
+- **Date:** 2026-08-05
+- **Context:** The complete inspection engine needed a coherent, useful product surface without weakening the mutation boundary or presenting internal research as a user feature.
+- **Decision:** Expose the 20-component catalogue, honest dashboard, desired-state comparisons, non-executable previews, reviewed/resolved drift, history comparison and retention, and user-reviewed redacted diagnostics. Keep the normal binary feature-off, unelevated, local, and incapable of Windows mutation.
+- **Consequences:** Internal mutation research stays behind its compile and live-validation gates and is absent from the normal product workflow. The former physical laptop is withdrawn because it was sold before approval or mutation; unavailability is not a failed operation and cannot count as mutation evidence.
+- **Rejected:** Health scores that hide uncertainty, an Apply control with no released executor, generic diagnostics dumps, silent uploads, and treating an unavailable target as live validation.
+
+## D-012 - Preserve retirement while allowing bounded reactivation preparation
+
+- **Status:** Accepted for preparation only
+- **Date:** 2026-08-05
+- **Context:** The physical target was retired before mutation when sale and reset were planned. The user later allowed temporary preparation for one Widgets visibility validation before the final reset.
+- **Decision:** Preserve the retirement event and add a chronological reactivation event limited to Widgets preparation. Keep approval `not_approved`, mutation `mutation_not_attempted`, and live scenarios at zero. Reactivation alone never authorizes a plan, transaction, or write.
+- **Consequences:** Recovery, identity separation, a fresh read-only inspection, exact pre-state capture, and a new local approval-review draft must all pass before a separate approval decision. Task View and Show Desktop remain out of scope.
+- **Rejected:** Rewriting retirement history, reusing an old approval, treating reactivation as approval, or granting any live-handler maturity before an independently approved apply-and-rollback session.
+
+## D-013 - Scope physical live approval to operation and target direction
+
+- **Status:** Accepted for internal validation
+- **Date:** 2026-08-05
+- **Context:** The first bounded execution handoff correctly stopped because version 1 required all three operations and both directions, while the user authorized preparation only for Widgets-to-enabled.
+- **Decision:** Add explicit schema version 2 operation scopes with per-operation target states, handler/source/inspection/evidence/identity/denylist bindings, expiration, and bounded plan/execution counts. Require version 2 for physical live validation, filter broker options from validated scope, and independently revalidate the exact pair during plan generation, execution, and immediately before a write.
+- **Consequences:** One Widgets-enabled plan and execution can be represented without authorizing Widgets-disabled, Task View, or Show Desktop. Exact rollback derives from the consumed durable transaction and captured pre-state, so it does not grant reusable reverse-direction authority. Version 1 remains a deliberate legacy VM path. The current physical test remains unexecuted, unapproved, and at zero live scenarios.
+- **Rejected:** Treating compiled handlers as approved, global target-state inheritance, default-all scope, UI filtering as the security boundary, unlimited retries, requiring reverse-direction approval for transaction rollback, and silently promoting version 1 physical approval.
+
+## D-014 - Explicitly allowlisted disposable validation targets
+
+- **Status:** Accepted for internal validation governance
+- **Date:** 2026-08-05
+- **Context:** VM-only governance was the safest initial boundary while no physical recovery model existed. The later read-only laptop work established that an expendable physical target can be bounded more strictly than a VM, but the committed TOML still prohibited every physical execution and was not parsed by runtime.
+- **Decision:** Replace the VM-only Boolean with live-validation policy schema version 2, explicit target allowlisting for `virtual_machine` and `physical_laptop`, and mandatory strict physical recovery enforcement. Parse the committed policy in internal mutation builds. Keep schema versions 1 and 2 as deliberate VM compatibility; require scoped approval version 3 for physical targets. Version 3 adds explicit important-data state, recovery route and media, alternate recovery device, clear restart state, safe BitLocker state, unmanaged domain/Entra/workplace/MDM state, disabled automatic repair, final-plan approval, no-more-than-30-minute authority, recovery/reimage procedure, and final disposition.
+- **Consequences:** Policy, target approval, denylist, exact source/evidence/platform binding, scope, and limits are necessary together and are revalidated before a write. The original development PC remains permanently denied without an override. The withdrawn laptop's retirement and later reactivation remain separate audit events; Widgets remains ready for approval review, not approved or validated, and zero live mutations have occurred. This governance commit grants no operation or target approval.
+- **Rejected:** Setting the old VM-only Boolean to false, default-all target types, reinterpreting old physical manifests, prompt or CLI overrides, hard-coded machine identity/build, managed physical targets, long-lived approval, automatic repair, and treating governance permission as approval.

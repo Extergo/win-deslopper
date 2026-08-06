@@ -2,36 +2,88 @@
 
 **Windows without the slop.**
 
-Deslopper is a safety-focused Windows management application built with Rust, Tauri, and SvelteKit. Its long-term goal is to help people review optional Windows components and make supported, reversible changes without relying on opaque scripts or aggressive debloating.
+Deslopper `0.1.0-alpha.1` is a privacy-conscious, installable Windows
+configuration inspector. The Read-Only Product Alpha observes 20 documented
+Windows components, explains uncertainty and authority, saves local inspection
+history, detects meaningful drift, records desired states, and creates
+non-executable previews.
 
-## Current milestone: UI preview
+The normal build never applies a Windows change. It has no mutation command,
+filesystem capability, shell endpoint, network client, updater, elevation
+manifest, service, or privileged helper. Unknown does not mean broken,
+permission-limited does not mean absent, and a preview is never presented as
+completed work.
 
-The current build is deliberately non-destructive. It presents mock component information and lets users assemble a local preview plan, but it does not inspect or modify Windows.
+## Product Alpha features
 
-- Windows Cleanup mock catalogue with local search and category filters
-- UI-only planned-change review flow
-- Extensions coming-soon screen
-- No elevation, network access, shell execution, plugin execution, telemetry, authentication, payments, backend, or real Windows operations
+- Compact first-run explanation and cancellable read-only inspection.
+- Honest dashboard summaries without fake health scores or optimisation claims.
+- All 20 registered components with applicability, authority, confidence,
+  completeness, desired state, drift, trade-offs, and redacted evidence.
+- Persisted SQLite history, snapshot comparison, reviewed drift, and retention
+  controls.
+- Desired-state validation and preview-only planning. Previews create no nonce,
+  transaction, approval, or executable operation.
+- User-controlled privacy-safe JSON diagnostics saved through the system file
+  picker. Nothing is uploaded automatically.
+- Settings/About with product/build status, redacted database location, local
+  history controls, privacy explanation, and explicit mutation unavailability.
 
-The preview catalogue currently discusses OneDrive, Copilot, and Windows promotional content. These entries are examples, not live detections or removal promises.
+See `docs/read-only-product-alpha.md` for the complete product and privacy
+contract.
 
-See `ROADMAP.md` for the proposed sequence from preview hardening through read-only inspection, compatibility planning, rollback design, and carefully scoped future operations.
+## Internal mutation broker
 
-## Safety and gaming compatibility
+The repository retains a separately compiled internal `mutation-alpha` feature
+for exactly three closed current-user taskbar experiments. It is not part of the
+normal Product Alpha command registration or presentation. Internal builds now
+show a compact Experimental Apply & Undo workflow only when Rust build metadata
+reports the mutation feature. The panel reads backend gate status, renders only
+backend-authorized options, reviews one-use plans, requires the backend-provided
+exact phrase, follows durable transaction state, records manual visual outcomes
+through live evidence, and offers only transaction-bound exact rollback. All
+mutation results remain synthetic: zero handlers are live validated and none is
+production-ready.
 
-Stable systems matter more than aggressive debloating. Future Windows operations must use supported mechanisms, determine compatibility first, explain impact, capture original state, verify results, and provide rollback. Gaming, anti-cheat, Xbox, and Game Pass compatibility must be tested rather than assumed.
+The physical validation laptop completed read-only preparation and was then
+retired before mutation because the hardware was being sold. That event remains
+in history. It is now temporarily reactivated and ready only for a separate
+Widgets approval review before its final reset, but remains unapproved with zero
+live scenarios and no mutation attempt. Reactivation and review readiness do not
+themselves authorize mutation.
 
-## Development
+Scoped approval version 2 introduced explicit operation and target-direction
+binding. Under the committed explicit-target governance policy, it is now a
+VM-only compatibility format; physical approval requires strict version 3
+recovery, identity, management, expiry, final-plan, and final-disposition
+evidence. The broker revalidates policy, denylist, approval, source evidence,
+scope, and execution allowance at plan, execution, and pre-write boundaries.
+This governance change grants no target or operation approval; the Widgets test
+remains unexecuted.
 
-Prerequisites are stable Rust, Bun 1.3.14, and the Microsoft WebView2 runtime provided by supported Windows installations.
+The original development PC remains permanently denied by its local ignored
+`.deslopper/local/development-host-denylist.json`. Never commit or expose that
+identity.
 
-Install the locked frontend toolchain and run locally with:
+## Development and packaging
+
+Prerequisites are stable Rust, Bun 1.3.14, WebView2, and the supported Tauri 2
+Windows toolchain. Run the quality gates in `.deslopper/policy.toml`.
 
 ```powershell
 bun install --frozen-lockfile
-bun run tauri dev
+cargo test
+bun run test
+bun run tauri build --no-bundle
+bun run tauri build
 ```
 
-Useful validation commands are `bun run check`, `bun run lint`, `bun run test`, `bun run build`, and the Rust gates documented in `.deslopper/policy.toml`. `bun run tauri build --debug --no-bundle` verifies that the production SvelteKit assets embed into the Windows executable without producing an installer.
+The normal NSIS installer uses Tauri's WebView2 downloaded-bootstrapper mode.
+Windows 11 normally supplies WebView2; the installer can obtain it when missing.
+The package is not code-signed and no public release is produced by this
+milestone. Application binaries uninstall normally; local history under
+`%LOCALAPPDATA%\Deslopper` is documented as user data and may remain unless the
+user clears it in Settings or removes it deliberately.
 
-Contributors and coding agents must begin with `AGENTS.md`. The project architecture and safety posture are defined in `ARCHITECTURE.md` and `SECURITY.md`.
+Start with `AGENTS.md`, `ARCHITECTURE.md`, `SECURITY.md`, and
+`docs/product-principles.md`.

@@ -8,4 +8,6 @@
 6. Local safety functionality must remain useful when a backend is unavailable.
 7. Paid status never weakens compatibility, verification, or rollback requirements.
 8. Preview state must never be presented as completed system work.
-
+9. Unknown, permission-limited, failed, not applicable, and absent are distinct; uncertainty is not a health score.
+10. The read-only product must stay useful without implying that an executor exists.
+11. Diagnostics are user-reviewed, allowlisted, redacted, local-only, and never uploaded automatically.

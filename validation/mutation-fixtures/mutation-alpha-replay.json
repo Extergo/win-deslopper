@@ -1,0 +1,32 @@
+{
+  "fixtureSchemaVersion": 1,
+  "scenarioId": "synthetic-widgets-disable-rollback",
+  "operationId": "set_taskbar_widgets_visibility",
+  "osEdition": "Professional",
+  "osBuild": 26100,
+  "accountType": "synthetic",
+  "preState": { "representation": { "dword": 1 }, "effectiveEnabled": true },
+  "target": "disabled",
+  "postState": { "representation": { "dword": 0 }, "effectiveEnabled": false },
+  "rollbackState": { "representation": { "dword": 1 }, "effectiveEnabled": true },
+  "authority": "user",
+  "applicability": "applicable",
+  "handlerVersion": "mutation-alpha.1",
+  "expectedTransitions": [
+    "awaiting_approval",
+    "validating",
+    "capturing_pre_state",
+    "approved",
+    "applying",
+    "verifying",
+    "applied",
+    "rollback_available",
+    "rolling_back",
+    "rolled_back"
+  ],
+  "expectedVerificationResult": "applied_and_verified",
+  "liveMutationPerformed": false,
+  "knownLimitations": [
+    "Synthetic state-machine replay only; this is not evidence of a live Windows mutation pass."
+  ]
+}

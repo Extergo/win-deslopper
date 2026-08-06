@@ -1,8 +1,23 @@
 project = "Deslopper"
-milestone = "ui-preview"
+milestone = "read-only-product-alpha"
 
-allow_real_windows_inspection = false
+allow_real_windows_inspection = true
+allow_fixed_read_only_windows_queries = true
 allow_windows_mutation = false
+allow_internal_mutation_alpha = true
+mutation_alpha_requires_debug_build = true
+mutation_alpha_requires_compile_feature = true
+mutation_alpha_requires_command_line_opt_in = true
+mutation_alpha_requires_in_app_acknowledgement = true
+mutation_alpha_requires_live_validation_opt_in = true
+mutation_alpha_requires_scenario_manifest = true
+mutation_alpha_requires_expected_machine_identity = true
+mutation_alpha_requires_development_host_denylist = true
+live_validation_policy_schema_version = 2
+allow_live_mutation_only_in_explicitly_approved_disposable_target = true
+allowed_live_validation_target_types = ["virtual_machine", "physical_laptop"]
+physical_target_requires_strict_recovery_readiness = true
+mutation_alpha_operation_count = 3
 allow_elevation = false
 allow_network_access = false
 allow_backend = false
@@ -17,13 +32,18 @@ quality_gates = [
     "bun install --frozen-lockfile",
     "cargo fmt --check",
     "cargo check",
+    "cargo check --all-features",
     "cargo clippy --all-targets --all-features -- -D warnings",
     "cargo test",
+    "cargo test --all-features",
     "bun run check",
     "bun run lint",
     "bun run test",
     "bun run build",
-    "bun run tauri build --debug --no-bundle",
     "bun run tauri dev",
+    "bun run tauri build --debug --no-bundle",
+    "bun run tauri build --debug --no-bundle --features mutation-alpha",
+    "bun run tauri build --no-bundle",
+    "bun run tauri build",
+    "powershell -ExecutionPolicy Bypass -File tools/scan-mutation-boundary.ps1",
 ]
-
