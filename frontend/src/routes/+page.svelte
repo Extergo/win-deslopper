@@ -12,10 +12,10 @@
     type DriftEvent,
     type InspectionHistoryItem,
     type InspectionProgress,
-    type MutationOperationId,
     type MutationTarget,
     type MutationTransaction,
     type OwnerActionability,
+    type OwnerMutationOperationId,
     type OwnerOperationResult,
     type PlatformDashboard,
     type ProductComponent,
@@ -78,6 +78,30 @@
     { id: 'policy', label: 'Policy-backed' },
     { id: 'preference', label: 'User preference' }
   ];
+  const ownerOperations: OwnerMutationOperationId[] = [
+    'set_taskbar_widgets_visibility',
+    'set_taskbar_task_view_visibility',
+    'set_welcome_experience_enabled',
+    'set_tips_suggestions_enabled',
+    'set_notification_suggestions_enabled',
+    'set_settings_suggested_content_enabled'
+  ];
+  const ownerOperationByComponent: Record<string, OwnerMutationOperationId> = {
+    taskbar_widgets: 'set_taskbar_widgets_visibility',
+    taskbar_task_view: 'set_taskbar_task_view_visibility',
+    welcome_experience: 'set_welcome_experience_enabled',
+    tips_suggestions: 'set_tips_suggestions_enabled',
+    notification_suggestions: 'set_notification_suggestions_enabled',
+    settings_suggested_content: 'set_settings_suggested_content_enabled'
+  };
+  const ownerLabelByOperation: Record<OwnerMutationOperationId, string> = {
+    set_taskbar_widgets_visibility: 'Widgets',
+    set_taskbar_task_view_visibility: 'Task View',
+    set_welcome_experience_enabled: 'Windows welcome experience',
+    set_tips_suggestions_enabled: 'Tips and suggestions',
+    set_notification_suggestions_enabled: 'Notification suggestions',
+    set_settings_suggested_content_enabled: 'Suggested content in Settings'
+  };
 
   let loading = true;
   let errorMessage = '';
@@ -111,8 +135,7 @@
   let diagnosticsIncludeErrors = true;
   let diagnosticsStatus = '';
   let clearingHistory = false;
-  let widgetsActionability: OwnerActionability | null = null;
-  let taskViewActionability: OwnerActionability | null = null;
+  let ownerActionabilities: Partial<Record<OwnerMutationOperationId, OwnerActionability>> = {};
   let ownerHistory: MutationTransaction[] = [];
   let ownerBusy = false;
   let ownerPhase: 'idle' | 'checking' | 'applying' | 'verifying' = 'idle';
@@ -152,16 +175,13 @@
     if (driftStatusFilter === 'unreviewed' && event.reviewed) return false;
     return driftComponentFilter === 'all' || event.component_id === driftComponentFilter;
   });
-  $: selectedOwnerOperation = (
-    selectedComponentId === 'taskbar_widgets'
-      ? 'set_taskbar_widgets_visibility'
-      : selectedComponentId === 'taskbar_task_view'
-        ? 'set_taskbar_task_view_visibility'
-        : null
-  ) as MutationOperationId | null;
-  $: selectedOwnerLabel = selectedComponentId === 'taskbar_task_view' ? 'Task View' : 'Widgets';
-  $: selectedOwnerActionability =
-    selectedComponentId === 'taskbar_task_view' ? taskViewActionability : widgetsActionability;
+  $: selectedOwnerOperation = ownerOperationByComponent[selectedComponentId] ?? null;
+  $: selectedOwnerLabel = selectedOwnerOperation
+    ? ownerLabelByOperation[selectedOwnerOperation]
+    : 'Windows setting';
+  $: selectedOwnerActionability = selectedOwnerOperation
+    ? (ownerActionabilities[selectedOwnerOperation] ?? null)
+    : null;
   $: latestOwnerUndo = ownerHistory.find(
     (transaction) =>
       transaction.operationId === selectedOwnerOperation &&
@@ -173,8 +193,11 @@
       transaction.operationId === selectedOwnerOperation &&
       ['recovery_required', 'rollback_verification_failed'].includes(transaction.status)
   );
+  $: latestOwnerChange = ownerHistory.find(
+    (transaction) => transaction.operationId === selectedOwnerOperation
+  );
   $: ownerTechnicalTransaction =
-    ownerResult?.transaction ?? latestOwnerAttention ?? latestOwnerUndo;
+    ownerResult?.transaction ?? latestOwnerAttention ?? latestOwnerUndo ?? latestOwnerChange;
 
   onMount(() => {
     onboardingVisible = window.localStorage.getItem('deslopper-onboarding-complete') !== 'true';
@@ -223,20 +246,24 @@
 
   async function refreshOwnerData(): Promise<void> {
     if (!platform?.snapshot || productInfo?.buildMode === 'explicit read-only') {
-      widgetsActionability = null;
-      taskViewActionability = null;
+      ownerActionabilities = {};
       ownerHistory = [];
       return;
     }
     try {
-      [widgetsActionability, taskViewActionability, ownerHistory] = await Promise.all([
-        backend.getWidgetsActionability(),
-        backend.getTaskViewActionability(),
+      const [actionabilities, history] = await Promise.all([
+        Promise.all(
+          ownerOperations.map(
+            async (operationId) =>
+              [operationId, await backend.getOwnerActionability(operationId)] as const
+          )
+        ),
         backend.getOwnerChangeHistory()
       ]);
+      ownerActionabilities = Object.fromEntries(actionabilities);
+      ownerHistory = history;
     } catch (error) {
-      widgetsActionability = null;
-      taskViewActionability = null;
+      ownerActionabilities = {};
       ownerFeedback = describeCommandError(error);
     }
   }
@@ -298,21 +325,21 @@
     selectedComponentId = componentId;
     preview = null;
     desiredValidation = null;
-    desiredOptions = observationFor(componentId)
-      ? await backend.getAllowedDesiredStateOptions(componentId)
-      : [];
+    desiredOptions =
+      !ownerOperationByComponent[componentId] && observationFor(componentId)
+        ? await backend.getAllowedDesiredStateOptions(componentId)
+        : [];
     desiredStateKey = desiredOptions[0]?.key ?? '';
     desiredNote = desiredFor(componentId)?.note ?? '';
     selectedTimeline = platform?.snapshot ? await backend.getComponentTimeline(componentId) : [];
-    if (componentId === 'taskbar_widgets' || componentId === 'taskbar_task_view') {
+    if (ownerOperationByComponent[componentId]) {
       await refreshOwnerData();
     }
   }
 
   async function getSelectedOwnerActionability(): Promise<OwnerActionability> {
-    return selectedComponentId === 'taskbar_task_view'
-      ? backend.getTaskViewActionability()
-      : backend.getWidgetsActionability();
+    if (!selectedOwnerOperation) throw new Error('No Owner Mode operation is selected.');
+    return backend.getOwnerActionability(selectedOwnerOperation);
   }
 
   async function applyOwnerChange(target: MutationTarget): Promise<void> {
@@ -324,8 +351,10 @@
     let verifyingTimer: ReturnType<typeof setTimeout> | null = null;
     try {
       const actionability = await getSelectedOwnerActionability();
-      if (selectedComponentId === 'taskbar_task_view') taskViewActionability = actionability;
-      else widgetsActionability = actionability;
+      ownerActionabilities = {
+        ...ownerActionabilities,
+        [actionability.operationId]: actionability
+      };
       if (actionability.status !== 'ready' || !actionability.availableTargets.includes(target)) {
         ownerFeedback = actionability.reason;
         return;
@@ -333,10 +362,11 @@
       ownerPhase = 'applying';
       await tick();
       verifyingTimer = setTimeout(() => (ownerPhase = 'verifying'), 250);
-      const result =
-        selectedOwnerOperation === 'set_taskbar_task_view_visibility'
-          ? await backend.applyTaskView(target, platform.snapshot.id)
-          : await backend.applyWidgets(target, platform.snapshot.id);
+      const result = await backend.applyOwnerOperation(
+        selectedOwnerOperation,
+        target,
+        platform.snapshot.id
+      );
       ownerPhase = 'verifying';
       await tick();
       ownerResult = result;
@@ -514,6 +544,28 @@
     return Number.isFinite(numeric) ? new Date(numeric).toLocaleString() : value;
   }
 
+  function ownerActionLabel(operationId: OwnerMutationOperationId, target: MutationTarget): string {
+    if (
+      operationId === 'set_taskbar_widgets_visibility' ||
+      operationId === 'set_taskbar_task_view_visibility'
+    ) {
+      return `${target === 'disabled' ? 'Hide' : 'Show'} ${ownerLabelByOperation[operationId]} button`;
+    }
+    return `${target === 'disabled' ? 'Turn off' : 'Turn on'} ${ownerLabelByOperation[operationId]}`;
+  }
+
+  function ownerRepresentationText(
+    state: MutationTransaction['preState'] | MutationTransaction['postState']
+  ): string {
+    if (!state) return 'not recorded';
+    const representation = state.representation;
+    if (representation && typeof representation === 'object' && 'dword' in representation) {
+      return `DWORD ${String(representation.dword)}`;
+    }
+    if (representation === 'missing') return 'value absent';
+    return JSON.stringify(representation);
+  }
+
   function componentName(id: string): string {
     return catalogue.find((item) => item.componentId === id)?.name ?? id.replaceAll('_', ' ');
   }
@@ -531,7 +583,7 @@
   <title>Deslopper - Owner Mode</title>
   <meta
     name="description"
-    content="A privacy-conscious Windows configuration inspector with safe Widgets and Task View controls."
+    content="A privacy-conscious Windows configuration inspector with verified, undoable current-user controls."
   />
 </svelte:head>
 
@@ -576,7 +628,9 @@
       {:else}
         <section class="safety-note" aria-label="Build safety status">
           <strong><span aria-hidden="true">●</span> Owner mode</strong>
-          <p>Taskbar changes are explicit, verified, recorded locally, and undoable when safe.</p>
+          <p>
+            Current-user changes are explicit, verified, recorded locally, and undoable when safe.
+          </p>
         </section>
       {/if}
     </aside>
@@ -618,8 +672,8 @@
               </div>
             </div>
             <div class="read-only-seal">
-              <span aria-hidden="true">✓</span><strong>Owner Mode M2</strong><small
-                >Task View and scoped Widgets controls. No UAC. Verified local history.</small
+              <span aria-hidden="true">✓</span><strong>Owner Mode M3</strong><small
+                >Current-user cleanup, Task View, and scoped Widgets controls. No UAC.</small
               >
             </div>
           </header>
@@ -883,7 +937,7 @@
                     <div class="section-heading">
                       <div>
                         <span class="eyebrow">Owner control</span>
-                        <h3 id="owner-control-title">Apply {selectedOwnerLabel} visibility</h3>
+                        <h3 id="owner-control-title">Control {selectedOwnerLabel}</h3>
                         <p>
                           Current-user scope. Deslopper checks the latest state, records the exact
                           pre-state, applies one fixed setting, verifies it, and preserves Undo only
@@ -903,7 +957,11 @@
                         class:invalid={selectedOwnerActionability.status !== 'ready'}
                       >
                         <strong>{selectedOwnerActionability.status.replaceAll('_', ' ')}</strong>
-                        <p>{selectedOwnerActionability.reason}</p>
+                        <p>
+                          {selectedOwnerActionability.status === 'managed'
+                            ? 'Managed by Windows policy. Deslopper will not override it.'
+                            : selectedOwnerActionability.reason}
+                        </p>
                         <small>Scope: {selectedOwnerActionability.scope.replaceAll('_', ' ')}</small
                         >
                       </div>
@@ -933,9 +991,7 @@
                           disabled={ownerBusy || selectedOwnerActionability?.status !== 'ready'}
                           onclick={() => void applyOwnerChange(target)}
                         >
-                          {target === 'disabled'
-                            ? `Hide ${selectedOwnerLabel} button`
-                            : `Show ${selectedOwnerLabel} button`}
+                          {ownerActionLabel(selectedOwnerOperation, target)}
                         </button>
                       {/each}
                       {#if latestOwnerUndo}
@@ -951,10 +1007,10 @@
                       <div class="owner-progress" aria-live="polite">
                         <strong>
                           {ownerPhase === 'checking'
-                            ? 'Checking current state…'
+                            ? 'Checking current state...'
                             : ownerPhase === 'applying'
-                              ? `Applying ${selectedOwnerLabel} setting…`
-                              : 'Verifying result…'}
+                              ? `Applying ${selectedOwnerLabel} setting...`
+                              : 'Verifying result...'}
                         </strong>
                         <span>Keep Deslopper open while this local operation completes.</span>
                       </div>
@@ -965,13 +1021,36 @@
                         aria-live="polite"
                       >
                         <strong
-                          >{ownerResult?.outcome.replaceAll('_', ' ') ?? 'Widgets status'}</strong
+                          >{ownerResult?.outcome.replaceAll('_', ' ') ??
+                            `${selectedOwnerLabel} status`}</strong
                         >
                         <p>{ownerFeedback}</p>
                         {#if ownerResult?.note}<small>{ownerResult.note}</small>{/if}
                       </div>
                     {/if}
-                    {#if ownerResult || latestOwnerAttention || latestOwnerUndo}
+                    {#if latestOwnerChange}
+                      <div class="owner-result" aria-label="Latest Deslopper change">
+                        <strong>Latest Deslopper change</strong>
+                        <p>
+                          {latestOwnerChange.status.replaceAll('_', ' ')} ·
+                          {displayTime(
+                            latestOwnerChange.completedAt ??
+                              latestOwnerChange.startedAt ??
+                              latestOwnerChange.createdAt
+                          )}
+                        </p>
+                        <small>
+                          {ownerRepresentationText(latestOwnerChange.preState)} →
+                          {ownerRepresentationText(
+                            latestOwnerChange.rollback.complete
+                              ? latestOwnerChange.rollbackState
+                              : latestOwnerChange.postState
+                          )} · Undo
+                          {latestOwnerChange.rollback.available ? 'available' : 'not available'}
+                        </small>
+                      </div>
+                    {/if}
+                    {#if ownerResult || latestOwnerAttention || latestOwnerUndo || latestOwnerChange}
                       <details class="technical">
                         <summary>Technical details</summary>
                         {#if ownerTechnicalTransaction}
@@ -1001,9 +1080,11 @@
                 <section class="support-strip" aria-label="Product support levels">
                   <span><strong>Observe</strong> Supported</span><span
                     ><strong>Preview</strong>
-                    {desiredOptions.length
-                      ? 'Available with complete evidence'
-                      : 'Unavailable for current evidence'}</span
+                    {selectedOwnerOperation
+                      ? 'Not shown for actionable components'
+                      : desiredOptions.length
+                        ? 'Available with complete evidence'
+                        : 'Unavailable for current evidence'}</span
                   ><span
                     ><strong>Apply</strong>
                     {selectedOwnerOperation
@@ -1013,101 +1094,105 @@
                       : 'Inspection only'}</span
                   >
                 </section>
-                <section class="desired-editor">
-                  <div class="section-heading">
-                    <div>
-                      <h3>Desired state and preview</h3>
-                      <p>Saving a preference changes only Deslopper's local database.</p>
-                    </div>
-                    {#if selectedDesired}<button
-                        class="text-button danger"
-                        onclick={() => void clearDesired()}>Clear desired state</button
-                      >{/if}
-                  </div>
-                  {#if desiredOptions.length}
-                    <label
-                      >Desired state<select
-                        bind:value={desiredStateKey}
-                        onchange={() => void validateDesired()}
-                        >{#each desiredOptions as option (option.key)}<option value={option.key}
-                            >{option.label}</option
-                          >{/each}</select
-                      ></label
-                    >
-                    <label
-                      >Optional local note<textarea
-                        bind:value={desiredNote}
-                        maxlength="500"
-                        placeholder="Why this state matters to you"></textarea></label
-                    >
-                    {#if desiredValidation}<div
-                        class="validation"
-                        class:invalid={!desiredValidation.valid}
-                      >
-                        <strong>{desiredValidation.status.replaceAll('_', ' ')}</strong>
-                        <p>{desiredValidation.reason}</p>
-                        {#each desiredValidation.warnings as warning (warning)}<small
-                            >{warning}</small
-                          >{/each}
-                      </div>{/if}
-                    <div class="button-row">
-                      <button class="primary" onclick={() => void saveDesired()}
-                        >Save and generate preview</button
-                      >{#if selectedDesired}<button
-                          class="secondary"
-                          onclick={() => void generatePreview()}>Regenerate preview</button
+                {#if !selectedOwnerOperation}
+                  <section class="desired-editor">
+                    <div class="section-heading">
+                      <div>
+                        <h3>Desired state and preview</h3>
+                        <p>Saving a preference changes only Deslopper's local database.</p>
+                      </div>
+                      {#if selectedDesired}<button
+                          class="text-button danger"
+                          onclick={() => void clearDesired()}>Clear desired state</button
                         >{/if}
                     </div>
-                  {:else}<p class="plain-status">
-                      A preview is unavailable until current applicability and evidence are
-                      sufficient. Unknown does not mean broken.
-                    </p>{/if}
-                </section>
-                {#if preview}
-                  <section class="preview-card">
-                    <div>
-                      <span class="eyebrow">Preview only · not yet applied</span>
-                      <h3>What would be reviewed</h3>
-                    </div>
-                    <dl class="facts">
-                      <div>
-                        <dt>Current</dt>
-                        <dd>{stateText(preview.currentState as Record<string, unknown>)}</dd>
-                      </div>
-                      <div>
-                        <dt>Desired</dt>
-                        <dd>{stateText(preview.desiredState as Record<string, unknown>)}</dd>
-                      </div>
-                      <div>
-                        <dt>Required authority</dt>
-                        <dd>{String(preview.authority ?? 'Unknown')}</dd>
-                      </div>
-                      <div>
-                        <dt>Expected representation</dt>
-                        <dd>{String(preview.mechanism ?? 'Research required')}</dd>
-                      </div>
-                      <div>
-                        <dt>Restart</dt>
-                        <dd>{String(preview.restart ?? 'Unknown')}</dd>
-                      </div>
-                      <div>
-                        <dt>Rollback concept</dt>
-                        <dd>{String(preview.rollback ?? 'A verified source would be required')}</dd>
-                      </div>
-                    </dl>
-                    <div class="boundary">
-                      <strong
-                        >{previewIsNonExecutable(preview)
-                          ? 'This preview cannot execute.'
-                          : 'Preview safety state is incomplete.'}</strong
-                      ><span
-                        >{String(
-                          preview.cannotExecute ??
-                            'Automatic restoration is not available in this build.'
-                        )}</span
+                    {#if desiredOptions.length}
+                      <label
+                        >Desired state<select
+                          bind:value={desiredStateKey}
+                          onchange={() => void validateDesired()}
+                          >{#each desiredOptions as option (option.key)}<option value={option.key}
+                              >{option.label}</option
+                            >{/each}</select
+                        ></label
                       >
-                    </div>
+                      <label
+                        >Optional local note<textarea
+                          bind:value={desiredNote}
+                          maxlength="500"
+                          placeholder="Why this state matters to you"></textarea></label
+                      >
+                      {#if desiredValidation}<div
+                          class="validation"
+                          class:invalid={!desiredValidation.valid}
+                        >
+                          <strong>{desiredValidation.status.replaceAll('_', ' ')}</strong>
+                          <p>{desiredValidation.reason}</p>
+                          {#each desiredValidation.warnings as warning (warning)}<small
+                              >{warning}</small
+                            >{/each}
+                        </div>{/if}
+                      <div class="button-row">
+                        <button class="primary" onclick={() => void saveDesired()}
+                          >Save and generate preview</button
+                        >{#if selectedDesired}<button
+                            class="secondary"
+                            onclick={() => void generatePreview()}>Regenerate preview</button
+                          >{/if}
+                      </div>
+                    {:else}<p class="plain-status">
+                        A preview is unavailable until current applicability and evidence are
+                        sufficient. Unknown does not mean broken.
+                      </p>{/if}
                   </section>
+                  {#if preview}
+                    <section class="preview-card">
+                      <div>
+                        <span class="eyebrow">Preview only · not yet applied</span>
+                        <h3>What would be reviewed</h3>
+                      </div>
+                      <dl class="facts">
+                        <div>
+                          <dt>Current</dt>
+                          <dd>{stateText(preview.currentState as Record<string, unknown>)}</dd>
+                        </div>
+                        <div>
+                          <dt>Desired</dt>
+                          <dd>{stateText(preview.desiredState as Record<string, unknown>)}</dd>
+                        </div>
+                        <div>
+                          <dt>Required authority</dt>
+                          <dd>{String(preview.authority ?? 'Unknown')}</dd>
+                        </div>
+                        <div>
+                          <dt>Expected representation</dt>
+                          <dd>{String(preview.mechanism ?? 'Research required')}</dd>
+                        </div>
+                        <div>
+                          <dt>Restart</dt>
+                          <dd>{String(preview.restart ?? 'Unknown')}</dd>
+                        </div>
+                        <div>
+                          <dt>Rollback concept</dt>
+                          <dd>
+                            {String(preview.rollback ?? 'A verified source would be required')}
+                          </dd>
+                        </div>
+                      </dl>
+                      <div class="boundary">
+                        <strong
+                          >{previewIsNonExecutable(preview)
+                            ? 'This preview cannot execute.'
+                            : 'Preview safety state is incomplete.'}</strong
+                        ><span
+                          >{String(
+                            preview.cannotExecute ??
+                              'Automatic restoration is not available in this build.'
+                          )}</span
+                        >
+                      </div>
+                    </section>
+                  {/if}
                 {/if}
                 <details class="technical">
                   <summary>Redacted technical evidence</summary>{#if selectedObservation}<p>
@@ -1456,7 +1541,7 @@
                 <li>Machine identity and the development-host denylist never enter diagnostics.</li>
                 <li>
                   Owner Mode has no filesystem, shell, network, or updater permission. Its Windows
-                  writes are limited to fixed current-user Widgets and Task View visibility values.
+                  writes are limited to six fixed current-user M3 settings.
                 </li>
               </ul>
             </section>
@@ -1479,7 +1564,8 @@
         <h1 id="onboarding-title">Understand Windows before deciding what you want.</h1>
         <p>
           Deslopper gives you a careful local record of supported settings, packages, policy,
-          uncertainty, and change over time, plus verified Task View and scoped Widgets controls.
+          uncertainty, and change over time, plus fixed current-user cleanup, Task View, and scoped
+          Widgets controls.
         </p>
         <ul>
           {#each onboardingPrinciples as principle (principle)}<li>

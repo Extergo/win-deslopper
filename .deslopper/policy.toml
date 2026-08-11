@@ -1,11 +1,18 @@
 project = "Deslopper"
-milestone = "owner-mode-m2-task-view"
+milestone = "owner-mode-m3-current-user-cleanup"
 
 allow_real_windows_inspection = true
 allow_fixed_read_only_windows_queries = true
 allow_windows_mutation = true
 allow_owner_mode = true
-owner_mode_operation_ids = ["set_taskbar_widgets_visibility", "set_taskbar_task_view_visibility"]
+owner_mode_operation_ids = [
+    "set_taskbar_widgets_visibility",
+    "set_taskbar_task_view_visibility",
+    "set_welcome_experience_enabled",
+    "set_tips_suggestions_enabled",
+    "set_notification_suggestions_enabled",
+    "set_settings_suggested_content_enabled",
+]
 owner_mode_requires_single_ui_apply = true
 owner_mode_requires_exact_prestate = true
 owner_mode_requires_durable_transaction = true

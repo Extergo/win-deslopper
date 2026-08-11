@@ -3,12 +3,21 @@
 This roadmap records sequencing, not authorization. `AGENTS.md`, `SECURITY.md`,
 `ARCHITECTURE.md`, and `.deslopper/policy.toml` remain authoritative.
 
-## Current milestone - Owner Mode M2: Task View
+## Current milestone - Owner Mode M3: Current-user cleanup pack
 
-**Status:** Implemented, packaged, and physically validated PASS on Windows 11
-x64 with ordinary current-user execution and no elevation.
+**Status:** Implemented and packaged as `0.3.0`; physical validation is pending
+the manual smoke protocol. Automated implementation and verification performed
+no live Windows mutation.
 
-M2 productizes Taskbar Task View visibility alongside the M1 Widgets operation.
+M3 productizes four existing current-user findings alongside the M1/M2 taskbar
+operations: welcome experience, tips and suggestions, notification suggestions,
+and suggested content in Settings. Each owns one fixed Content Delivery Manager
+DWORD plus its matching read-only Cloud Content policy check. Missing and
+non-binary representations remain unsupported; policy-owned states are refused.
+Lock-screen suggestions remain inspection-only because their current preference
+and broader Spotlight policy do not prove exact setting parity.
+
+M2 productized Taskbar Task View visibility alongside the M1 Widgets operation.
 Apply is one click and must preflight, capture, journal, write, directly verify,
 verify through the matching detector, and recover safely. Undo is one click
 when the current state still equals Deslopper's applied state.
@@ -53,6 +62,7 @@ engineering harness.
 - Normal package version servicing is not configuration drift.
 - Preview state is never represented as completed work.
 - No Apply control appears until an explicitly authorized, tested, reversible
-  operation reaches the normal product boundary. M2 authorizes Widgets and Task View only.
+  operation reaches the normal product boundary. M3 authorizes exactly the six
+  operations listed above; Show Desktop and Taskbar Search remain excluded.
 - Do not weaken gaming, anti-cheat, Xbox, Game Pass, or Windows security
   compatibility to increase removal coverage.

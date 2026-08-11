@@ -8,10 +8,10 @@ Optional Windows features, Windows capabilities, services, AppX/MSIX packages, c
 
 Deslopper forbids deleting files as uninstall, deleting registry keys without prior-state capture, service changes sourced only from internet lists, wildcard AppX removal without dependency analysis, assuming one Windows build represents all builds, silent application, claiming removal when only a surface was hidden, calling undocumented hacks supported, or bypassing anti-cheat, security controls, licensing, or Windows integrity protections.
 
-Inspection, applicability, desired-state selection, history, drift, and preview planning remain available for the 21-component catalogue. Owner Mode M2 completes the lifecycle only for `TaskbarWidgets` and `TaskbarTaskView`; every other component remains inspection-only.
+Inspection, applicability, desired-state selection, history, drift, and preview planning remain available for the 21-component catalogue. Owner Mode M3 completes the lifecycle only for `TaskbarWidgets`, `TaskbarTaskView`, `WelcomeExperience`, `TipsSuggestions`, `NotificationSuggestions`, and `SettingsSuggestedContent`; every other component remains inspection-only. The four M3 cleanup operations require an exact DWORD 0/1 preference, refuse configured matching Cloud Content policy, and treat a missing or non-binary representation as unsupported. Lock-screen suggestions remain inspection-only because their broader Spotlight policy does not prove exact detector/handler parity.
 
 The internal mutation-alpha harness retains three closed taskbar handlers for
-engineering validation, but only Widgets and Task View are product-authorized. Cancellation is
+engineering validation; its Show Desktop operation remains non-productized. Cancellation is
 allowed before mutation; an atomic write, verification, or rollback is never
 blindly interrupted. Automatic drift repair remains prohibited. Failed
 verification may trigger an immediate exact rollback only when the attempted

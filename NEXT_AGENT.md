@@ -1,8 +1,18 @@
-# Owner Mode M2 handoff
+# Owner Mode M3 handoff
 
-The active product milestone is Deslopper Owner Mode M2. The normal release
-observes 21 components and exposes only two closed current-user operations:
-Widgets visibility and Task View visibility.
+Deslopper `0.3.0` implements Owner Mode M3. The normal release observes 21
+components and exposes exactly six closed current-user operations: Widgets,
+Task View, welcome experience, tips and suggestions, notification suggestions,
+and suggested content in Settings.
+
+The four cleanup handlers use fixed DWORD values under
+`HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager`.
+DWORD `1` is enabled and `0` is disabled. Missing and non-binary values are
+unknown/unsupported. Matching configured values under
+`HKLM\Software\Policies\Microsoft\Windows\CloudContent` are authoritative and
+make the operation managed; Deslopper does not override policy. Lock-screen
+suggestions remain inspection-only because `RotatingLockScreenOverlayEnabled`
+and the broader `ConfigureWindowsSpotlight` policy do not establish exact parity.
 
 ## Physical evidence that controls the product
 
@@ -22,17 +32,21 @@ Widgets visibility and Task View visibility.
 
 ## Safety contract
 
-- Normal commands are only Widgets/Task View actionability, closed owner Apply,
+- Normal commands are only closed owner actionability, closed owner Apply,
   transaction-bound Undo, and scoped history.
 - No registry path, value name, raw value, script, or command comes from the UI.
 - The app remains unelevated, Windows 11 x64/current-user scoped, local-only,
   and without shell, filesystem, network, updater, service, or helper access.
 - Automated tests use fake backends. Implementation and CI perform no live
   registry mutation.
-- Historical `owner-widgets.1` transactions remain readable; new intents use
-  `owner-taskbar.2`.
+- Historical `owner-widgets.1` and `owner-taskbar.2` transactions remain
+  readable; new intents use `owner-cleanup.3`.
 
 The completed physical evidence is in
 `docs/owner-mode-m2-physical-validation.md`; the reproducible protocol remains
 in `docs/owner-mode-task-view-smoke-test.md`. Do not rerun it as part of coding
 or CI.
+
+M3 physical validation has not been run. Use
+`docs/owner-mode-m3-current-user-cleanup-smoke-test.md` manually on the installed
+normal product; never turn it into an automated or approval-file workflow.

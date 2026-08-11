@@ -1066,7 +1066,7 @@ pub fn get_product_info() -> ProductInfo {
         product_name: "Deslopper",
         version: env!("CARGO_PKG_VERSION"),
         release_label: if cfg!(feature = "owner-mode") {
-            "Owner Mode M2"
+            "Owner Mode M3"
         } else {
             "Read-Only Engineering Build"
         },
@@ -1080,7 +1080,7 @@ pub fn get_product_info() -> ProductInfo {
         mutation_availability: if cfg!(feature = "mutation-alpha") {
             "engineering validation harness"
         } else if cfg!(feature = "owner-mode") {
-            "Task View Apply and Undo, with scoped Widgets capability, for the current Windows account"
+            "Current-user cleanup pack, Task View, and scoped Widgets capability"
         } else {
             "unavailable in this build"
         },
@@ -1310,9 +1310,9 @@ fn build_diagnostics_export(store: &Store, request: &DiagnosticsRequest) -> serd
         "product": {
             "name": "Deslopper",
             "version": env!("CARGO_PKG_VERSION"),
-            "release": if cfg!(feature = "owner-mode") { "Owner Mode M1" } else { "Read-Only Engineering Build" },
+            "release": if cfg!(feature = "owner-mode") { "Owner Mode M3" } else { "Read-Only Engineering Build" },
             "buildMode": if cfg!(feature = "mutation-alpha") { "engineering_mutation_alpha_harness" } else if cfg!(feature = "owner-mode") { "owner_mode" } else { "explicit_read_only" },
-            "mutationAvailability": if cfg!(feature = "mutation-alpha") { "engineering_validation_harness" } else if cfg!(feature = "owner-mode") { "widgets_apply_and_undo" } else { "unavailable_in_this_build" },
+            "mutationAvailability": if cfg!(feature = "mutation-alpha") { "engineering_validation_harness" } else if cfg!(feature = "owner-mode") { "six_closed_current_user_operations" } else { "unavailable_in_this_build" },
         },
         "windows": latest.map(|snapshot| serde_json::json!({
             "productName": snapshot.platform.product_name,
@@ -1853,6 +1853,21 @@ pub fn get_task_view_actionability(
 
 #[cfg(feature = "owner-mode")]
 #[tauri::command]
+pub fn get_owner_actionability(
+    operation_id: crate::mutation::MutationOperationId,
+    session: State<'_, PlatformSession>,
+    mutation: State<'_, MutationSession>,
+) -> Result<crate::mutation::broker::OwnerActionability, CommandError> {
+    let store = session
+        .0
+        .lock()
+        .map_err(|_| CommandError::state_unavailable())?;
+    let context = mutation_context(&store, Some(operation_id))?;
+    Ok(mutation.0.owner_actionability(operation_id, &context))
+}
+
+#[cfg(feature = "owner-mode")]
+#[tauri::command]
 pub fn apply_owner_operation(
     request: OwnerApplyRequest,
     session: State<'_, PlatformSession>,
@@ -1867,7 +1882,7 @@ pub fn apply_owner_operation(
             != Some(request.source_inspection_id.as_str())
         {
             return Err(CommandError::invalid_action(
-                "A newer scan exists. Review the latest taskbar state before applying.",
+                "A newer scan exists. Review the latest setting state before applying.",
             ));
         }
     }
@@ -2045,6 +2060,7 @@ pub fn run() -> tauri::Result<()> {
             generate_diagnostics_export,
             get_widgets_actionability,
             get_task_view_actionability,
+            get_owner_actionability,
             apply_owner_operation,
             undo_owner_operation,
             get_owner_change_history
@@ -2265,6 +2281,18 @@ fn mutation_context(
         Some(crate::mutation::MutationOperationId::TaskViewVisibility) => {
             platform::ComponentId::TaskbarTaskView
         }
+        Some(crate::mutation::MutationOperationId::WelcomeExperienceEnabled) => {
+            platform::ComponentId::WelcomeExperience
+        }
+        Some(crate::mutation::MutationOperationId::TipsSuggestionsEnabled) => {
+            platform::ComponentId::TipsSuggestions
+        }
+        Some(crate::mutation::MutationOperationId::NotificationSuggestionsEnabled) => {
+            platform::ComponentId::NotificationSuggestions
+        }
+        Some(crate::mutation::MutationOperationId::SettingsSuggestedContentEnabled) => {
+            platform::ComponentId::SettingsSuggestedContent
+        }
         _ => platform::ComponentId::TaskbarWidgets,
     };
     let selected_detector = snapshot
@@ -2291,6 +2319,12 @@ fn mutation_context(
     let selected_policy_observation = match operation_id {
         Some(crate::mutation::MutationOperationId::WidgetsVisibility) => widgets_policy,
         Some(crate::mutation::MutationOperationId::TaskViewVisibility) => selected_detector,
+        Some(crate::mutation::MutationOperationId::WelcomeExperienceEnabled)
+        | Some(crate::mutation::MutationOperationId::TipsSuggestionsEnabled)
+        | Some(crate::mutation::MutationOperationId::NotificationSuggestionsEnabled)
+        | Some(crate::mutation::MutationOperationId::SettingsSuggestedContentEnabled) => {
+            selected_detector
+        }
         _ => None,
     };
     let externally_managed = selected_policy_observation.is_some_and(|observation| {
@@ -2415,6 +2449,7 @@ pub fn run() -> tauri::Result<()> {
             generate_diagnostics_export,
             get_widgets_actionability,
             get_task_view_actionability,
+            get_owner_actionability,
             apply_owner_operation,
             undo_owner_operation,
             get_owner_change_history,
@@ -2496,7 +2531,7 @@ mod tests {
     }
 
     #[test]
-    fn owner_command_registration_exposes_only_product_taskbar_operations() {
+    fn owner_command_registration_exposes_only_closed_product_operations() {
         let source = include_str!("app.rs");
         let owner = source
             .split("#[cfg(all(feature = \"owner-mode\", not(feature = \"mutation-alpha\")))]\npub fn run()")
@@ -2506,6 +2541,7 @@ mod tests {
         for required in [
             "get_widgets_actionability",
             "get_task_view_actionability",
+            "get_owner_actionability",
             "apply_owner_operation",
             "undo_owner_operation",
             "get_owner_change_history",

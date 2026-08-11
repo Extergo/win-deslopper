@@ -9,6 +9,14 @@ pub enum MutationOperationId {
     TaskViewVisibility,
     #[serde(rename = "set_taskbar_show_desktop_enabled")]
     ShowDesktopEnabled,
+    #[serde(rename = "set_welcome_experience_enabled")]
+    WelcomeExperienceEnabled,
+    #[serde(rename = "set_tips_suggestions_enabled")]
+    TipsSuggestionsEnabled,
+    #[serde(rename = "set_notification_suggestions_enabled")]
+    NotificationSuggestionsEnabled,
+    #[serde(rename = "set_settings_suggested_content_enabled")]
+    SettingsSuggestedContentEnabled,
 }
 
 impl MutationOperationId {
@@ -24,6 +32,10 @@ impl MutationOperationId {
             Self::WidgetsVisibility => "set_taskbar_widgets_visibility",
             Self::TaskViewVisibility => "set_taskbar_task_view_visibility",
             Self::ShowDesktopEnabled => "set_taskbar_show_desktop_enabled",
+            Self::WelcomeExperienceEnabled => "set_welcome_experience_enabled",
+            Self::TipsSuggestionsEnabled => "set_tips_suggestions_enabled",
+            Self::NotificationSuggestionsEnabled => "set_notification_suggestions_enabled",
+            Self::SettingsSuggestedContentEnabled => "set_settings_suggested_content_enabled",
         }
     }
 
@@ -32,6 +44,10 @@ impl MutationOperationId {
             Self::WidgetsVisibility => MutationSubjectId::Widgets,
             Self::TaskViewVisibility => MutationSubjectId::TaskView,
             Self::ShowDesktopEnabled => MutationSubjectId::ShowDesktop,
+            Self::WelcomeExperienceEnabled => MutationSubjectId::WelcomeExperience,
+            Self::TipsSuggestionsEnabled => MutationSubjectId::TipsSuggestions,
+            Self::NotificationSuggestionsEnabled => MutationSubjectId::NotificationSuggestions,
+            Self::SettingsSuggestedContentEnabled => MutationSubjectId::SettingsSuggestedContent,
         }
     }
 }
@@ -42,6 +58,10 @@ pub enum MutationSubjectId {
     Widgets,
     TaskView,
     ShowDesktop,
+    WelcomeExperience,
+    TipsSuggestions,
+    NotificationSuggestions,
+    SettingsSuggestedContent,
 }
 
 impl MutationSubjectId {
@@ -50,6 +70,10 @@ impl MutationSubjectId {
             Self::Widgets => "taskbar_widgets",
             Self::TaskView => "taskbar_task_view",
             Self::ShowDesktop => "taskbar_show_desktop",
+            Self::WelcomeExperience => "welcome_experience",
+            Self::TipsSuggestions => "tips_suggestions",
+            Self::NotificationSuggestions => "notification_suggestions",
+            Self::SettingsSuggestedContent => "settings_suggested_content",
         }
     }
 }

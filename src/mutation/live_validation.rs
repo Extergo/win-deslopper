@@ -1220,7 +1220,8 @@ fn valid_operation_scopes(scopes: &[ApprovedOperationScope]) -> bool {
     let mut operations = HashSet::new();
     scopes.iter().all(|scope| {
         let mut states = HashSet::new();
-        operations.insert(scope.operation_id)
+        MutationOperationId::ALL.contains(&scope.operation_id)
+            && operations.insert(scope.operation_id)
             && !scope.allowed_target_states.is_empty()
             && scope
                 .allowed_target_states

@@ -2,15 +2,15 @@
 
 **Windows without the slop.**
 
-Deslopper `0.2.0` is a privacy-conscious, installable Windows
-configuration inspector with owner-operated Task View and scoped Widgets controls. Owner
+Deslopper `0.3.0` is a privacy-conscious, installable Windows
+configuration inspector with a reversible current-user cleanup pack plus owner-operated Task View and scoped Widgets controls. Owner
 Mode observes 21 documented
 Windows components, explains uncertainty and authority, saves local inspection
 history, detects meaningful drift, records desired states, and creates
 non-executable previews.
 
-The normal build can apply and exactly undo two registered current-user changes:
-showing or hiding the Windows 11 Task View or Widgets taskbar buttons. Widgets
+The normal build can apply and exactly undo six registered current-user changes:
+four Windows suggestion/content preferences and the Windows 11 Task View or Widgets taskbar buttons. Widgets
 direct change is suppressed for a machine/account scope after a verified unchanged
 access denial. It has no generic
 mutation command, filesystem capability, shell endpoint, network client,
@@ -18,7 +18,7 @@ updater, elevation manifest, service, or privileged helper. Unknown does not mea
 permission-limited does not mean absent, and a preview is never presented as
 completed work.
 
-## Owner Mode M2 features
+## Owner Mode M3 features
 
 - Compact first-run explanation and cancellable read-only inspection.
 - Honest dashboard summaries without fake health scores or optimisation claims.
@@ -32,14 +32,28 @@ completed work.
   picker. Nothing is uploaded automatically.
 - Settings/About with product/build status, redacted database location, local
   history controls and privacy explanation.
-- Task View and Widgets actionability integrated into their normal component details. One Apply
+- Welcome experience, tips and suggestions, notification suggestions, suggested
+  content in Settings, Task View, and Widgets actionability integrated into their normal component details. One Apply
   click performs fixed preflight, exact pre-state capture, durable transaction,
-  fixed `ShowTaskViewButton` or `TaskbarDa` write, direct and detector verification, and safe failure
+  fixed registered DWORD write, direct and detector verification, and safe failure
   recovery. One Undo click restores the exact prior DWORD or prior absence when
   no conflict exists.
 - Rejected unchanged writes are classified separately from ambiguous or changed
   failures. They expose no Undo; a proven Widgets permission denial suppresses
   only that machine/account capability without elevation or ACL changes.
+- Actionable component pages foreground the real Apply/Undo workflow and concise
+  latest-change history. The legacy non-executable desired-state preview remains
+  available only for inspection-only components.
+
+The M3 cleanup settings are fixed to `SubscribedContent-310093Enabled`,
+`SoftLandingEnabled`, `SubscribedContent-338389Enabled`, and
+`SubscribedContent-338393Enabled` under the current user's Content Delivery
+Manager key. DWORD `1` is enabled and DWORD `0` is disabled. A missing or
+non-binary value is unsupported rather than guessed, and matching configured
+Cloud Content policy makes the operation managed and non-actionable. Lock-screen
+suggestions were deliberately skipped because the existing detector combines
+`RotatingLockScreenOverlayEnabled` with broader `ConfigureWindowsSpotlight`
+policy semantics and cannot yet prove exact detector/handler parity.
 
 ## Physical validation
 
@@ -50,6 +64,11 @@ direct and detector verification, process exit, durable relaunch, Undo, exact
 restoration to DWORD 0, and independent registry verification. See
 `docs/owner-mode-m2-physical-validation.md` for the release identity and full
 evidence record.
+
+M3 automated verification uses fake/fault-injection backends only. The practical
+installed-product protocol is in
+`docs/owner-mode-m3-current-user-cleanup-smoke-test.md`; it has not been executed
+as part of implementation.
 
 See `docs/read-only-product-alpha.md` for the complete product and privacy
 contract.
@@ -95,7 +114,9 @@ bun run tauri build --no-bundle
 bun run tauri build
 ```
 
-The normal NSIS installer contains Owner Mode and uses Tauri's WebView2 downloaded-bootstrapper mode.
+The normal NSIS installer contains Owner Mode M3, needs no CLI flag, repository
+working directory, validation file, debug build, or administrator rights for
+these current-user operations, and uses Tauri's WebView2 downloaded-bootstrapper mode.
 Windows 11 normally supplies WebView2; the installer can obtain it when missing.
 The package is not code-signed and no public release is produced by this
 milestone. Application binaries uninstall normally; local history under

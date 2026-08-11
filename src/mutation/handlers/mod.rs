@@ -1,3 +1,4 @@
+mod current_user_cleanup;
 mod search_highlights;
 mod taskbar_task_view;
 mod taskbar_widgets;
@@ -10,6 +11,7 @@ use super::{
     request::{MutationOperationId, MutationTarget},
 };
 
+pub use current_user_cleanup::{CleanupSetting, CurrentUserCleanupHandler};
 pub use search_highlights::TaskbarShowDesktopHandler;
 pub use taskbar_task_view::TaskbarTaskViewHandler;
 pub use taskbar_widgets::TaskbarWidgetsHandler;
@@ -55,6 +57,14 @@ pub trait MutationBackend: Send + Sync {
     fn read_show_desktop(&self) -> Result<CapturedRepresentation, HandlerError>;
     fn show_desktop_externally_managed(&self) -> Result<bool, HandlerError>;
     fn write_show_desktop(&self, state: &CapturedRepresentation) -> Result<(), HandlerError>;
+    fn read_cleanup(&self, setting: CleanupSetting)
+    -> Result<CapturedRepresentation, HandlerError>;
+    fn cleanup_externally_managed(&self, setting: CleanupSetting) -> Result<bool, HandlerError>;
+    fn write_cleanup(
+        &self,
+        setting: CleanupSetting,
+        state: &CapturedRepresentation,
+    ) -> Result<(), HandlerError>;
 }
 
 pub trait OperationHandler: Send + Sync {

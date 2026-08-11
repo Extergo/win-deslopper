@@ -14,8 +14,9 @@ use serde::Serialize;
 use super::{
     OWNER_HANDLER_VERSION,
     handlers::{
-        HandlerError, MutationBackend as HandlerBackend, OperationHandler,
-        TaskbarShowDesktopHandler, TaskbarTaskViewHandler, TaskbarWidgetsHandler, expected,
+        CleanupSetting, CurrentUserCleanupHandler, HandlerError, MutationBackend as HandlerBackend,
+        OperationHandler, TaskbarShowDesktopHandler, TaskbarTaskViewHandler, TaskbarWidgetsHandler,
+        expected,
     },
     is_owner_handler_version,
     journal::MutationJournal,
@@ -44,6 +45,23 @@ static BROKER_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 static WIDGETS_HANDLER: TaskbarWidgetsHandler = TaskbarWidgetsHandler;
 static TASK_VIEW_HANDLER: TaskbarTaskViewHandler = TaskbarTaskViewHandler;
 static SHOW_DESKTOP_HANDLER: TaskbarShowDesktopHandler = TaskbarShowDesktopHandler;
+static WELCOME_HANDLER: CurrentUserCleanupHandler = CurrentUserCleanupHandler::new(
+    MutationOperationId::WelcomeExperienceEnabled,
+    CleanupSetting::WelcomeExperience,
+);
+static TIPS_HANDLER: CurrentUserCleanupHandler = CurrentUserCleanupHandler::new(
+    MutationOperationId::TipsSuggestionsEnabled,
+    CleanupSetting::TipsSuggestions,
+);
+static NOTIFICATION_SUGGESTIONS_HANDLER: CurrentUserCleanupHandler = CurrentUserCleanupHandler::new(
+    MutationOperationId::NotificationSuggestionsEnabled,
+    CleanupSetting::NotificationSuggestions,
+);
+static SETTINGS_SUGGESTED_CONTENT_HANDLER: CurrentUserCleanupHandler =
+    CurrentUserCleanupHandler::new(
+        MutationOperationId::SettingsSuggestedContentEnabled,
+        CleanupSetting::SettingsSuggestedContent,
+    );
 
 #[derive(Clone, Debug)]
 pub struct BrokerContext {
@@ -89,6 +107,13 @@ mod owner_tests {
         handlers::{HandlerErrorKind, MutationBackend},
         plan::CapturedRepresentation,
     };
+
+    const M3_CLEANUP_OPERATIONS: [MutationOperationId; 4] = [
+        MutationOperationId::WelcomeExperienceEnabled,
+        MutationOperationId::TipsSuggestionsEnabled,
+        MutationOperationId::NotificationSuggestionsEnabled,
+        MutationOperationId::SettingsSuggestedContentEnabled,
+    ];
 
     #[derive(Clone, Copy)]
     enum WriteBehavior {
@@ -208,6 +233,22 @@ mod owner_tests {
         fn write_show_desktop(&self, _: &CapturedRepresentation) -> Result<(), HandlerError> {
             panic!("Show Desktop is not an owner operation")
         }
+
+        fn read_cleanup(&self, _: CleanupSetting) -> Result<CapturedRepresentation, HandlerError> {
+            Ok(self.widgets.lock().unwrap().clone())
+        }
+
+        fn cleanup_externally_managed(&self, _: CleanupSetting) -> Result<bool, HandlerError> {
+            Ok(self.policy.load(Ordering::SeqCst))
+        }
+
+        fn write_cleanup(
+            &self,
+            _: CleanupSetting,
+            state: &CapturedRepresentation,
+        ) -> Result<(), HandlerError> {
+            self.write(state)
+        }
     }
 
     fn context(enabled: Option<bool>) -> BrokerContext {
@@ -258,7 +299,7 @@ mod owner_tests {
     }
 
     #[test]
-    fn owner_registry_exposes_widgets_and_task_view_only() {
+    fn owner_registry_rejects_non_product_show_desktop_operation() {
         let (broker, backend, path) = broker("closed", CapturedRepresentation::Dword(1));
         let result = broker.apply_owner_operation(
             MutationOperationId::ShowDesktopEnabled,
@@ -304,6 +345,356 @@ mod owner_tests {
             CapturedRepresentation::Dword(0)
         );
         cleanup(&path);
+    }
+
+    #[test]
+    fn every_m3_cleanup_operation_has_closed_apply_noop_relaunch_undo_and_refusal_contracts() {
+        for operation_id in M3_CLEANUP_OPERATIONS {
+            let label = operation_id.key();
+            let (primary_broker, backend, path) = broker(label, CapturedRepresentation::Dword(1));
+            let actionability =
+                primary_broker.owner_actionability(operation_id, &context(Some(true)));
+            assert_eq!(actionability.status, OwnerActionabilityStatus::Ready);
+            assert_eq!(
+                actionability.available_targets,
+                vec![MutationTarget::Disabled]
+            );
+
+            let applied = primary_broker
+                .apply_owner_operation(
+                    operation_id,
+                    MutationTarget::Disabled,
+                    &context(Some(true)),
+                    || Ok(context(Some(false))),
+                )
+                .unwrap();
+            assert_eq!(
+                applied.classification,
+                OwnerResultClassification::ChangedVerified
+            );
+            assert_eq!(
+                applied
+                    .transaction
+                    .pre_state
+                    .as_ref()
+                    .unwrap()
+                    .representation,
+                CapturedRepresentation::Dword(1)
+            );
+            assert_eq!(
+                applied
+                    .transaction
+                    .post_state
+                    .as_ref()
+                    .unwrap()
+                    .representation,
+                CapturedRepresentation::Dword(0)
+            );
+            assert_eq!(
+                applied.transaction.verification_result.as_deref(),
+                Some("direct_and_detector_verified")
+            );
+
+            let reopened =
+                Broker::with_owner_journal(backend.clone(), MutationJournal::at(path.clone()));
+            let mut other_user = context(Some(false));
+            other_user.machine_id = crate::owner_scope::from_stable_ids("machine", "S-1-5-21-2000");
+            assert_eq!(
+                reopened
+                    .undo_owner_operation(&applied.transaction.transaction_id, &other_user, || Ok(
+                        other_user.clone()
+                    ),)
+                    .unwrap_err()
+                    .code,
+                "owner_scope_mismatch"
+            );
+            let restored = reopened
+                .undo_owner_operation(
+                    &applied.transaction.transaction_id,
+                    &context(Some(false)),
+                    || Ok(context(Some(true))),
+                )
+                .unwrap();
+            assert_eq!(restored.classification, OwnerResultClassification::Restored);
+            assert_eq!(
+                *backend.widgets.lock().unwrap(),
+                CapturedRepresentation::Dword(1)
+            );
+            cleanup(&path);
+
+            let (noop_broker, noop_backend, noop_path) =
+                broker(&format!("{label}-noop"), CapturedRepresentation::Dword(0));
+            let noop = noop_broker
+                .apply_owner_operation(
+                    operation_id,
+                    MutationTarget::Disabled,
+                    &context(Some(false)),
+                    || panic!("no-op must not run detector verification"),
+                )
+                .unwrap();
+            assert_eq!(noop.classification, OwnerResultClassification::AlreadySet);
+            assert_eq!(noop_backend.writes.load(Ordering::SeqCst), 0);
+            cleanup(&noop_path);
+
+            let (reverse_broker, reverse_backend, reverse_path) = broker(
+                &format!("{label}-reverse"),
+                CapturedRepresentation::Dword(0),
+            );
+            let reverse = reverse_broker
+                .apply_owner_operation(
+                    operation_id,
+                    MutationTarget::Enabled,
+                    &context(Some(false)),
+                    || Ok(context(Some(true))),
+                )
+                .unwrap();
+            assert_eq!(
+                reverse.classification,
+                OwnerResultClassification::ChangedVerified
+            );
+            assert_eq!(
+                *reverse_backend.widgets.lock().unwrap(),
+                CapturedRepresentation::Dword(1)
+            );
+            let reverse_undo = reverse_broker
+                .undo_owner_operation(
+                    &reverse.transaction.transaction_id,
+                    &context(Some(true)),
+                    || Ok(context(Some(false))),
+                )
+                .unwrap();
+            assert_eq!(
+                reverse_undo.classification,
+                OwnerResultClassification::Restored
+            );
+            cleanup(&reverse_path);
+
+            let (missing_broker, _, missing_path) =
+                broker(&format!("{label}-missing"), CapturedRepresentation::Missing);
+            assert_eq!(
+                missing_broker
+                    .owner_actionability(operation_id, &context(None))
+                    .status,
+                OwnerActionabilityStatus::Unknown
+            );
+            assert_eq!(
+                missing_broker
+                    .apply_owner_operation(
+                        operation_id,
+                        MutationTarget::Disabled,
+                        &context(None),
+                        || panic!("unsupported missing value must not verify"),
+                    )
+                    .unwrap_err()
+                    .code,
+                "unsupported_representation"
+            );
+            cleanup(&missing_path);
+
+            let (invalid_broker, _, invalid_path) = broker(
+                &format!("{label}-invalid"),
+                CapturedRepresentation::Dword(2),
+            );
+            assert_eq!(
+                invalid_broker
+                    .owner_actionability(operation_id, &context(None))
+                    .status,
+                OwnerActionabilityStatus::Unknown
+            );
+            cleanup(&invalid_path);
+
+            let (managed_broker, managed_backend, managed_path) = broker(
+                &format!("{label}-managed"),
+                CapturedRepresentation::Dword(1),
+            );
+            managed_backend.policy.store(true, Ordering::SeqCst);
+            let mut managed_context = context(Some(false));
+            managed_context.authority_acceptable = false;
+            assert_eq!(
+                managed_broker
+                    .owner_actionability(operation_id, &managed_context)
+                    .status,
+                OwnerActionabilityStatus::Managed
+            );
+            assert_eq!(managed_backend.writes.load(Ordering::SeqCst), 0);
+            cleanup(&managed_path);
+
+            let (denied_broker, denied_backend, denied_path) =
+                broker(&format!("{label}-denied"), CapturedRepresentation::Dword(1));
+            denied_backend.queue(WriteBehavior::DeniedBefore);
+            let denied = denied_broker
+                .apply_owner_operation(
+                    operation_id,
+                    MutationTarget::Disabled,
+                    &context(Some(true)),
+                    || panic!("rejected unchanged write must not verify"),
+                )
+                .unwrap();
+            assert_eq!(
+                denied.classification,
+                OwnerResultClassification::WriteRejectedUnchanged
+            );
+            assert!(!denied.transaction.rollback.available);
+            assert_eq!(
+                denied_broker
+                    .owner_actionability(operation_id, &context(Some(true)))
+                    .status,
+                OwnerActionabilityStatus::DirectChangeUnavailable
+            );
+            cleanup(&denied_path);
+
+            let (conflict_broker, conflict_backend, conflict_path) = broker(
+                &format!("{label}-conflict"),
+                CapturedRepresentation::Dword(1),
+            );
+            let conflict_apply = conflict_broker
+                .apply_owner_operation(
+                    operation_id,
+                    MutationTarget::Disabled,
+                    &context(Some(true)),
+                    || Ok(context(Some(false))),
+                )
+                .unwrap();
+            conflict_backend.set(CapturedRepresentation::Dword(1));
+            let conflict = conflict_broker
+                .undo_owner_operation(
+                    &conflict_apply.transaction.transaction_id,
+                    &context(Some(true)),
+                    || panic!("conflicting Undo must not verify"),
+                )
+                .unwrap();
+            assert_eq!(conflict.classification, OwnerResultClassification::Conflict);
+            assert!(!conflict.transaction.rollback.available);
+            cleanup(&conflict_path);
+        }
+    }
+
+    #[test]
+    fn every_m3_cleanup_operation_has_failure_recovery_and_double_submit_contracts() {
+        for operation_id in M3_CLEANUP_OPERATIONS {
+            let label = operation_id.key();
+
+            let (ambiguous_broker, ambiguous_backend, ambiguous_path) = broker(
+                &format!("{label}-ambiguous"),
+                CapturedRepresentation::Dword(1),
+            );
+            ambiguous_backend.queue(WriteBehavior::FailAmbiguous);
+            let ambiguous = ambiguous_broker
+                .apply_owner_operation(
+                    operation_id,
+                    MutationTarget::Disabled,
+                    &context(Some(true)),
+                    || panic!("ambiguous writes must not run detector verification"),
+                )
+                .unwrap();
+            assert_eq!(
+                ambiguous.classification,
+                OwnerResultClassification::WriteResultAmbiguous
+            );
+            assert!(ambiguous.transaction.post_state.is_none());
+            assert_eq!(
+                ambiguous.transaction.verification_result.as_deref(),
+                Some("write_result_ambiguous")
+            );
+            assert!(ambiguous.transaction.recovery_requirement.is_some());
+            assert!(!ambiguous.transaction.rollback.available);
+            cleanup(&ambiguous_path);
+
+            let (rollback_broker, rollback_backend, rollback_path) = broker(
+                &format!("{label}-automatic-rollback"),
+                CapturedRepresentation::Dword(1),
+            );
+            let rolled_back = rollback_broker
+                .apply_owner_operation(
+                    operation_id,
+                    MutationTarget::Disabled,
+                    &context(Some(true)),
+                    || Ok(context(Some(true))),
+                )
+                .unwrap();
+            assert_eq!(
+                rolled_back.classification,
+                OwnerResultClassification::VerificationFailedRolledBack
+            );
+            assert!(rolled_back.transaction.rollback.complete);
+            assert_eq!(rollback_backend.writes.load(Ordering::SeqCst), 2);
+            assert_eq!(
+                *rollback_backend.widgets.lock().unwrap(),
+                CapturedRepresentation::Dword(1)
+            );
+            cleanup(&rollback_path);
+
+            let (failed_recovery_broker, failed_recovery_backend, failed_recovery_path) = broker(
+                &format!("{label}-failed-recovery"),
+                CapturedRepresentation::Dword(1),
+            );
+            failed_recovery_backend.queue(WriteBehavior::Succeed);
+            failed_recovery_backend.queue(WriteBehavior::FailBefore);
+            let failed_recovery = failed_recovery_broker
+                .apply_owner_operation(
+                    operation_id,
+                    MutationTarget::Disabled,
+                    &context(Some(true)),
+                    || Ok(context(Some(true))),
+                )
+                .unwrap();
+            assert_eq!(
+                failed_recovery.outcome,
+                OwnerOperationOutcome::NeedsAttention
+            );
+            assert_eq!(
+                failed_recovery.transaction.status,
+                TransactionStatus::RollbackVerificationFailed
+            );
+            assert!(!failed_recovery.transaction.rollback.available);
+            cleanup(&failed_recovery_path);
+
+            let (ignored_broker, ignored_backend, ignored_path) = broker(
+                &format!("{label}-ignored"),
+                CapturedRepresentation::Dword(1),
+            );
+            ignored_backend.queue(WriteBehavior::Ignore);
+            let ignored = ignored_broker
+                .apply_owner_operation(
+                    operation_id,
+                    MutationTarget::Disabled,
+                    &context(Some(true)),
+                    || {
+                        panic!(
+                            "unchanged direct verification must stop before detector verification"
+                        )
+                    },
+                )
+                .unwrap();
+            assert_eq!(ignored.outcome, OwnerOperationOutcome::CouldNotChange);
+            assert_eq!(
+                ignored.transaction.status,
+                TransactionStatus::VerificationFailed
+            );
+            assert!(!ignored.transaction.rollback.available);
+            cleanup(&ignored_path);
+
+            let (locked_broker, locked_backend, locked_path) = broker(
+                &format!("{label}-double-submit"),
+                CapturedRepresentation::Dword(1),
+            );
+            let guard = locked_broker.execution_lock.lock().unwrap();
+            assert_eq!(
+                locked_broker
+                    .apply_owner_operation(
+                        operation_id,
+                        MutationTarget::Disabled,
+                        &context(Some(true)),
+                        || Ok(context(Some(false))),
+                    )
+                    .unwrap_err()
+                    .code,
+                "operation_in_progress"
+            );
+            assert_eq!(locked_backend.writes.load(Ordering::SeqCst), 0);
+            drop(guard);
+            cleanup(&locked_path);
+        }
     }
 
     #[test]
@@ -1102,7 +1493,7 @@ impl Broker {
         if !is_owner_operation(operation_id) {
             return base(
                 OwnerActionabilityStatus::Unsupported,
-                "This setting is not available in Owner Mode M2.".into(),
+                "This setting is not available in Owner Mode M3.".into(),
                 None,
                 Vec::new(),
             );
@@ -1136,9 +1527,10 @@ impl Broker {
             }
             _ => {}
         }
-        if operation_id == MutationOperationId::WidgetsVisibility
-            && let Ok(history) = self.owner_history(&context.machine_id)
-            && history.iter().any(owner_direct_change_unavailable)
+        if let Ok(history) = self.owner_history(&context.machine_id)
+            && history
+                .iter()
+                .any(|transaction| owner_direct_change_unavailable(transaction, operation_id))
         {
             return base(
                 OwnerActionabilityStatus::DirectChangeUnavailable,
@@ -1182,10 +1574,12 @@ impl Broker {
             } else {
                 MutationTarget::Enabled
             }]
-        } else if matches!(
-            state.representation,
-            super::plan::CapturedRepresentation::Missing
-        ) {
+        } else if owner_missing_representation_supported(operation_id)
+            && matches!(
+                state.representation,
+                super::plan::CapturedRepresentation::Missing
+            )
+        {
             vec![MutationTarget::Disabled, MutationTarget::Enabled]
         } else {
             return base(
@@ -1222,7 +1616,7 @@ impl Broker {
         if !is_owner_operation(operation_id) {
             return Err(BrokerError::new(
                 "operation_not_productized",
-                "Only Widgets and Task View are available in Owner Mode M2.",
+                "This operation is not available in Owner Mode M3.",
             ));
         }
         validate_owner_context(operation_id, context)?;
@@ -1254,10 +1648,11 @@ impl Broker {
             .map_err(handler_error)?;
         validate_captured_authority(&pre_state)?;
         if !pre_state.effective_state_known
-            && !matches!(
-                pre_state.representation,
-                super::plan::CapturedRepresentation::Missing
-            )
+            && !(owner_missing_representation_supported(operation_id)
+                && matches!(
+                    pre_state.representation,
+                    super::plan::CapturedRepresentation::Missing
+                ))
         {
             return Err(BrokerError::new(
                 "unsupported_representation",
@@ -1318,8 +1713,9 @@ impl Broker {
         validate_captured_authority(&rechecked)?;
         if !same_effective_state(&pre_state, &rechecked) {
             transaction.error_category = Some("changed_source_state".into());
-            transaction.error_summary =
-                Some("The Widgets setting changed after pre-state capture.".into());
+            transaction.error_summary = Some(format!(
+                "The {label} setting changed after pre-state capture."
+            ));
             transition(
                 &self.journal,
                 &mut transaction,
@@ -2063,6 +2459,12 @@ impl Broker {
         context: &BrokerContext,
     ) -> Result<IssuedPlan, BrokerError> {
         self.require_gate()?;
+        if !MutationOperationId::ALL.contains(&request.operation_id) {
+            return Err(BrokerError::new(
+                "operation_not_in_mutation_alpha",
+                "Owner Mode operations cannot be routed through the internal Mutation Alpha harness.",
+            ));
+        }
         self.require_authorized(request.operation_id, request.target)?;
         self.require_target_eligibility(context)?;
         let approval_class = self.approval_class()?;
@@ -2982,7 +3384,7 @@ fn validate_owner_context(
     if context.windows_build < 22_000 || !context.applicable {
         return Err(BrokerError::new(
             "unsupported_build",
-            "Owner Mode M2 supports Windows 11 only.",
+            "Owner Mode M3 supports Windows 11 only.",
         ));
     }
     let architecture = context.architecture.trim().to_ascii_lowercase();
@@ -2993,7 +3395,7 @@ fn validate_owner_context(
     if !is_x64 {
         return Err(BrokerError::new(
             "unsupported_architecture",
-            "Owner Mode M2 supports the x64 product build only.",
+            "Owner Mode M3 supports the x64 product build only.",
         ));
     }
     if !context.authority_acceptable {
@@ -3084,8 +3486,11 @@ fn owner_recovery_blocks_new_apply(transaction: &MutationTransaction) -> bool {
     )
 }
 
-fn owner_direct_change_unavailable(transaction: &MutationTransaction) -> bool {
-    transaction.operation_id == MutationOperationId::WidgetsVisibility
+fn owner_direct_change_unavailable(
+    transaction: &MutationTransaction,
+    operation_id: MutationOperationId,
+) -> bool {
+    transaction.operation_id == operation_id
         && transaction.status == TransactionStatus::FailedAfterMutation
         && !transaction.rollback.available
         && !transaction.rollback.complete
@@ -3111,6 +3516,18 @@ fn owner_direct_change_unavailable(transaction: &MutationTransaction) -> bool {
 fn is_owner_operation(operation_id: MutationOperationId) -> bool {
     matches!(
         operation_id,
+        MutationOperationId::WidgetsVisibility
+            | MutationOperationId::TaskViewVisibility
+            | MutationOperationId::WelcomeExperienceEnabled
+            | MutationOperationId::TipsSuggestionsEnabled
+            | MutationOperationId::NotificationSuggestionsEnabled
+            | MutationOperationId::SettingsSuggestedContentEnabled
+    )
+}
+
+fn owner_missing_representation_supported(operation_id: MutationOperationId) -> bool {
+    matches!(
+        operation_id,
         MutationOperationId::WidgetsVisibility | MutationOperationId::TaskViewVisibility
     )
 }
@@ -3120,6 +3537,10 @@ fn owner_operation_label(operation_id: MutationOperationId) -> &'static str {
         MutationOperationId::WidgetsVisibility => "Widgets",
         MutationOperationId::TaskViewVisibility => "Task View",
         MutationOperationId::ShowDesktopEnabled => "Show desktop",
+        MutationOperationId::WelcomeExperienceEnabled => "Welcome experience",
+        MutationOperationId::TipsSuggestionsEnabled => "Tips and suggestions",
+        MutationOperationId::NotificationSuggestionsEnabled => "Notification suggestions",
+        MutationOperationId::SettingsSuggestedContentEnabled => "Suggested content in Settings",
     }
 }
 
@@ -3132,6 +3553,18 @@ fn owner_operation_scope(operation_id: MutationOperationId) -> &'static str {
             "Changes the Task View button for this Windows account."
         }
         MutationOperationId::ShowDesktopEnabled => "Unavailable in Owner Mode.",
+        MutationOperationId::WelcomeExperienceEnabled => {
+            "Changes welcome experience suggestions for this Windows account."
+        }
+        MutationOperationId::TipsSuggestionsEnabled => {
+            "Changes tips and suggestions for this Windows account."
+        }
+        MutationOperationId::NotificationSuggestionsEnabled => {
+            "Changes notification suggestions for this Windows account."
+        }
+        MutationOperationId::SettingsSuggestedContentEnabled => {
+            "Changes suggested Settings content for this Windows account."
+        }
     }
 }
 
@@ -3181,6 +3614,8 @@ fn operation_definition(operation_id: MutationOperationId) -> OperationDefinitio
     const SETTINGS_REFERENCE: &str =
         "https://learn.microsoft.com/windows/apps/develop/settings/settings-windows-11";
     const TASKBAR_SUPPORT: &str = "https://support.microsoft.com/windows/experience/personalization/customize-the-taskbar-in-windows";
+    const EXPERIENCE_POLICY: &str =
+        "https://learn.microsoft.com/windows/client-management/mdm/policy-csp-experience";
     match operation_id {
         MutationOperationId::WidgetsVisibility => OperationDefinition {
             operation_id,
@@ -3236,6 +3671,80 @@ fn operation_definition(operation_id: MutationOperationId) -> OperationDefinitio
             maximum_duration_ms: 5_000,
             automatic_remediation_eligible: false,
         },
+        MutationOperationId::WelcomeExperienceEnabled => OperationDefinition {
+            operation_id,
+            subject_id: operation_id.subject(),
+            title: "Welcome experience",
+            description: "Enable or disable welcome experience suggestions for the current user.",
+            supported_targets: vec![MutationTarget::Enabled, MutationTarget::Disabled],
+            minimum_build: 22_000,
+            supported_editions: ALL_EDITIONS,
+            required_authority: "user",
+            required_confidence: "confirmed_representation",
+            required_privilege: "current_user_unprivileged",
+            side_effects: &["Windows welcome suggestion presentation changes for this account."],
+            restart_requirement: "No Explorer termination, sign-out, or reboot is requested.",
+            rollback_method: "Restore the exact captured SubscribedContent-310093Enabled DWORD.",
+            documentation: &[EXPERIENCE_POLICY],
+            maximum_duration_ms: 5_000,
+            automatic_remediation_eligible: false,
+        },
+        MutationOperationId::TipsSuggestionsEnabled => OperationDefinition {
+            operation_id,
+            subject_id: operation_id.subject(),
+            title: "Tips and suggestions",
+            description: "Enable or disable Windows tips and suggestions for the current user.",
+            supported_targets: vec![MutationTarget::Enabled, MutationTarget::Disabled],
+            minimum_build: 22_000,
+            supported_editions: ALL_EDITIONS,
+            required_authority: "user",
+            required_confidence: "confirmed_representation",
+            required_privilege: "current_user_unprivileged",
+            side_effects: &["Windows tips and suggestion presentation changes for this account."],
+            restart_requirement: "No Explorer termination, sign-out, or reboot is requested.",
+            rollback_method: "Restore the exact captured SoftLandingEnabled DWORD.",
+            documentation: &[EXPERIENCE_POLICY],
+            maximum_duration_ms: 5_000,
+            automatic_remediation_eligible: false,
+        },
+        MutationOperationId::NotificationSuggestionsEnabled => OperationDefinition {
+            operation_id,
+            subject_id: operation_id.subject(),
+            title: "Notification suggestions",
+            description: "Enable or disable Windows notification suggestions for the current user.",
+            supported_targets: vec![MutationTarget::Enabled, MutationTarget::Disabled],
+            minimum_build: 22_000,
+            supported_editions: ALL_EDITIONS,
+            required_authority: "user",
+            required_confidence: "confirmed_representation",
+            required_privilege: "current_user_unprivileged",
+            side_effects: &[
+                "Suggestion content in Windows notifications changes for this account.",
+            ],
+            restart_requirement: "No Explorer termination, sign-out, or reboot is requested.",
+            rollback_method: "Restore the exact captured SubscribedContent-338389Enabled DWORD.",
+            documentation: &[EXPERIENCE_POLICY],
+            maximum_duration_ms: 5_000,
+            automatic_remediation_eligible: false,
+        },
+        MutationOperationId::SettingsSuggestedContentEnabled => OperationDefinition {
+            operation_id,
+            subject_id: operation_id.subject(),
+            title: "Suggested content in Settings",
+            description: "Enable or disable suggested content in Settings for the current user.",
+            supported_targets: vec![MutationTarget::Enabled, MutationTarget::Disabled],
+            minimum_build: 22_000,
+            supported_editions: ALL_EDITIONS,
+            required_authority: "user",
+            required_confidence: "confirmed_representation",
+            required_privilege: "current_user_unprivileged",
+            side_effects: &["Suggested content in the Settings app changes for this account."],
+            restart_requirement: "No Explorer termination, sign-out, or reboot is requested.",
+            rollback_method: "Restore the exact captured SubscribedContent-338393Enabled DWORD.",
+            documentation: &[EXPERIENCE_POLICY],
+            maximum_duration_ms: 5_000,
+            automatic_remediation_eligible: false,
+        },
     }
 }
 
@@ -3245,6 +3754,10 @@ const fn operation_index(operation_id: MutationOperationId) -> usize {
         MutationOperationId::WidgetsVisibility => 0,
         MutationOperationId::TaskViewVisibility => 1,
         MutationOperationId::ShowDesktopEnabled => 2,
+        MutationOperationId::WelcomeExperienceEnabled
+        | MutationOperationId::TipsSuggestionsEnabled
+        | MutationOperationId::NotificationSuggestionsEnabled
+        | MutationOperationId::SettingsSuggestedContentEnabled => 0,
     }
 }
 
@@ -3253,6 +3766,10 @@ fn handler(operation_id: MutationOperationId) -> &'static dyn OperationHandler {
         MutationOperationId::WidgetsVisibility => &WIDGETS_HANDLER,
         MutationOperationId::TaskViewVisibility => &TASK_VIEW_HANDLER,
         MutationOperationId::ShowDesktopEnabled => &SHOW_DESKTOP_HANDLER,
+        MutationOperationId::WelcomeExperienceEnabled => &WELCOME_HANDLER,
+        MutationOperationId::TipsSuggestionsEnabled => &TIPS_HANDLER,
+        MutationOperationId::NotificationSuggestionsEnabled => &NOTIFICATION_SUGGESTIONS_HANDLER,
+        MutationOperationId::SettingsSuggestedContentEnabled => &SETTINGS_SUGGESTED_CONTENT_HANDLER,
     };
     debug_assert_eq!(selected.operation_id(), operation_id);
     selected
@@ -3480,6 +3997,12 @@ fn confirmation_text(operation: MutationOperationId, target: MutationTarget) -> 
                 "Disable"
             }
         ),
+        MutationOperationId::WelcomeExperienceEnabled
+        | MutationOperationId::TipsSuggestionsEnabled
+        | MutationOperationId::NotificationSuggestionsEnabled
+        | MutationOperationId::SettingsSuggestedContentEnabled => {
+            unreachable!("Owner Mode operations cannot enter Mutation Alpha confirmation")
+        }
     }
 }
 
@@ -3489,6 +4012,12 @@ fn approval_phrase(operation: MutationOperationId) -> String {
         MutationOperationId::WidgetsVisibility => "APPROVE WIDGETS TEST",
         MutationOperationId::TaskViewVisibility => "APPROVE TASK VIEW TEST",
         MutationOperationId::ShowDesktopEnabled => "APPROVE SHOW DESKTOP TEST",
+        MutationOperationId::WelcomeExperienceEnabled
+        | MutationOperationId::TipsSuggestionsEnabled
+        | MutationOperationId::NotificationSuggestionsEnabled
+        | MutationOperationId::SettingsSuggestedContentEnabled => {
+            unreachable!("Owner Mode operations cannot enter Mutation Alpha approval")
+        }
     }
     .into()
 }
@@ -3655,6 +4184,19 @@ mod tests {
         }
         fn write_show_desktop(&self, state: &CapturedRepresentation) -> Result<(), HandlerError> {
             self.write(&self.show_desktop, state)
+        }
+        fn read_cleanup(&self, _: CleanupSetting) -> Result<CapturedRepresentation, HandlerError> {
+            Self::read(&self.widgets)
+        }
+        fn cleanup_externally_managed(&self, _: CleanupSetting) -> Result<bool, HandlerError> {
+            Ok(self.widgets_policy.load(Ordering::SeqCst))
+        }
+        fn write_cleanup(
+            &self,
+            _: CleanupSetting,
+            state: &CapturedRepresentation,
+        ) -> Result<(), HandlerError> {
+            self.write(&self.widgets, state)
         }
     }
 
@@ -4714,6 +5256,12 @@ mod tests {
                 }
                 MutationOperationId::ShowDesktopEnabled => {
                     backend.show_desktop_policy.store(true, Ordering::SeqCst)
+                }
+                MutationOperationId::WelcomeExperienceEnabled
+                | MutationOperationId::TipsSuggestionsEnabled
+                | MutationOperationId::NotificationSuggestionsEnabled
+                | MutationOperationId::SettingsSuggestedContentEnabled => {
+                    unreachable!("Owner Mode M3 operations are outside the alpha registry")
                 }
             }
             let context = context();

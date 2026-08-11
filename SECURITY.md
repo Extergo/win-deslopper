@@ -17,7 +17,7 @@ crashes, rollback conflict, and misleading success.
 - Tauri grants the normal window only the event listen/unlisten lifecycle used
   for backend inspection progress. It grants no frontend event emission,
   shell, filesystem, network, updater, or external-URL plugin.
-- Normal builds register only closed owner Widgets and Task View actionability, Apply,
+- Normal builds register only closed Owner Mode M3 actionability, Apply,
   Undo, and history commands. There is no elevation manifest, `runas`, helper,
   service, backend, telemetry, plugin execution, arbitrary registry API, or
   mutation shell command.
@@ -33,11 +33,17 @@ crashes, rollback conflict, and misleading success.
   read-only database records. They do not alter Windows or erase internal
   mutation audit tables.
 
-### Owner taskbar boundary
+### Owner operation boundary
 
-- The M2 product operations are `set_taskbar_widgets_visibility` and
-  `set_taskbar_task_view_visibility`, mapped in Rust to fixed HKCU Explorer
-  Advanced `TaskbarDa` and `ShowTaskViewButton` DWORD 0/1 values.
+- The six M3 product operations are Widgets and Task View visibility plus
+  welcome experience, tips and suggestions, notification suggestions, and
+  suggested content in Settings. Rust maps them to fixed HKCU DWORD 0/1 values;
+  no registry coordinates or integer come from the frontend.
+- The four cleanup operations use exact Content Delivery Manager values and
+  matching read-only Cloud Content policy checks. Missing/non-binary preference
+  representations are unsupported, and any configured matching policy causes
+  refusal. Lock-screen suggestions remain inspection-only because their broad
+  Spotlight policy does not prove exact parity.
 - The app runs unelevated and affects only the current Windows account. It
   refuses unsupported/non-Windows-11 contexts, unknown representations, and
   fixed external policy ownership.
@@ -59,7 +65,7 @@ crashes, rollback conflict, and misleading success.
   unchanged, has no Undo, and is not a recovery alarm. A proven Widgets
   PermissionDenied result suppresses only Widgets direct change for that stable
   machine/account scope. Deslopper never elevates or changes registry ACLs.
-- Show Desktop and `TaskbarSd` are outside Owner Mode M2.
+- Show Desktop, `TaskbarSd`, and Taskbar Search are outside Owner Mode M3.
 
 ## Separate internal mutation-alpha harness
 

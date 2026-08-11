@@ -1,8 +1,8 @@
 # Architecture
 
 The normal Deslopper build is Owner Mode. It combines the read-only
-21-component inspector with two closed, unelevated operations: current-user
-Taskbar Widgets and Task View visibility. The historical `mutation-alpha`
+21-component inspector with six closed, unelevated operations: current-user
+Taskbar Widgets and Task View visibility plus four suggestion/content preferences. The historical `mutation-alpha`
 feature remains an explicit engineering validation flavor; it is not the
 authorization path for the installed product.
 
@@ -21,7 +21,8 @@ authorization path for the installed product.
 3. **Domain models.** The 21-component read-only catalogue includes a distinct
    Task View detector; Taskbar Search remains a separate component.
    Mutation uses separate closed operation/subject/target enums and an immutable
-   three-entry registry.
+   three-entry engineering-alpha registry plus a separate six-entry Owner Mode
+   product allowlist.
 4. **Read-only Windows inspection.** The existing eight fixed PowerShell queries
    retain timeout, output, parser, cancellation, and evidence contracts. They
    run immediately before and after alpha apply where material.
@@ -33,11 +34,14 @@ authorization path for the installed product.
    exact capture, dispatch, actual post-attempt capture, verification,
    automatic safe rollback, journal, one-click Undo, recovery, and test-only
    fault injection. There is no generic registry setter or command runner. Only
-   Widgets and Task View are in the owner product registry for M2. Show Desktop
-   remains internal and `TaskbarSd` is not productized.
+   Widgets, Task View, welcome experience, tips and suggestions, notification
+   suggestions, and suggested content in Settings are in the Owner Mode M3
+   product registry. Show Desktop remains internal and `TaskbarSd` is not productized.
 7. **Windows setting store.** A safe registry wrapper exposes only named
    operation-specific preference reads/writes plus fixed read-only checks for
-   Widgets policy, `HideTaskViewButton`, and `NoSetTaskbar`. No caller can
+   Widgets policy, `HideTaskViewButton`, `NoSetTaskbar`, and four matching Cloud
+   Content policies. The generic internal DWORD helper accepts only a closed
+   setting enum. No caller can
    provide a hive, path, name, type, or arbitrary value.
 8. **Persistence.** SQLite v5 stores read-only history, desired revisions,
    reviewed/resolved drift, retention preferences, and internal feature-gated
@@ -73,8 +77,8 @@ authorization path for the installed product.
 
 ## Dependency direction and release boundary
 
-Presentation sends typed IDs to Rust. Normal orchestration calls only the two
-closed owner APIs; the broker selects the fixed Widgets or Task View handler;
+Presentation sends typed IDs to Rust. Normal orchestration calls only closed
+owner APIs; the broker selects one of six fixed product handlers;
 the handler calls its fixed store method. Inspection never imports mutation. Persistence stores data
 but cannot apply it. Normal builds compile the closed owner broker and register
 owner actionability/Apply/Undo/history commands. They do not register legacy
@@ -90,5 +94,6 @@ submission and renders the command result plus durable transaction history.
 Manual visible-shell observation is not claimed by automated verification and
 never triggers a second write.
 
-See `docs/owner-mode-widgets-smoke-test.md`, `docs/mutation-threat-model.md`,
-`docs/mutation-broker-alpha.md`, and D-015.
+See `docs/owner-mode-m3-current-user-cleanup-smoke-test.md`,
+`docs/owner-mode-widgets-smoke-test.md`, `docs/mutation-threat-model.md`,
+`docs/mutation-broker-alpha.md`, and D-018.

@@ -59,11 +59,23 @@ foreach ($match in ($files | Select-String -Pattern 'HKEY_LOCAL_MACHINE' -Simple
 }
 
 $fixedStore = Get-Content -Raw -LiteralPath $fixedStorePath
+$fixedCleanupHandlerPath = Join-Path $repo 'src\mutation\handlers\current_user_cleanup.rs'
+$fixedBoundarySources = $fixedStore + (Get-Content -Raw -LiteralPath $fixedCleanupHandlerPath)
 $requiredFixedTokens = @(
     'Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced',
+    'Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager',
+    'Software\Policies\Microsoft\Windows\CloudContent',
     'TaskbarDa',
     'ShowTaskViewButton',
     'TaskbarSd',
+    'SubscribedContent-310093Enabled',
+    'SoftLandingEnabled',
+    'SubscribedContent-338389Enabled',
+    'SubscribedContent-338393Enabled',
+    'DisableWindowsSpotlightWindowsWelcomeExperience',
+    'DisableSoftLanding',
+    'DisableWindowsSpotlightOnActionCenter',
+    'DisableWindowsSpotlightOnSettings',
     'Software\Policies\Microsoft\Dsh',
     'AllowNewsAndInterests',
     'Software\Policies\Microsoft\Windows\Explorer',
@@ -72,8 +84,8 @@ $requiredFixedTokens = @(
     'NoSetTaskbar'
 )
 foreach ($token in $requiredFixedTokens) {
-    if (-not $fixedStore.Contains($token)) {
-        $failures.Add("${fixedStorePath}: required closed registry token '$token' is missing")
+    if (-not $fixedBoundarySources.Contains($token)) {
+        $failures.Add("fixed mutation sources: required closed registry token '$token' is missing")
     }
 }
 if ([regex]::Matches($fixedStore, '\.set_value\(').Count -ne 1 -or [regex]::Matches($fixedStore, '\.delete_value\(').Count -ne 1) {
@@ -92,7 +104,7 @@ if ($ownerStart -lt 0 -or $alphaStart -le $ownerStart) {
     $failures.Add('src\app.rs: distinct normal owner-mode composition is missing')
 } else {
     $ownerComposition = $appSource.Substring($ownerStart, $alphaStart - $ownerStart)
-    foreach ($command in 'get_widgets_actionability', 'get_task_view_actionability', 'apply_owner_operation', 'undo_owner_operation', 'get_owner_change_history') {
+    foreach ($command in 'get_owner_actionability', 'get_widgets_actionability', 'get_task_view_actionability', 'apply_owner_operation', 'undo_owner_operation', 'get_owner_change_history') {
         if (-not $ownerComposition.Contains($command)) {
             $failures.Add("src\app.rs: normal owner-mode composition is missing '$command'")
         }
@@ -105,11 +117,10 @@ if ($ownerStart -lt 0 -or $alphaStart -le $ownerStart) {
 }
 
 $frontendBackend = Get-Content -Raw -LiteralPath (Join-Path $repo 'frontend\src\lib\backend.ts')
-if ($frontendBackend -notmatch "applyWidgets:[\s\S]*operationId: 'set_taskbar_widgets_visibility'") {
-    $failures.Add('frontend\src\lib\backend.ts: owner Apply must hardcode the closed Widgets operation ID')
-}
-if ($frontendBackend -notmatch "applyTaskView:[\s\S]*operationId: 'set_taskbar_task_view_visibility'") {
-    $failures.Add('frontend\src\lib\backend.ts: owner Apply must hardcode the closed Task View operation ID')
+foreach ($operation in 'set_taskbar_widgets_visibility', 'set_taskbar_task_view_visibility', 'set_welcome_experience_enabled', 'set_tips_suggestions_enabled', 'set_notification_suggestions_enabled', 'set_settings_suggested_content_enabled') {
+    if (-not $frontendBackend.Contains("| '$operation'")) {
+        $failures.Add("frontend\src\lib\backend.ts: closed Owner Mode operation '$operation' is missing")
+    }
 }
 $productPage = Get-Content -Raw -LiteralPath (Join-Path $repo 'frontend\src\routes\+page.svelte')
 foreach ($operation in 'set_taskbar_show_desktop_enabled') {
@@ -117,7 +128,7 @@ foreach ($operation in 'set_taskbar_show_desktop_enabled') {
         $failures.Add("frontend\src\routes\+page.svelte: non-product operation '$operation' is exposed")
     }
 }
-foreach ($token in 'TaskbarDa', 'ShowTaskViewButton', 'CurrentVersion\Explorer\Advanced') {
+foreach ($token in 'TaskbarDa', 'ShowTaskViewButton', 'SubscribedContent', 'SoftLandingEnabled', 'CurrentVersion\Explorer\Advanced', 'ContentDeliveryManager') {
     if ($productPage.Contains($token)) {
         $failures.Add("frontend\src\routes\+page.svelte: raw registry token '$token' leaked into product input/UI")
     }
@@ -153,9 +164,9 @@ if ($failures.Count -gt 0) {
 }
 
 Write-Host 'Mutation boundary scan passed.'
-Write-Host 'Normal product writes: TaskbarDa and ShowTaskViewButton in two fixed HKCU taskbar operations only.'
+Write-Host 'Normal product writes: six fixed HKCU values for Widgets, Task View, and four current-user cleanup operations only.'
 Write-Host 'Engineering harness only: the closed TaskbarSd handler remains compiled/testable but is not registered by normal launch.'
-Write-Host 'Allowed machine reads: fixed Widgets, HideTaskViewButton, and NoSetTaskbar policy checks only.'
+Write-Host 'Allowed machine reads: fixed Widgets, Task View, taskbar-lock, and CloudContent policy checks only.'
 Write-Host 'Normal launch and Scan reach no write call; registry writes remain isolated behind explicit owner commands.'
 Write-Host 'Allowed process boundary: fixed read-only inspection PowerShell only.'
 Write-Host 'Allowed VM tooling: explicit approved-VM checkpoint/restore/payload copy in Invoke-DeslopperHyperVValidation.ps1 only; it cannot launch mutation.'

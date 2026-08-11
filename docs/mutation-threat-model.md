@@ -58,7 +58,8 @@ elevation, service, generic helper, or remote principal.
 - Mutation Tauri commands are compiled and registered only with
   `mutation-alpha`; normal-build compilation is a release gate. The frontend is
   untrusted even in the internal build.
-- Fault injection is test-only, handlers remain a three-entry closed registry,
+- Fault injection is test-only, the engineering harness remains a three-entry
+  closed registry and Owner Mode remains a six-entry closed allowlist,
   and no registry hive/path/name/value or shell command is caller-controlled.
 - The guest runner is the normal application/broker path. Live evidence cannot
   upgrade handler maturity automatically and manual visual claims remain
@@ -75,7 +76,7 @@ elevation, service, generic helper, or remote principal.
 - Real apply/rollback behavior is unproven until the disposable-VM matrix runs.
 - The cross-process lock coordinates local instances; it is not a standalone
   security boundary.
-- The normal product enables only Widgets and Task View; Show Desktop remains non-productized.
+- The normal product enables exactly the six M3 operations; Show Desktop remains non-productized.
 - Deslopper protects against accidental misuse, frontend parameter tampering,
   stale plans, and implementation errors. It is not a security boundary against
   an already-compromised user account with arbitrary same-user code execution.
@@ -91,3 +92,20 @@ bind to a versioned SHA-256 machine-plus-user scope. Widgets and Task View are
 exposed through separate fixed operations; Show Desktop remains engineering-only.
 A rejected unchanged permission failure exposes no Undo and can suppress only
 the proven operation/machine/account capability. There is no elevation or ACL path.
+
+## Owner Mode M3 delta
+
+M3 reuses the M2 transaction path and adds four fixed current-user DWORD
+handlers selected only by closed operation IDs. The internal store helper cannot
+accept a frontend hive, path, name, type, or integer. Each handler reads and
+writes the same Content Delivery Manager value interpreted by its detector;
+configured matching Cloud Content policy is authoritative. Missing and
+non-binary representations fail closed. Direct-change-unavailable receipts are
+now operation-specific within the stable machine/account scope. The normal UI
+contains no raw registry parameters, and the write-boundary scan still permits
+only one bounded set call and one exact-absence restore call in the fixed store.
+
+Lock-screen suggestions were excluded because the detector's
+`ConfigureWindowsSpotlight` policy is broader than
+`RotatingLockScreenOverlayEnabled`. M3 adds no AppX, HKLM write, service, task,
+Explorer lifecycle, elevation, ACL, shell, Taskbar Search, or TaskbarSd surface.

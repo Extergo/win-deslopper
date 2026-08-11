@@ -131,3 +131,14 @@ verification, process-exit persistence, relaunch, durable Undo, exact
 restoration, and independent final verification; its evidence is recorded in
 `docs/owner-mode-m2-physical-validation.md`. CI never performs mutation. The
 separate engineering harness continues to follow `docs/vm-mutation-protocol.md`.
+
+Owner Mode M3 adds parameterized fake-backend coverage for each accepted cleanup
+operation: exact DWORD 0/1 interpretation, missing and invalid refusal, policy
+ownership, both Apply directions, no-op, persisted pre/post state, direct and
+detector verification, rejected unchanged writes, ambiguous outcomes,
+automatic rollback, failed recovery, exact conflict-safe Undo, relaunch,
+owner-scope binding, operation-scoped direct-change-unavailable behavior, and
+duplicate-submit locking. Detector tests separately prove the fixed value and
+policy names and the opposite preference/policy DWORD interpretation. No test
+opens a writable live registry key. The unexecuted physical protocol is
+`docs/owner-mode-m3-current-user-cleanup-smoke-test.md`.

@@ -1237,30 +1237,54 @@ fn setting_detection(
             QueryErrorKind::UnsupportedCommand,
         );
     };
-    let policy_value = if policy_field.is_empty() {
+    let policy_raw = if policy_field.is_empty() {
         None
     } else {
         query_state(context, QueryId::PolicyRegistry)
             .ok()
-            .and_then(|value| value[policy_field].as_i64())
+            .and_then(|value| value.get(policy_field).cloned())
     };
+    let policy_value = policy_raw.as_ref().and_then(serde_json::Value::as_i64);
     let preference_raw = preference_field.and_then(|field| {
         query_state(context, QueryId::UserPreferences)
             .ok()
             .and_then(|value| value.get(field).cloned())
     });
     let preference_value = preference_raw.as_ref().and_then(serde_json::Value::as_i64);
-    if id == ComponentId::TaskbarWidgets
-        && preference_raw
-            .as_ref()
-            .is_some_and(|value| !value.is_null() && !matches!(value.as_i64(), Some(0 | 1)))
-    {
+    let exact_binary_contract = matches!(
+        id,
+        ComponentId::WelcomeExperience
+            | ComponentId::TipsSuggestions
+            | ComponentId::LockScreenSuggestions
+            | ComponentId::NotificationSuggestions
+            | ComponentId::SettingsSuggestedContent
+            | ComponentId::TaskbarWidgets
+    );
+    let preference_inverted = inverted
+        && !matches!(
+            id,
+            ComponentId::WelcomeExperience
+                | ComponentId::TipsSuggestions
+                | ComponentId::NotificationSuggestions
+                | ComponentId::SettingsSuggestedContent
+        );
+    let invalid_policy = policy_raw
+        .as_ref()
+        .is_some_and(|value| !value.is_null() && !matches!(value.as_i64(), Some(0 | 1)));
+    let invalid_preference = preference_raw
+        .as_ref()
+        .is_some_and(|value| !value.is_null() && !matches!(value.as_i64(), Some(0 | 1)));
+    if exact_binary_contract && (invalid_policy || invalid_preference) {
         return base_unknown(
             id,
             info,
             DetectorStatus::Unknown,
-            "TaskbarDa contained an unsupported value; no effective state was inferred",
-            QueryId::UserPreferences,
+            "A fixed setting representation was not DWORD 0 or 1; no effective state was inferred",
+            if invalid_policy {
+                QueryId::PolicyRegistry
+            } else {
+                QueryId::UserPreferences
+            },
             QueryErrorKind::SchemaMismatch,
         );
     }
@@ -1288,15 +1312,26 @@ fn setting_detection(
             },
         );
     }
-    let render = |value: i64| {
+    let render_policy = |value: i64| {
         if if inverted { value == 0 } else { value != 0 } {
             "Enabled".to_owned()
         } else {
             "Disabled".to_owned()
         }
     };
-    let policy_state = policy_value.map(render);
-    let preference_state = preference_value.map(render);
+    let render_preference = |value: i64| {
+        if if preference_inverted {
+            value == 0
+        } else {
+            value != 0
+        } {
+            "Enabled".to_owned()
+        } else {
+            "Disabled".to_owned()
+        }
+    };
+    let policy_state = policy_value.map(render_policy);
+    let preference_state = preference_value.map(render_preference);
     let effective_state = policy_state.clone().or_else(|| preference_state.clone());
     let attribution =
         management_attribution(context, policy_value.is_some(), preference_value.is_some());
@@ -1309,8 +1344,13 @@ fn setting_detection(
         }
     } else {
         State::UserPreference {
-            enabled: preference_value
-                .is_some_and(|value| if inverted { value == 0 } else { value != 0 }),
+            enabled: preference_value.is_some_and(|value| {
+                if preference_inverted {
+                    value == 0
+                } else {
+                    value != 0
+                }
+            }),
         }
     };
     let control_precedence = ControlPrecedence {
@@ -1854,6 +1894,141 @@ mod tests {
                 executions: BTreeMap::new(),
             },
         )
+    }
+
+    fn cleanup_detection(
+        component_id: ComponentId,
+        policy_field: &str,
+        policy: serde_json::Value,
+        preference_field: &str,
+        preference: serde_json::Value,
+    ) -> DetectionResult {
+        let mut policy_values = serde_json::Map::new();
+        policy_values.insert(policy_field.into(), policy);
+        let mut preference_values = serde_json::Map::new();
+        preference_values.insert(preference_field.into(), preference);
+        let mut values = BTreeMap::new();
+        values.insert(
+            QueryId::PolicyRegistry,
+            Ok(serde_json::Value::Object(policy_values)),
+        );
+        values.insert(
+            QueryId::UserPreferences,
+            Ok(serde_json::Value::Object(preference_values)),
+        );
+        setting_detection(
+            component_id,
+            &default_platform(),
+            &SharedContext {
+                values,
+                executions: BTreeMap::new(),
+            },
+        )
+    }
+
+    #[test]
+    fn m3_cleanup_detectors_enforce_exact_binary_policy_and_preference_contracts() {
+        let contracts = [
+            (ComponentId::WelcomeExperience, "Welcome", "Welcome"),
+            (ComponentId::TipsSuggestions, "Tips", "Tips"),
+            (
+                ComponentId::NotificationSuggestions,
+                "NotificationSuggestions",
+                "NotificationSuggestions",
+            ),
+            (
+                ComponentId::SettingsSuggestedContent,
+                "SettingsSuggestions",
+                "SettingsSuggestions",
+            ),
+        ];
+        for (component_id, policy_field, preference_field) in contracts {
+            let enabled = cleanup_detection(
+                component_id,
+                policy_field,
+                serde_json::Value::Null,
+                preference_field,
+                serde_json::json!(1),
+            );
+            assert!(matches!(
+                enabled.current,
+                State::UserPreference { enabled: true }
+            ));
+            let disabled = cleanup_detection(
+                component_id,
+                policy_field,
+                serde_json::Value::Null,
+                preference_field,
+                serde_json::json!(0),
+            );
+            assert!(matches!(
+                disabled.current,
+                State::UserPreference { enabled: false }
+            ));
+            let missing = cleanup_detection(
+                component_id,
+                policy_field,
+                serde_json::Value::Null,
+                preference_field,
+                serde_json::Value::Null,
+            );
+            assert_eq!(missing.detector_status, DetectorStatus::Unknown);
+            for invalid in [serde_json::json!(2), serde_json::json!("1")] {
+                let invalid_preference = cleanup_detection(
+                    component_id,
+                    policy_field,
+                    serde_json::Value::Null,
+                    preference_field,
+                    invalid.clone(),
+                );
+                assert_eq!(invalid_preference.detector_status, DetectorStatus::Unknown);
+                let invalid_policy = cleanup_detection(
+                    component_id,
+                    policy_field,
+                    invalid,
+                    preference_field,
+                    serde_json::json!(1),
+                );
+                assert_eq!(invalid_policy.detector_status, DetectorStatus::Unknown);
+            }
+            let disabled_by_policy = cleanup_detection(
+                component_id,
+                policy_field,
+                serde_json::json!(1),
+                preference_field,
+                serde_json::json!(1),
+            );
+            assert!(matches!(
+                disabled_by_policy.current,
+                State::Policy {
+                    configured: true,
+                    enabled: false
+                }
+            ));
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn m3_cleanup_detector_queries_use_the_same_fixed_handler_values() {
+        let preferences = powershell_script(QueryId::UserPreferences);
+        let policies = powershell_script(QueryId::PolicyRegistry);
+        for value in [
+            "SubscribedContent-310093Enabled",
+            "SoftLandingEnabled",
+            "SubscribedContent-338389Enabled",
+            "SubscribedContent-338393Enabled",
+        ] {
+            assert!(preferences.contains(value), "missing preference {value}");
+        }
+        for value in [
+            "DisableWindowsSpotlightWindowsWelcomeExperience",
+            "DisableSoftLanding",
+            "DisableWindowsSpotlightOnActionCenter",
+            "DisableWindowsSpotlightOnSettings",
+        ] {
+            assert!(policies.contains(value), "missing policy {value}");
+        }
     }
 
     fn task_view_fixture(

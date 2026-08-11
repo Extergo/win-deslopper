@@ -178,36 +178,29 @@ describe('backend client', () => {
     expect(JSON.stringify(invokeCommand.mock.calls[0])).not.toContain('registry');
   });
 
-  it('exposes the normal Widgets and Task View owner workflows without arbitrary parameters', async () => {
+  it('exposes the closed Owner Mode M3 workflows without arbitrary parameters', async () => {
     const invokeCommand = vi.fn<BackendInvoker>().mockResolvedValue({});
     const client = createBackendClient(invokeCommand);
 
-    await client.getWidgetsActionability();
-    await client.getTaskViewActionability();
-    await client.applyWidgets('disabled', 'inspection-1');
-    await client.applyTaskView('enabled', 'inspection-1');
+    await client.getOwnerActionability('set_taskbar_widgets_visibility');
+    await client.getOwnerActionability('set_settings_suggested_content_enabled');
+    await client.applyOwnerOperation(
+      'set_notification_suggestions_enabled',
+      'disabled',
+      'inspection-1'
+    );
     await client.undoOwnerChange('transaction-1');
     await client.getOwnerChangeHistory();
 
     expect(invokeCommand.mock.calls).toEqual([
-      ['get_widgets_actionability'],
-      ['get_task_view_actionability'],
+      ['get_owner_actionability', { operationId: 'set_taskbar_widgets_visibility' }],
+      ['get_owner_actionability', { operationId: 'set_settings_suggested_content_enabled' }],
       [
         'apply_owner_operation',
         {
           request: {
-            operationId: 'set_taskbar_widgets_visibility',
+            operationId: 'set_notification_suggestions_enabled',
             target: 'disabled',
-            sourceInspectionId: 'inspection-1'
-          }
-        }
-      ],
-      [
-        'apply_owner_operation',
-        {
-          request: {
-            operationId: 'set_taskbar_task_view_visibility',
-            target: 'enabled',
             sourceInspectionId: 'inspection-1'
           }
         }
@@ -216,7 +209,7 @@ describe('backend client', () => {
       ['get_owner_change_history']
     ]);
     expect(JSON.stringify(invokeCommand.mock.calls)).not.toMatch(
-      /registry|taskbarDa|showTaskViewButton|currentVersion|explorer\\advanced|show_desktop/i
+      /registry|taskbarDa|showTaskViewButton|subscribedContent|softLanding|currentVersion|show_desktop/i
     );
   });
 

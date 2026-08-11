@@ -265,7 +265,15 @@ export interface DesiredStateValidation {
 export type MutationOperationId =
   | 'set_taskbar_widgets_visibility'
   | 'set_taskbar_task_view_visibility'
-  | 'set_taskbar_show_desktop_enabled';
+  | 'set_taskbar_show_desktop_enabled'
+  | 'set_welcome_experience_enabled'
+  | 'set_tips_suggestions_enabled'
+  | 'set_notification_suggestions_enabled'
+  | 'set_settings_suggested_content_enabled';
+export type OwnerMutationOperationId = Exclude<
+  MutationOperationId,
+  'set_taskbar_show_desktop_enabled'
+>;
 export type MutationTarget = 'enabled' | 'disabled';
 
 export type OwnerActionabilityStatus =
@@ -279,7 +287,7 @@ export type OwnerActionabilityStatus =
 
 export interface OwnerActionability {
   status: OwnerActionabilityStatus;
-  operationId: 'set_taskbar_widgets_visibility' | 'set_taskbar_task_view_visibility';
+  operationId: OwnerMutationOperationId;
   currentState: MutationCapturedState | null;
   availableTargets: MutationTarget[];
   reason: string;
@@ -567,10 +575,12 @@ export interface BackendClient {
     includeHistorySummary: boolean;
     includeRedactedErrors: boolean;
   }): Promise<Record<string, unknown>>;
-  getWidgetsActionability(): Promise<OwnerActionability>;
-  getTaskViewActionability(): Promise<OwnerActionability>;
-  applyWidgets(target: MutationTarget, sourceInspectionId: string): Promise<OwnerOperationResult>;
-  applyTaskView(target: MutationTarget, sourceInspectionId: string): Promise<OwnerOperationResult>;
+  getOwnerActionability(operationId: OwnerMutationOperationId): Promise<OwnerActionability>;
+  applyOwnerOperation(
+    operationId: OwnerMutationOperationId,
+    target: MutationTarget,
+    sourceInspectionId: string
+  ): Promise<OwnerOperationResult>;
   undoOwnerChange(transactionId: string): Promise<OwnerOperationResult>;
   getOwnerChangeHistory(): Promise<MutationTransaction[]>;
   getMutationAlphaStatus(): Promise<MutationAlphaStatus>;
@@ -673,22 +683,12 @@ export function createBackendClient(
       (await invokeCommand('clear_local_history', { confirmed })) as PlatformDashboard,
     generateDiagnosticsExport: async (request) =>
       (await invokeCommand('generate_diagnostics_export', { request })) as Record<string, unknown>,
-    getWidgetsActionability: async () =>
-      (await invokeCommand('get_widgets_actionability')) as OwnerActionability,
-    getTaskViewActionability: async () =>
-      (await invokeCommand('get_task_view_actionability')) as OwnerActionability,
-    applyWidgets: async (target, sourceInspectionId) =>
+    getOwnerActionability: async (operationId) =>
+      (await invokeCommand('get_owner_actionability', { operationId })) as OwnerActionability,
+    applyOwnerOperation: async (operationId, target, sourceInspectionId) =>
       (await invokeCommand('apply_owner_operation', {
         request: {
-          operationId: 'set_taskbar_widgets_visibility',
-          target,
-          sourceInspectionId
-        }
-      })) as OwnerOperationResult,
-    applyTaskView: async (target, sourceInspectionId) =>
-      (await invokeCommand('apply_owner_operation', {
-        request: {
-          operationId: 'set_taskbar_task_view_visibility',
+          operationId,
           target,
           sourceInspectionId
         }
