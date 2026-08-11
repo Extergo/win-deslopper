@@ -1,5 +1,9 @@
 # Mutation alpha threat model
 
+> This is the historical engineering-harness threat model. D-015 adds the
+> normal Owner Mode boundary. Harness target/approval gates neither authorize
+> nor block the installed product.
+
 Reviewed 2026-08-02. This model applies only to internal debug builds compiled
 with `mutation-alpha` and launched with `--enable-mutation-alpha`.
 
@@ -71,7 +75,17 @@ elevation, service, generic helper, or remote principal.
 - Real apply/rollback behavior is unproven until the disposable-VM matrix runs.
 - The cross-process lock coordinates local instances; it is not a standalone
   security boundary.
-- No operation is enabled in a normal build; this alpha is not production-ready.
+- The normal product enables only Widgets; the other alpha handlers are not product-ready.
 - Deslopper protects against accidental misuse, frontend parameter tampering,
   stale plans, and implementation errors. It is not a security boundary against
   an already-compromised user account with arbitrary same-user code execution.
+
+## Owner Mode M1 delta
+
+Owner Mode removes debug/CLI/scenario/target/approval/phrase/nonce ceremony from
+the product path. It retains the closed registry, fixed store, fresh detector
+and direct preflight, exact durable capture, locks, actual post-attempt capture,
+direct plus Widgets-detector verification, safe automatic rollback, exact
+conflict-aware Undo, tamper checks, and no startup replay. Product transactions
+bind to a versioned SHA-256 machine-plus-user scope. Only Widgets is exposed;
+Task View and Show Desktop remain engineering-only.

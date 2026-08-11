@@ -4,8 +4,10 @@ mod app;
 mod applicability;
 mod inspection;
 mod model;
-#[cfg(feature = "mutation-alpha")]
+#[cfg(feature = "owner-mode")]
 mod mutation;
+#[cfg(feature = "owner-mode")]
+mod owner_scope;
 mod package_identity;
 mod persistence;
 mod platform;

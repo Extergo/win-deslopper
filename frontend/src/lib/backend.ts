@@ -268,6 +268,19 @@ export type MutationOperationId =
   | 'set_taskbar_show_desktop_enabled';
 export type MutationTarget = 'enabled' | 'disabled';
 
+export type OwnerActionabilityStatus =
+  'ready' | 'needs_scan' | 'managed' | 'unsupported' | 'unknown' | 'busy';
+
+export interface OwnerActionability {
+  status: OwnerActionabilityStatus;
+  operationId: 'set_taskbar_widgets_visibility';
+  currentState: MutationCapturedState | null;
+  availableTargets: MutationTarget[];
+  reason: string;
+  scope: string;
+  undoSupported: boolean;
+}
+
 export interface ApprovedMutationOperationScope {
   operationId: MutationOperationId;
   allowedTargetStates: MutationTarget[];
@@ -474,6 +487,17 @@ export interface MutationTransaction {
   };
 }
 
+export type OwnerOperationOutcome =
+  'changed' | 'already_set' | 'could_not_change' | 'restored' | 'needs_attention';
+
+export interface OwnerOperationResult {
+  outcome: OwnerOperationOutcome;
+  transaction: MutationTransaction;
+  currentState: MutationCapturedState | null;
+  message: string;
+  note: string | null;
+}
+
 export type AppAction =
   | { type: 'search_changed'; query: string }
   | { type: 'filter_changed'; filter: CatalogueFilter }
@@ -526,6 +550,10 @@ export interface BackendClient {
     includeHistorySummary: boolean;
     includeRedactedErrors: boolean;
   }): Promise<Record<string, unknown>>;
+  getWidgetsActionability(): Promise<OwnerActionability>;
+  applyWidgets(target: MutationTarget, sourceInspectionId: string): Promise<OwnerOperationResult>;
+  undoWidgets(transactionId: string): Promise<OwnerOperationResult>;
+  getOwnerChangeHistory(): Promise<MutationTransaction[]>;
   getMutationAlphaStatus(): Promise<MutationAlphaStatus>;
   acknowledgeMutationAlphaWarning(acknowledged: boolean): Promise<MutationAlphaStatus>;
   getMutationOperationOptions(): Promise<MutationOperationOption[]>;
@@ -626,6 +654,22 @@ export function createBackendClient(
       (await invokeCommand('clear_local_history', { confirmed })) as PlatformDashboard,
     generateDiagnosticsExport: async (request) =>
       (await invokeCommand('generate_diagnostics_export', { request })) as Record<string, unknown>,
+    getWidgetsActionability: async () =>
+      (await invokeCommand('get_widgets_actionability')) as OwnerActionability,
+    applyWidgets: async (target, sourceInspectionId) =>
+      (await invokeCommand('apply_owner_operation', {
+        request: {
+          operationId: 'set_taskbar_widgets_visibility',
+          target,
+          sourceInspectionId
+        }
+      })) as OwnerOperationResult,
+    undoWidgets: async (transactionId) =>
+      (await invokeCommand('undo_owner_operation', {
+        request: { transactionId }
+      })) as OwnerOperationResult,
+    getOwnerChangeHistory: async () =>
+      (await invokeCommand('get_owner_change_history')) as MutationTransaction[],
     getMutationAlphaStatus: async () =>
       (await invokeCommand('get_mutation_alpha_status')) as MutationAlphaStatus,
     acknowledgeMutationAlphaWarning: async (acknowledged) =>

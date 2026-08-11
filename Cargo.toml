@@ -1,11 +1,12 @@
 [package]
 name = "win-deslopper"
-version = "0.1.0-alpha.1"
+version = "0.1.0"
 edition = "2024"
 
 [features]
-default = []
-mutation-alpha = ["dep:sha2", "dep:winreg"]
+default = ["owner-mode"]
+owner-mode = ["dep:sha2", "dep:winreg"]
+mutation-alpha = ["owner-mode"]
 
 [dependencies]
 rusqlite = { version = "0.37.0", features = ["bundled"] }

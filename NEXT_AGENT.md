@@ -1,27 +1,24 @@
-# Read-Only Product Alpha handoff
+# Owner Mode M1 handoff
 
-The active product milestone is Deslopper `0.1.0-alpha.1`, a normal-feature,
-read-only Windows application. The branch starts from readiness commit
-`aad404e690175857a69085554e3223c078ded2e6`.
+The active product milestone is Deslopper Owner Mode M1: one normal-release
+Widgets Apply/Verify/Undo vertical slice. D-015 supersedes the read-only normal
+product boundary while preserving the historical Mutation Alpha record.
 
 Read `AGENTS.md`, `.deslopper/policy.toml`, `README.md`, `ARCHITECTURE.md`,
 `SECURITY.md`, `docs/read-only-product-alpha.md`, `docs/inspection-pipeline.md`,
 and `docs/testing-strategy.md` before acting.
 
-## Safety status
+## Safety contract
 
-- The normal build registers only read-only inspection, local persistence,
-  desired-state preview, snapshot comparison, diagnostics, and local-data
-  commands.
+- The normal build registers the read-only product plus closed owner Widgets
+  actionability, Apply, Undo, and history commands.
 - The main window capability remains exactly event listen/unlisten.
 - Diagnostics are generated in Rust, exclude machine identity and validation
   files, and are saved only after user review through a system file picker.
 - Product previews are explicitly non-executable and create no mutation
   transaction or approval nonce.
-- The original development host remains permanently denied by an ignored,
-  local-only fingerprint file.
-- Mutation alpha remains separately compiled and synthetic-tested only. Zero
-  live-validated handlers exist.
+- Mutation Alpha governance remains an optional engineering harness and is not
+  a product runtime gate.
 
 ## Withdrawn physical target
 
@@ -32,15 +29,14 @@ performed a registry write. This was a target-availability decision, not a
 mutation failure. A future disposable target or VM needs a new preparation and
 approval record from scratch.
 
-## Next safe work
+## M1 status
 
-Continue Product Alpha quality and real-world read-only compatibility work:
+Owner Mode M1 is implemented and packaged as version `0.1.0`. The default
+release composition contains only Widgets actionability, Apply, Undo, and owner
+history; Task View and Show Desktop remain engineering-harness-only handlers.
+Automated verification uses fake backends and performed no live registry write.
 
-1. Expand read-only fixtures across Home, Pro, Enterprise, 24H2, 25H2, managed,
-   and standard-user environments.
-2. Review keyboard navigation, screen readers, and 125%/150%/200% Windows
-   scaling on additional machines.
-3. Exercise install/uninstall and database recovery with disposable local data.
-4. Keep permission-limited AppX scopes and unsupported preview surfaces honest.
-5. Do not begin live mutation without a new approved disposable target and a
-   separately authorized milestone.
+The remaining release activity is the human Windows smoke test in
+`docs/owner-mode-widgets-smoke-test.md`. Do not productize Task View, Show
+Desktop, AppX, HKLM, services, elevation, or generic execution as a continuation
+of M1.

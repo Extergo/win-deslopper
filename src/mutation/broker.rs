@@ -2,32 +2,41 @@ use std::{
     fs::{File, OpenOptions},
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicU64, Ordering},
     },
 };
+
+#[cfg(feature = "mutation-alpha")]
+use std::sync::atomic::AtomicBool;
 
 use serde::Serialize;
 
 use super::{
-    HANDLER_VERSION,
+    OWNER_HANDLER_VERSION,
     handlers::{
         HandlerError, MutationBackend as HandlerBackend, OperationHandler,
         TaskbarShowDesktopHandler, TaskbarTaskViewHandler, TaskbarWidgetsHandler, expected,
     },
     journal::MutationJournal,
+    plan::{CapturedState, MutationPlan, hash_serializable, hash_text},
+    request::{MutationOperationId, MutationTarget},
+    rollback::conflicts_with_applied_state,
+    transaction::{MutationStep, MutationTransaction, RollbackRecord, TransactionStatus},
+};
+
+#[cfg(feature = "mutation-alpha")]
+use super::{
+    HANDLER_VERSION,
     live_validation::{
         EvidenceExportRequest, LiveEvidenceBundle, LiveValidationGateStatus, ValidationMaturity,
         ValidationScenarioManifest, ValidationTargetType, load_local_manifest,
         local_scoped_approval_allows, local_validation_directory,
     },
-    plan::{CapturedState, MutationPlan, hash_serializable, hash_text},
-    request::{AlphaGateStatus, MutationOperationId, MutationTarget, PlanRequest, RollbackRequest},
-    rollback::conflicts_with_applied_state,
-    transaction::{MutationStep, MutationTransaction, RollbackRecord, TransactionStatus},
+    request::{AlphaGateStatus, PlanRequest, RollbackRequest},
     verification::classify_apply,
 };
 
-#[cfg(test)]
+#[cfg(all(test, feature = "mutation-alpha"))]
 use super::live_validation::ApprovedOperationScope;
 
 static BROKER_SEQUENCE: AtomicU64 = AtomicU64::new(1);
@@ -43,9 +52,14 @@ pub struct BrokerContext {
     pub source_observation_id: String,
     pub windows_build: u32,
     pub edition: String,
+    pub architecture: String,
+    #[cfg(feature = "mutation-alpha")]
     pub domain_joined: Option<bool>,
+    #[cfg(feature = "mutation-alpha")]
     pub entra_joined: Option<bool>,
+    #[cfg(feature = "mutation-alpha")]
     pub workplace_joined: Option<bool>,
+    #[cfg(feature = "mutation-alpha")]
     pub mdm_enrolled: Option<bool>,
     pub authority: String,
     pub authority_acceptable: bool,
@@ -55,6 +69,579 @@ pub struct BrokerContext {
     pub applicable: bool,
     pub evidence_fingerprint: String,
     pub desired_state_revision_id: Option<i64>,
+    pub detector_current_enabled: Option<bool>,
+    pub detector_status: String,
+}
+
+#[cfg(all(test, not(feature = "mutation-alpha")))]
+mod owner_tests {
+    use std::{
+        collections::VecDeque,
+        sync::{
+            Arc, Mutex,
+            atomic::{AtomicBool, AtomicU64, Ordering},
+        },
+    };
+
+    use super::*;
+    use crate::mutation::{
+        handlers::{HandlerErrorKind, MutationBackend},
+        plan::CapturedRepresentation,
+    };
+
+    #[derive(Clone, Copy)]
+    enum WriteBehavior {
+        Succeed,
+        FailBefore,
+        FailAfter,
+        Ignore,
+    }
+
+    struct FakeBackend {
+        widgets: Mutex<CapturedRepresentation>,
+        policy: AtomicBool,
+        writes: AtomicU64,
+        behaviors: Mutex<VecDeque<WriteBehavior>>,
+    }
+
+    impl FakeBackend {
+        fn new(initial: CapturedRepresentation) -> Self {
+            Self {
+                widgets: Mutex::new(initial),
+                policy: AtomicBool::new(false),
+                writes: AtomicU64::new(0),
+                behaviors: Mutex::new(VecDeque::new()),
+            }
+        }
+
+        fn queue(&self, behavior: WriteBehavior) {
+            self.behaviors.lock().unwrap().push_back(behavior);
+        }
+
+        fn set(&self, state: CapturedRepresentation) {
+            *self.widgets.lock().unwrap() = state;
+        }
+
+        fn write(&self, state: &CapturedRepresentation) -> Result<(), HandlerError> {
+            self.writes.fetch_add(1, Ordering::SeqCst);
+            match self
+                .behaviors
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or(WriteBehavior::Succeed)
+            {
+                WriteBehavior::Succeed => self.set(state.clone()),
+                WriteBehavior::FailBefore => {
+                    return Err(HandlerError::new(
+                        HandlerErrorKind::WriteFailed,
+                        "synthetic write failed before change",
+                    ));
+                }
+                WriteBehavior::FailAfter => {
+                    self.set(state.clone());
+                    return Err(HandlerError::new(
+                        HandlerErrorKind::WriteFailed,
+                        "synthetic write failed after change",
+                    ));
+                }
+                WriteBehavior::Ignore => {}
+            }
+            Ok(())
+        }
+    }
+
+    impl MutationBackend for FakeBackend {
+        fn read_widgets(&self) -> Result<CapturedRepresentation, HandlerError> {
+            Ok(self.widgets.lock().unwrap().clone())
+        }
+
+        fn widgets_externally_managed(&self) -> Result<bool, HandlerError> {
+            Ok(self.policy.load(Ordering::SeqCst))
+        }
+
+        fn write_widgets(&self, state: &CapturedRepresentation) -> Result<(), HandlerError> {
+            self.write(state)
+        }
+
+        fn read_task_view(&self) -> Result<CapturedRepresentation, HandlerError> {
+            Ok(CapturedRepresentation::Dword(1))
+        }
+
+        fn task_view_externally_managed(&self) -> Result<bool, HandlerError> {
+            Ok(false)
+        }
+
+        fn write_task_view(&self, _: &CapturedRepresentation) -> Result<(), HandlerError> {
+            panic!("Task View is not an owner operation")
+        }
+
+        fn read_show_desktop(&self) -> Result<CapturedRepresentation, HandlerError> {
+            Ok(CapturedRepresentation::Dword(1))
+        }
+
+        fn show_desktop_externally_managed(&self) -> Result<bool, HandlerError> {
+            Ok(false)
+        }
+
+        fn write_show_desktop(&self, _: &CapturedRepresentation) -> Result<(), HandlerError> {
+            panic!("Show Desktop is not an owner operation")
+        }
+    }
+
+    fn context(enabled: Option<bool>) -> BrokerContext {
+        BrokerContext {
+            machine_id: crate::owner_scope::from_stable_ids("machine", "S-1-5-21-1000"),
+            inspection_id: "inspection-owner".into(),
+            inspection_timestamp: crate::inspection::timestamp(),
+            source_observation_id: "inspection-owner:taskbar_widgets".into(),
+            windows_build: 26_100,
+            edition: "Professional".into(),
+            architecture: "64-bit".into(),
+            authority: "user".into(),
+            authority_acceptable: true,
+            confidence: "confirmed_representation".into(),
+            confidence_sufficient: true,
+            applicability: "applicable".into(),
+            applicable: true,
+            evidence_fingerprint: hash_text("owner-fixture"),
+            desired_state_revision_id: None,
+            detector_current_enabled: enabled,
+            detector_status: if enabled.is_some() {
+                "successful".into()
+            } else {
+                "unknown".into()
+            },
+        }
+    }
+
+    fn temp_database(label: &str) -> std::path::PathBuf {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "deslopper-owner-{label}-{}-{nonce}.db",
+            std::process::id()
+        ))
+    }
+
+    fn broker(
+        label: &str,
+        initial: CapturedRepresentation,
+    ) -> (Broker, Arc<FakeBackend>, std::path::PathBuf) {
+        let backend = Arc::new(FakeBackend::new(initial));
+        let path = temp_database(label);
+        let broker = Broker::with_owner_journal(backend.clone(), MutationJournal::at(path.clone()));
+        (broker, backend, path)
+    }
+
+    #[test]
+    fn owner_registry_exposes_only_widgets() {
+        let (broker, backend, path) = broker("closed", CapturedRepresentation::Dword(1));
+        let result = broker.apply_owner_operation(
+            MutationOperationId::TaskViewVisibility,
+            MutationTarget::Disabled,
+            &context(Some(true)),
+            || Ok(context(Some(false))),
+        );
+        assert_eq!(result.unwrap_err().code, "operation_not_productized");
+        assert_eq!(backend.writes.load(Ordering::SeqCst), 0);
+        cleanup(&path);
+    }
+
+    #[test]
+    fn owner_actionability_handles_managed_unknown_and_missing_states() {
+        let (broker, backend, path) = broker("actionability", CapturedRepresentation::Missing);
+        let missing = broker.owner_actionability(&context(None));
+        assert_eq!(missing.status, OwnerActionabilityStatus::Ready);
+        assert_eq!(missing.available_targets.len(), 2);
+        backend.set(CapturedRepresentation::Dword(2));
+        assert_eq!(
+            broker.owner_actionability(&context(None)).status,
+            OwnerActionabilityStatus::Unknown
+        );
+        backend.set(CapturedRepresentation::Dword(1));
+        backend.policy.store(true, Ordering::SeqCst);
+        assert_eq!(
+            broker.owner_actionability(&context(Some(true))).status,
+            OwnerActionabilityStatus::Managed
+        );
+        cleanup(&path);
+    }
+
+    #[test]
+    fn owner_mode_refuses_unsupported_build_and_arm64_without_writing() {
+        let (broker, backend, path) = broker("unsupported", CapturedRepresentation::Dword(1));
+        let mut old_windows = context(Some(true));
+        old_windows.windows_build = 19_045;
+        assert_eq!(
+            broker.owner_actionability(&old_windows).status,
+            OwnerActionabilityStatus::Unsupported
+        );
+        assert_eq!(
+            broker
+                .apply_owner_operation(
+                    MutationOperationId::WidgetsVisibility,
+                    MutationTarget::Disabled,
+                    &old_windows,
+                    || Ok(context(Some(false))),
+                )
+                .unwrap_err()
+                .code,
+            "unsupported_build"
+        );
+
+        let mut arm64 = context(Some(true));
+        arm64.architecture = "ARM64".into();
+        assert_eq!(
+            broker.owner_actionability(&arm64).status,
+            OwnerActionabilityStatus::Unsupported
+        );
+        assert_eq!(
+            broker
+                .apply_owner_operation(
+                    MutationOperationId::WidgetsVisibility,
+                    MutationTarget::Disabled,
+                    &arm64,
+                    || Ok(context(Some(false))),
+                )
+                .unwrap_err()
+                .code,
+            "unsupported_architecture"
+        );
+        assert_eq!(backend.writes.load(Ordering::SeqCst), 0);
+        cleanup(&path);
+    }
+
+    #[test]
+    fn owner_apply_refuses_managed_unknown_and_stale_state_without_writing() {
+        let (broker, backend, path) = broker("refusals", CapturedRepresentation::Dword(1));
+        backend.policy.store(true, Ordering::SeqCst);
+        assert!(
+            broker
+                .apply_owner_operation(
+                    MutationOperationId::WidgetsVisibility,
+                    MutationTarget::Disabled,
+                    &context(Some(true)),
+                    || Ok(context(Some(false))),
+                )
+                .is_err()
+        );
+
+        backend.policy.store(false, Ordering::SeqCst);
+        backend.set(CapturedRepresentation::Dword(2));
+        assert_eq!(
+            broker
+                .apply_owner_operation(
+                    MutationOperationId::WidgetsVisibility,
+                    MutationTarget::Disabled,
+                    &context(None),
+                    || Ok(context(Some(false))),
+                )
+                .unwrap_err()
+                .code,
+            "handler_error"
+        );
+
+        backend.set(CapturedRepresentation::Dword(0));
+        assert_eq!(
+            broker
+                .apply_owner_operation(
+                    MutationOperationId::WidgetsVisibility,
+                    MutationTarget::Enabled,
+                    &context(Some(true)),
+                    || Ok(context(Some(true))),
+                )
+                .unwrap_err()
+                .code,
+            "stale_source_state"
+        );
+        assert_eq!(backend.writes.load(Ordering::SeqCst), 0);
+        cleanup(&path);
+    }
+
+    #[test]
+    fn apply_noop_writes_nothing_and_success_survives_relaunch_then_undo() {
+        let (broker, backend, path) = broker("relaunch", CapturedRepresentation::Dword(1));
+        let noop = broker
+            .apply_owner_operation(
+                MutationOperationId::WidgetsVisibility,
+                MutationTarget::Enabled,
+                &context(Some(true)),
+                || Ok(context(Some(true))),
+            )
+            .unwrap();
+        assert_eq!(noop.outcome, OwnerOperationOutcome::AlreadySet);
+        assert_eq!(backend.writes.load(Ordering::SeqCst), 0);
+
+        let applied = broker
+            .apply_owner_operation(
+                MutationOperationId::WidgetsVisibility,
+                MutationTarget::Disabled,
+                &context(Some(true)),
+                || Ok(context(Some(false))),
+            )
+            .unwrap();
+        assert_eq!(applied.outcome, OwnerOperationOutcome::Changed);
+        assert_eq!(
+            applied.transaction.status,
+            TransactionStatus::RollbackAvailable
+        );
+        drop(broker);
+
+        let reopened =
+            Broker::with_owner_journal(backend.clone(), MutationJournal::at(path.clone()));
+        let history = reopened
+            .owner_history(&context(Some(false)).machine_id)
+            .unwrap();
+        assert_eq!(history.len(), 2);
+        let restored = reopened
+            .undo_owner_operation(
+                &applied.transaction.transaction_id,
+                &context(Some(false)),
+                || Ok(context(Some(true))),
+            )
+            .unwrap();
+        assert_eq!(restored.outcome, OwnerOperationOutcome::Restored);
+        assert_eq!(restored.transaction.status, TransactionStatus::RolledBack);
+        assert_eq!(
+            backend.read_widgets().unwrap(),
+            CapturedRepresentation::Dword(1)
+        );
+        cleanup(&path);
+    }
+
+    #[test]
+    fn exact_undo_restores_original_absence() {
+        let (broker, backend, path) = broker("absence", CapturedRepresentation::Missing);
+        let applied = broker
+            .apply_owner_operation(
+                MutationOperationId::WidgetsVisibility,
+                MutationTarget::Disabled,
+                &context(None),
+                || Ok(context(Some(false))),
+            )
+            .unwrap();
+        let restored = broker
+            .undo_owner_operation(
+                &applied.transaction.transaction_id,
+                &context(Some(false)),
+                || Ok(context(None)),
+            )
+            .unwrap();
+        assert_eq!(restored.outcome, OwnerOperationOutcome::Restored);
+        assert_eq!(
+            backend.read_widgets().unwrap(),
+            CapturedRepresentation::Missing
+        );
+        cleanup(&path);
+    }
+
+    #[test]
+    fn write_failures_capture_actual_state_and_never_offer_fake_undo() {
+        let (broker, backend, path) = broker("write-failures", CapturedRepresentation::Dword(1));
+        backend.queue(WriteBehavior::FailBefore);
+        let before = broker
+            .apply_owner_operation(
+                MutationOperationId::WidgetsVisibility,
+                MutationTarget::Disabled,
+                &context(Some(true)),
+                || Ok(context(Some(false))),
+            )
+            .unwrap();
+        assert_eq!(before.outcome, OwnerOperationOutcome::CouldNotChange);
+        assert!(before.transaction.post_state.is_some());
+        assert!(!before.transaction.rollback.available);
+
+        backend.queue(WriteBehavior::FailAfter);
+        backend.queue(WriteBehavior::Succeed);
+        let ambiguous = broker
+            .apply_owner_operation(
+                MutationOperationId::WidgetsVisibility,
+                MutationTarget::Disabled,
+                &context(Some(true)),
+                || Ok(context(Some(false))),
+            )
+            .unwrap();
+        assert_eq!(ambiguous.outcome, OwnerOperationOutcome::Restored);
+        assert!(ambiguous.transaction.post_state.is_some());
+        assert!(ambiguous.transaction.rollback.complete);
+        assert!(!ambiguous.transaction.rollback.available);
+        cleanup(&path);
+    }
+
+    #[test]
+    fn detector_failure_rolls_back_when_safe_and_records_rollback_failure() {
+        let (broker, backend, path) = broker("detector-rollback", CapturedRepresentation::Dword(1));
+        let restored = broker
+            .apply_owner_operation(
+                MutationOperationId::WidgetsVisibility,
+                MutationTarget::Disabled,
+                &context(Some(true)),
+                || Ok(context(Some(true))),
+            )
+            .unwrap();
+        assert_eq!(restored.outcome, OwnerOperationOutcome::Restored);
+        assert_eq!(restored.transaction.status, TransactionStatus::RolledBack);
+        assert!(!restored.transaction.rollback.available);
+
+        backend.queue(WriteBehavior::Succeed);
+        backend.queue(WriteBehavior::FailBefore);
+        let failed_rollback = broker
+            .apply_owner_operation(
+                MutationOperationId::WidgetsVisibility,
+                MutationTarget::Disabled,
+                &context(Some(true)),
+                || Ok(context(Some(true))),
+            )
+            .unwrap();
+        assert_eq!(
+            failed_rollback.outcome,
+            OwnerOperationOutcome::NeedsAttention
+        );
+        assert_eq!(
+            failed_rollback.transaction.status,
+            TransactionStatus::RollbackVerificationFailed
+        );
+        assert!(!failed_rollback.transaction.rollback.available);
+        cleanup(&path);
+    }
+
+    #[test]
+    fn ignored_success_is_a_failed_verification_without_undo() {
+        let (broker, backend, path) = broker("ignored", CapturedRepresentation::Dword(1));
+        backend.queue(WriteBehavior::Ignore);
+        let result = broker
+            .apply_owner_operation(
+                MutationOperationId::WidgetsVisibility,
+                MutationTarget::Disabled,
+                &context(Some(true)),
+                || Ok(context(Some(false))),
+            )
+            .unwrap();
+        assert_eq!(result.outcome, OwnerOperationOutcome::CouldNotChange);
+        assert_eq!(
+            result.transaction.status,
+            TransactionStatus::VerificationFailed
+        );
+        assert!(!result.transaction.rollback.available);
+        cleanup(&path);
+    }
+
+    #[test]
+    fn undo_refuses_conflict_and_another_user_scope() {
+        let (broker, backend, path) = broker("conflict", CapturedRepresentation::Dword(1));
+        let applied = broker
+            .apply_owner_operation(
+                MutationOperationId::WidgetsVisibility,
+                MutationTarget::Disabled,
+                &context(Some(true)),
+                || Ok(context(Some(false))),
+            )
+            .unwrap();
+        let mut other_user = context(Some(false));
+        other_user.machine_id = crate::owner_scope::from_stable_ids("machine", "S-1-5-21-2000");
+        assert_eq!(
+            broker
+                .undo_owner_operation(&applied.transaction.transaction_id, &other_user, || {
+                    Ok(other_user.clone())
+                })
+                .unwrap_err()
+                .code,
+            "owner_scope_mismatch"
+        );
+
+        backend.set(CapturedRepresentation::Dword(1));
+        let conflict = broker
+            .undo_owner_operation(
+                &applied.transaction.transaction_id,
+                &context(Some(true)),
+                || Ok(context(Some(true))),
+            )
+            .unwrap();
+        assert_eq!(conflict.outcome, OwnerOperationOutcome::NeedsAttention);
+        assert!(conflict.transaction.rollback.conflict_detected);
+        assert_eq!(backend.writes.load(Ordering::SeqCst), 1);
+        cleanup(&path);
+    }
+
+    #[test]
+    fn exact_prestate_is_durable_before_the_write_boundary() {
+        let (broker, _, path) = broker("prestate", CapturedRepresentation::Dword(1));
+        broker.inject_fault(Some(FaultPoint::BeforeWrite));
+        assert!(
+            broker
+                .apply_owner_operation(
+                    MutationOperationId::WidgetsVisibility,
+                    MutationTarget::Disabled,
+                    &context(Some(true)),
+                    || Ok(context(Some(false))),
+                )
+                .is_err()
+        );
+        broker.inject_fault(None);
+        let history = broker
+            .owner_history(&context(Some(true)).machine_id)
+            .unwrap();
+        assert_eq!(history.len(), 1);
+        assert!(history[0].pre_state.is_some());
+        assert!(history[0].pre_state_hash.is_some());
+        cleanup(&path);
+    }
+
+    #[test]
+    fn owner_startup_recovery_never_replays_an_interrupted_write() {
+        let (broker, backend, path) = broker("recovery", CapturedRepresentation::Dword(1));
+        broker.inject_fault(Some(FaultPoint::ImmediatelyAfterWrite));
+        assert!(
+            broker
+                .apply_owner_operation(
+                    MutationOperationId::WidgetsVisibility,
+                    MutationTarget::Disabled,
+                    &context(Some(true)),
+                    || Ok(context(Some(false))),
+                )
+                .is_err()
+        );
+        assert_eq!(backend.writes.load(Ordering::SeqCst), 1);
+        drop(broker);
+
+        let reopened =
+            Broker::with_owner_journal(backend.clone(), MutationJournal::at(path.clone()));
+        let recovered = reopened.recover_interrupted(&context(Some(false))).unwrap();
+        assert_eq!(recovered.len(), 1);
+        assert_eq!(recovered[0].status, TransactionStatus::RecoveryRequired);
+        assert_eq!(
+            reopened.owner_actionability(&context(Some(false))).status,
+            OwnerActionabilityStatus::Unknown
+        );
+        assert_eq!(
+            reopened
+                .apply_owner_operation(
+                    MutationOperationId::WidgetsVisibility,
+                    MutationTarget::Enabled,
+                    &context(Some(false)),
+                    || Ok(context(Some(true))),
+                )
+                .unwrap_err()
+                .code,
+            "owner_recovery_required"
+        );
+        assert_eq!(backend.writes.load(Ordering::SeqCst), 1);
+        cleanup(&path);
+    }
+
+    fn cleanup(path: &std::path::Path) {
+        for candidate in [
+            path.to_path_buf(),
+            path.with_extension("db-wal"),
+            path.with_extension("db-shm"),
+            path.with_extension("mutation-alpha.lock"),
+        ] {
+            let _ = std::fs::remove_file(candidate);
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -78,6 +665,7 @@ pub struct OperationDefinition {
     pub automatic_remediation_eligible: bool,
 }
 
+#[cfg(feature = "mutation-alpha")]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OperationOption {
@@ -89,6 +677,7 @@ pub struct OperationOption {
     pub reason: String,
 }
 
+#[cfg(feature = "mutation-alpha")]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IssuedPlan {
@@ -97,6 +686,49 @@ pub struct IssuedPlan {
     pub confirmation_text: String,
     pub approval_phrase: String,
     pub proposed_representation: super::plan::CapturedRepresentation,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OwnerActionabilityStatus {
+    Ready,
+    NeedsScan,
+    Managed,
+    Unsupported,
+    Unknown,
+    Busy,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OwnerActionability {
+    pub status: OwnerActionabilityStatus,
+    pub operation_id: MutationOperationId,
+    pub current_state: Option<CapturedState>,
+    pub available_targets: Vec<MutationTarget>,
+    pub reason: String,
+    pub scope: &'static str,
+    pub undo_supported: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OwnerOperationOutcome {
+    Changed,
+    AlreadySet,
+    CouldNotChange,
+    Restored,
+    NeedsAttention,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OwnerOperationResult {
+    pub outcome: OwnerOperationOutcome,
+    pub transaction: MutationTransaction,
+    pub current_state: Option<CapturedState>,
+    pub message: String,
+    pub note: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -132,15 +764,30 @@ impl BrokerError {
 pub struct Broker {
     backend: Arc<dyn HandlerBackend>,
     journal: MutationJournal,
+    #[cfg(feature = "mutation-alpha")]
     command_line_opt_in: bool,
+    #[cfg(feature = "mutation-alpha")]
     live_validation: LiveValidationGateStatus,
+    #[cfg(feature = "mutation-alpha")]
     validation_maturities: Mutex<[ValidationMaturity; 3]>,
+    #[cfg(feature = "mutation-alpha")]
     warning_acknowledged: AtomicBool,
     execution_lock: Mutex<()>,
     fault_point: Mutex<Option<FaultPoint>>,
 }
 
 impl Broker {
+    #[cfg(not(feature = "mutation-alpha"))]
+    pub fn owner(backend: Arc<dyn HandlerBackend>) -> Self {
+        Self {
+            backend,
+            journal: MutationJournal::default(),
+            execution_lock: Mutex::new(()),
+            fault_point: Mutex::new(None),
+        }
+    }
+
+    #[cfg(feature = "mutation-alpha")]
     pub fn new(
         backend: Arc<dyn HandlerBackend>,
         command_line_opt_in: bool,
@@ -158,7 +805,7 @@ impl Broker {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "mutation-alpha"))]
     pub fn with_journal(
         backend: Arc<dyn HandlerBackend>,
         command_line_opt_in: bool,
@@ -177,6 +824,17 @@ impl Broker {
         }
     }
 
+    #[cfg(all(test, not(feature = "mutation-alpha")))]
+    pub fn with_owner_journal(backend: Arc<dyn HandlerBackend>, journal: MutationJournal) -> Self {
+        Self {
+            backend,
+            journal,
+            execution_lock: Mutex::new(()),
+            fault_point: Mutex::new(None),
+        }
+    }
+
+    #[cfg(feature = "mutation-alpha")]
     pub fn gate_status(&self) -> AlphaGateStatus {
         let debug_build = cfg!(debug_assertions);
         let warning_acknowledged = self.warning_acknowledged.load(Ordering::SeqCst);
@@ -219,12 +877,888 @@ impl Broker {
         }
     }
 
+    #[cfg(feature = "mutation-alpha")]
     pub fn acknowledge_warning(&self, acknowledged: bool) -> AlphaGateStatus {
         self.warning_acknowledged
             .store(acknowledged, Ordering::SeqCst);
         self.gate_status()
     }
 
+    pub fn owner_actionability(&self, context: &BrokerContext) -> OwnerActionability {
+        let operation_id = MutationOperationId::WidgetsVisibility;
+        let base = |status, reason, current_state, available_targets| OwnerActionability {
+            status,
+            operation_id,
+            current_state,
+            available_targets,
+            reason,
+            scope: "Changes the Widgets button for this Windows account.",
+            undo_supported: true,
+        };
+        if self.execution_lock.try_lock().is_err() {
+            return base(
+                OwnerActionabilityStatus::Busy,
+                "Another Windows change is in progress.".into(),
+                None,
+                Vec::new(),
+            );
+        }
+        if !crate::owner_scope::is_valid(&context.machine_id) {
+            return base(
+                OwnerActionabilityStatus::NeedsScan,
+                "Run a new scan to establish this Windows account's owner scope.".into(),
+                None,
+                Vec::new(),
+            );
+        }
+        if let Err(error) = validate_owner_context(context) {
+            let status = match error.code {
+                "external_authority" => OwnerActionabilityStatus::Managed,
+                "unsupported_build" | "unsupported_edition" | "unsupported_architecture" => {
+                    OwnerActionabilityStatus::Unsupported
+                }
+                _ => OwnerActionabilityStatus::Unknown,
+            };
+            return base(status, error.message, None, Vec::new());
+        }
+        match self.owner_history(&context.machine_id) {
+            Ok(history) if history.iter().any(owner_recovery_blocks_new_apply) => {
+                return base(
+                    OwnerActionabilityStatus::Unknown,
+                    "A previous Widgets transaction needs attention before another change can be applied."
+                        .into(),
+                    None,
+                    Vec::new(),
+                );
+            }
+            Err(_) => {
+                return base(
+                    OwnerActionabilityStatus::Unknown,
+                    "Widgets transaction history could not be verified safely.".into(),
+                    None,
+                    Vec::new(),
+                );
+            }
+            _ => {}
+        }
+        let state = match handler(operation_id).inspect_pre_state(self.backend.as_ref()) {
+            Ok(state) => state,
+            Err(error) => {
+                let status = if error.kind == super::handlers::HandlerErrorKind::PolicyOverride {
+                    OwnerActionabilityStatus::Managed
+                } else {
+                    OwnerActionabilityStatus::Unknown
+                };
+                return base(status, error.summary, None, Vec::new());
+            }
+        };
+        if let Err(error) = validate_captured_authority(&state) {
+            return base(
+                OwnerActionabilityStatus::Managed,
+                error.message,
+                Some(state),
+                Vec::new(),
+            );
+        }
+        let targets = if state.effective_state_known {
+            if context.detector_current_enabled != Some(state.effective_enabled) {
+                return base(
+                    OwnerActionabilityStatus::NeedsScan,
+                    "The Widgets detector and direct setting no longer agree. Run a new scan."
+                        .into(),
+                    Some(state),
+                    Vec::new(),
+                );
+            }
+            vec![if state.effective_enabled {
+                MutationTarget::Disabled
+            } else {
+                MutationTarget::Enabled
+            }]
+        } else if matches!(
+            state.representation,
+            super::plan::CapturedRepresentation::Missing
+        ) {
+            vec![MutationTarget::Disabled, MutationTarget::Enabled]
+        } else {
+            return base(
+                OwnerActionabilityStatus::Unknown,
+                "The Widgets setting has an unsupported representation.".into(),
+                Some(state),
+                Vec::new(),
+            );
+        };
+        base(
+            OwnerActionabilityStatus::Ready,
+            if state.effective_state_known {
+                "Widgets is ready for a verified owner-mode change.".into()
+            } else {
+                "Windows has no explicit Widgets preference. Choose Show or Hide; Undo will restore the original absence.".into()
+            },
+            Some(state),
+            targets,
+        )
+    }
+
+    pub fn apply_owner_operation<F>(
+        &self,
+        operation_id: MutationOperationId,
+        target: MutationTarget,
+        context: &BrokerContext,
+        detector_verification: F,
+    ) -> Result<OwnerOperationResult, BrokerError>
+    where
+        F: FnOnce() -> Result<BrokerContext, String>,
+    {
+        if operation_id != MutationOperationId::WidgetsVisibility {
+            return Err(BrokerError::new(
+                "operation_not_productized",
+                "Only Taskbar Widgets is available in Owner Mode M1.",
+            ));
+        }
+        validate_owner_context(context)?;
+        if self
+            .owner_history(&context.machine_id)?
+            .iter()
+            .any(owner_recovery_blocks_new_apply)
+        {
+            return Err(BrokerError::new(
+                "owner_recovery_required",
+                "A previous Widgets transaction needs attention before another change can be applied.",
+            ));
+        }
+        let _in_process = self.execution_lock.try_lock().map_err(|_| {
+            BrokerError::new(
+                "operation_in_progress",
+                "Another Windows change is in progress.",
+            )
+        })?;
+        let _cross_process = MutationProcessLock::acquire(self.journal.lock_path())
+            .map_err(|message| BrokerError::new("cross_process_lock_unavailable", message))?;
+        let definition = operation_definition(operation_id);
+        handler(operation_id)
+            .validate_target(target)
+            .map_err(handler_error)?;
+        let pre_state = handler(operation_id)
+            .inspect_pre_state(self.backend.as_ref())
+            .map_err(handler_error)?;
+        validate_captured_authority(&pre_state)?;
+        if !pre_state.effective_state_known
+            && !matches!(
+                pre_state.representation,
+                super::plan::CapturedRepresentation::Missing
+            )
+        {
+            return Err(BrokerError::new(
+                "unsupported_representation",
+                "The Widgets setting has an unsupported representation and was not changed.",
+            ));
+        }
+        if pre_state.effective_state_known
+            && context.detector_current_enabled != Some(pre_state.effective_enabled)
+        {
+            return Err(BrokerError::new(
+                "stale_source_state",
+                "The Widgets detector and direct setting changed before Apply. Run a new scan.",
+            ));
+        }
+
+        let plan = owner_plan(context, &definition, target, pre_state.clone())?;
+        self.journal.save_plan(&plan).map_err(journal_error)?;
+        let mut transaction = new_transaction(&plan);
+        transaction.approved_at = Some(crate::inspection::timestamp());
+        self.journal
+            .save_transaction(&transaction)
+            .map_err(journal_error)?;
+        transition(
+            &self.journal,
+            &mut transaction,
+            TransactionStatus::Validating,
+            "owner_preflight",
+        )?;
+        self.fault(FaultPoint::BeforePreStateCapture)?;
+        transition(
+            &self.journal,
+            &mut transaction,
+            TransactionStatus::CapturingPreState,
+            "capture_pre_state",
+        )?;
+        transaction.pre_state_hash =
+            Some(hash_serializable(&pre_state).map_err(serialization_error)?);
+        transaction.pre_state = Some(pre_state.clone());
+        transaction.started_at = Some(crate::inspection::timestamp());
+        self.journal
+            .save_transaction(&transaction)
+            .map_err(journal_error)?;
+        self.fault(FaultPoint::AfterPreStateCapture)?;
+        self.journal
+            .consume_plan(
+                &plan.plan_id,
+                transaction.started_at.as_deref().unwrap_or_default(),
+            )
+            .map_err(journal_error)?;
+
+        let rechecked = handler(operation_id)
+            .inspect_pre_state(self.backend.as_ref())
+            .map_err(handler_error)?;
+        validate_captured_authority(&rechecked)?;
+        if !same_effective_state(&pre_state, &rechecked) {
+            transaction.error_category = Some("changed_source_state".into());
+            transaction.error_summary =
+                Some("The Widgets setting changed after pre-state capture.".into());
+            transition(
+                &self.journal,
+                &mut transaction,
+                TransactionStatus::FailedBeforeMutation,
+                "prewrite_state_changed",
+            )?;
+            return Ok(owner_result(
+                OwnerOperationOutcome::CouldNotChange,
+                transaction,
+                Some(rechecked),
+                "Widgets changed before Deslopper could apply the request.",
+                None,
+            ));
+        }
+
+        let write_required = pre_state.representation != expected(target)
+            || !pre_state.effective_state_known
+            || pre_state.effective_enabled != target.enabled();
+        if !write_required {
+            transaction.post_state_hash = transaction.pre_state_hash.clone();
+            transaction.post_state = Some(pre_state.clone());
+            transaction.verification_result = Some("already_compliant".into());
+            transaction.completed_at = Some(crate::inspection::timestamp());
+            transition(
+                &self.journal,
+                &mut transaction,
+                TransactionStatus::NoChangeNeeded,
+                "already_compliant",
+            )?;
+            return Ok(owner_result(
+                OwnerOperationOutcome::AlreadySet,
+                transaction,
+                Some(pre_state),
+                "Widgets was already set that way. No registry write was performed.",
+                None,
+            ));
+        }
+
+        transaction.rollback.available = true;
+        self.journal
+            .save_transaction(&transaction)
+            .map_err(journal_error)?;
+        self.fault(FaultPoint::BeforeWrite)?;
+        transition(
+            &self.journal,
+            &mut transaction,
+            TransactionStatus::Applying,
+            "apply_owner_operation",
+        )?;
+        let write_result = handler(operation_id).apply(self.backend.as_ref(), target);
+        self.fault(FaultPoint::ImmediatelyAfterWrite)?;
+        transition(
+            &self.journal,
+            &mut transaction,
+            TransactionStatus::Verifying,
+            "capture_actual_post_attempt_state",
+        )?;
+        let actual = match handler(operation_id).inspect_pre_state(self.backend.as_ref()) {
+            Ok(actual) => {
+                set_post_state(&mut transaction, &actual)?;
+                self.journal
+                    .save_transaction(&transaction)
+                    .map_err(journal_error)?;
+                actual
+            }
+            Err(error) => {
+                transaction.rollback.available = false;
+                transaction.error_category = Some(format!("{:?}", error.kind));
+                transaction.error_summary = Some(error.summary);
+                transaction.recovery_requirement = Some(
+                    "The post-attempt registry representation could not be read. Do not retry blindly."
+                        .into(),
+                );
+                transition(
+                    &self.journal,
+                    &mut transaction,
+                    TransactionStatus::RecoveryRequired,
+                    "post_attempt_state_unreadable",
+                )?;
+                return Ok(owner_result(
+                    OwnerOperationOutcome::NeedsAttention,
+                    transaction,
+                    None,
+                    "Deslopper could not determine the setting after the write attempt.",
+                    None,
+                ));
+            }
+        };
+
+        if let Err(error) = write_result {
+            transaction.error_category = Some(format!("{:?}", error.kind));
+            transaction.error_summary = Some(error.summary.clone());
+            if same_effective_state(&actual, &pre_state) {
+                transaction.rollback.available = false;
+                transaction.verification_result =
+                    Some("write_failed_original_state_present".into());
+                transaction.completed_at = Some(crate::inspection::timestamp());
+                transition(
+                    &self.journal,
+                    &mut transaction,
+                    TransactionStatus::FailedAfterMutation,
+                    "write_failed_without_state_change",
+                )?;
+                return Ok(owner_result(
+                    OwnerOperationOutcome::CouldNotChange,
+                    transaction,
+                    Some(actual),
+                    "Windows rejected the change and the original setting is still present.",
+                    None,
+                ));
+            }
+            if is_safe_attempted_state(&actual, target) {
+                return self.auto_restore_owner(
+                    transaction,
+                    "write_reported_failure",
+                    "Windows reported a write error after the requested value appeared.",
+                );
+            }
+            transaction.rollback.available = false;
+            transaction.recovery_requirement = Some(
+                "The actual setting differs from both the original and requested values.".into(),
+            );
+            transition(
+                &self.journal,
+                &mut transaction,
+                TransactionStatus::RecoveryRequired,
+                "ambiguous_write_failure",
+            )?;
+            return Ok(owner_result(
+                OwnerOperationOutcome::NeedsAttention,
+                transaction,
+                Some(actual),
+                "The write failed and the current setting is ambiguous; Deslopper did not overwrite it.",
+                None,
+            ));
+        }
+
+        if !is_safe_attempted_state(&actual, target) {
+            transaction.rollback.available = false;
+            transaction.error_category = Some("verification_mismatch".into());
+            if same_effective_state(&actual, &pre_state) {
+                transaction.verification_result = Some("requested_state_not_applied".into());
+                transaction.error_summary =
+                    Some("The write returned success but the original setting remained.".into());
+                transaction.completed_at = Some(crate::inspection::timestamp());
+                transition(
+                    &self.journal,
+                    &mut transaction,
+                    TransactionStatus::VerificationFailed,
+                    "direct_verification_original_state_present",
+                )?;
+                return Ok(owner_result(
+                    OwnerOperationOutcome::CouldNotChange,
+                    transaction,
+                    Some(actual),
+                    "Windows did not apply the requested Widgets setting; the original state remains.",
+                    None,
+                ));
+            }
+            transaction.error_summary = Some(
+                "The post-write state differed from both the original and requested setting."
+                    .into(),
+            );
+            transaction.recovery_requirement = Some(
+                "The current value could not be safely attributed to this attempt; no blind rollback was performed."
+                    .into(),
+            );
+            transition(
+                &self.journal,
+                &mut transaction,
+                TransactionStatus::RecoveryRequired,
+                "direct_verification_ambiguous_state",
+            )?;
+            return Ok(owner_result(
+                OwnerOperationOutcome::NeedsAttention,
+                transaction,
+                Some(actual),
+                "The Widgets setting is in an unexpected state and was not overwritten again.",
+                None,
+            ));
+        }
+
+        self.fault(FaultPoint::BeforeVerification)?;
+        self.fault(FaultPoint::DuringVerification)?;
+        match handler(operation_id).verify(self.backend.as_ref(), target) {
+            Ok(verified) => {
+                set_post_state(&mut transaction, &verified)?;
+                transaction.verification_result = Some("direct_representation_verified".into());
+                self.journal
+                    .save_transaction(&transaction)
+                    .map_err(journal_error)?;
+            }
+            Err(error) => {
+                transaction.error_category = Some(format!("{:?}", error.kind));
+                transaction.error_summary = Some(error.summary);
+                return self.auto_restore_owner(
+                    transaction,
+                    "direct_verification_failed",
+                    "The direct registry verification failed.",
+                );
+            }
+        }
+
+        let detector_context = match detector_verification() {
+            Ok(context) => context,
+            Err(message) => {
+                transaction.error_category = Some("detector_verification_failed".into());
+                transaction.error_summary = Some(message);
+                return self.auto_restore_owner(
+                    transaction,
+                    "detector_verification_failed",
+                    "The matching Widgets detector could not complete.",
+                );
+            }
+        };
+        let detector_matches = detector_context.machine_id == context.machine_id
+            && detector_context.windows_build == context.windows_build
+            && detector_context.edition == context.edition
+            && detector_context.authority_acceptable
+            && detector_context.applicable
+            && detector_context.detector_status == "successful"
+            && detector_context.detector_current_enabled == Some(target.enabled());
+        if !detector_matches {
+            transaction.error_category = Some("detector_verification_failed".into());
+            transaction.error_summary =
+                Some("The Widgets detector did not confirm the requested state.".into());
+            return self.auto_restore_owner(
+                transaction,
+                "detector_verification_failed",
+                "The matching Widgets detector did not confirm the change.",
+            );
+        }
+        let final_direct = handler(operation_id)
+            .verify(self.backend.as_ref(), target)
+            .map_err(handler_error)?;
+        set_post_state(&mut transaction, &final_direct)?;
+        transaction.verification_result = Some("direct_and_detector_verified".into());
+        transaction.completed_at = Some(crate::inspection::timestamp());
+        transition(
+            &self.journal,
+            &mut transaction,
+            TransactionStatus::RollbackAvailable,
+            "owner_verification_complete",
+        )?;
+        self.fault(FaultPoint::BeforeTransactionCommit)?;
+        Ok(owner_result(
+            OwnerOperationOutcome::Changed,
+            transaction,
+            Some(final_direct),
+            "Widgets changed and the setting was verified.",
+            Some("Explorer may refresh the visible taskbar asynchronously; Deslopper did not restart Explorer.".into()),
+        ))
+    }
+
+    pub fn undo_owner_operation<F>(
+        &self,
+        transaction_id: &str,
+        context: &BrokerContext,
+        detector_verification: F,
+    ) -> Result<OwnerOperationResult, BrokerError>
+    where
+        F: FnOnce() -> Result<BrokerContext, String>,
+    {
+        validate_owner_context(context)?;
+        let _in_process = self.execution_lock.try_lock().map_err(|_| {
+            BrokerError::new(
+                "operation_in_progress",
+                "Another Windows change is in progress.",
+            )
+        })?;
+        let _cross_process = MutationProcessLock::acquire(self.journal.lock_path())
+            .map_err(|message| BrokerError::new("cross_process_lock_unavailable", message))?;
+        let mut transaction = self
+            .journal
+            .load_transaction(transaction_id)
+            .map_err(journal_error)?
+            .ok_or_else(|| BrokerError::new("invalid_transaction", "The change was not found."))?;
+        self.validate_transaction_integrity(&transaction)?;
+        let plan = self
+            .journal
+            .load_plan(&transaction.plan_id)
+            .map_err(journal_error)?
+            .ok_or_else(|| {
+                BrokerError::new("tampered_transaction", "The owner intent is missing.")
+            })?;
+        if plan.handler_version != OWNER_HANDLER_VERSION
+            || transaction.operation_id != MutationOperationId::WidgetsVisibility
+        {
+            return Err(BrokerError::new(
+                "not_owner_transaction",
+                "This record was not created by the Owner Mode Widgets flow.",
+            ));
+        }
+        if transaction.status != TransactionStatus::RollbackAvailable
+            || !transaction.rollback.available
+        {
+            return Err(BrokerError::new(
+                "rollback_unavailable",
+                "This change does not have a safe available Undo.",
+            ));
+        }
+        if transaction.machine_id != context.machine_id
+            || !crate::owner_scope::is_valid(&transaction.machine_id)
+        {
+            return Err(BrokerError::new(
+                "owner_scope_mismatch",
+                "Undo belongs to a different Windows machine or account.",
+            ));
+        }
+        let pre_state = transaction.pre_state.clone().ok_or_else(|| {
+            BrokerError::new(
+                "rollback_unavailable",
+                "The exact original state is missing.",
+            )
+        })?;
+        let applied_state = transaction.post_state.clone().ok_or_else(|| {
+            BrokerError::new(
+                "rollback_unavailable",
+                "The verified applied state is missing.",
+            )
+        })?;
+        let current = handler(transaction.operation_id)
+            .inspect_pre_state(self.backend.as_ref())
+            .map_err(handler_error)?;
+        validate_captured_authority(&current)?;
+        if conflicts_with_applied_state(&current, &applied_state) {
+            transaction.rollback.conflict_detected = true;
+            transaction.rollback.available = false;
+            transaction.recovery_requirement = Some(
+                "The setting changed after Deslopper applied it; normal Undo will not overwrite the newer value."
+                    .into(),
+            );
+            transition(
+                &self.journal,
+                &mut transaction,
+                TransactionStatus::RecoveryRequired,
+                "owner_undo_conflict",
+            )?;
+            return Ok(owner_result(
+                OwnerOperationOutcome::NeedsAttention,
+                transaction,
+                Some(current.clone()),
+                "Widgets changed after Deslopper applied it, so Undo was not performed.",
+                Some(format!(
+                    "Original: {:?}; applied: {:?}; current: {:?}",
+                    pre_state.representation, applied_state.representation, current.representation
+                )),
+            ));
+        }
+        transaction.rollback.attempted_at = Some(crate::inspection::timestamp());
+        self.fault(FaultPoint::BeforeRollback)?;
+        transition(
+            &self.journal,
+            &mut transaction,
+            TransactionStatus::RollingBack,
+            "owner_undo",
+        )?;
+        let write_result =
+            handler(transaction.operation_id).rollback(self.backend.as_ref(), &pre_state);
+        self.fault(FaultPoint::ImmediatelyAfterRollbackWrite)?;
+        let restored = handler(transaction.operation_id)
+            .inspect_pre_state(self.backend.as_ref())
+            .map_err(handler_error)?;
+        transaction.rollback_state_hash =
+            Some(hash_serializable(&restored).map_err(serialization_error)?);
+        transaction.rollback_state = Some(restored.clone());
+        if let Err(error) = write_result {
+            transaction.error_category = Some(format!("{:?}", error.kind));
+            transaction.error_summary = Some(error.summary);
+        }
+        self.fault(FaultPoint::DuringRollbackVerification)?;
+        if handler(transaction.operation_id)
+            .verify_rollback(self.backend.as_ref(), &pre_state)
+            .is_err()
+        {
+            transaction.rollback.available = false;
+            transaction.rollback.result = Some("rollback_verification_failed".into());
+            transaction.rollback.verification_result = Some("exact_pre_state_not_proven".into());
+            transaction.recovery_requirement =
+                Some("The exact original state was not restored.".into());
+            transition(
+                &self.journal,
+                &mut transaction,
+                TransactionStatus::RollbackVerificationFailed,
+                "owner_undo_verification_failed",
+            )?;
+            return Ok(owner_result(
+                OwnerOperationOutcome::NeedsAttention,
+                transaction,
+                Some(restored),
+                "Undo could not prove that the original Widgets setting was restored.",
+                None,
+            ));
+        }
+        let detector_context = match detector_verification() {
+            Ok(context) => context,
+            Err(message) => {
+                transaction.rollback.available = false;
+                transaction.rollback.result = Some("restored_detector_unavailable".into());
+                transaction.rollback.verification_result = Some("detector_unavailable".into());
+                transaction.error_category = Some("detector_verification_failed".into());
+                transaction.error_summary = Some(message);
+                transaction.recovery_requirement = Some(
+                    "The registry was restored but detector verification did not complete.".into(),
+                );
+                transition(
+                    &self.journal,
+                    &mut transaction,
+                    TransactionStatus::RollbackVerificationFailed,
+                    "owner_undo_detector_unavailable",
+                )?;
+                return Ok(owner_result(
+                    OwnerOperationOutcome::NeedsAttention,
+                    transaction,
+                    Some(restored),
+                    "The original registry representation was restored, but detector verification did not complete.",
+                    None,
+                ));
+            }
+        };
+        let expected_detector = if pre_state.effective_state_known {
+            Some(pre_state.effective_enabled)
+        } else {
+            None
+        };
+        let detector_matches = detector_context.machine_id == context.machine_id
+            && detector_context.authority_acceptable
+            && detector_context.applicable
+            && (expected_detector.is_none()
+                || detector_context.detector_current_enabled == expected_detector);
+        if !detector_matches {
+            transaction.rollback.available = false;
+            transaction.rollback.result = Some("restored_detector_disagreed".into());
+            transaction.rollback.verification_result = Some("detector_disagreed".into());
+            transaction.recovery_requirement =
+                Some("The registry was restored but the Widgets detector disagreed.".into());
+            transition(
+                &self.journal,
+                &mut transaction,
+                TransactionStatus::RollbackVerificationFailed,
+                "owner_undo_detector_failed",
+            )?;
+            return Ok(owner_result(
+                OwnerOperationOutcome::NeedsAttention,
+                transaction,
+                Some(restored),
+                "The original registry representation was restored, but detector verification needs attention.",
+                None,
+            ));
+        }
+        transaction.rollback.available = false;
+        transaction.rollback.complete = true;
+        transaction.rollback.result = Some("rolled_back".into());
+        transaction.rollback.verification_result = Some("exact_pre_state_restored".into());
+        transaction.completed_at = Some(crate::inspection::timestamp());
+        transition(
+            &self.journal,
+            &mut transaction,
+            TransactionStatus::RolledBack,
+            "owner_undo_verified",
+        )?;
+        Ok(owner_result(
+            OwnerOperationOutcome::Restored,
+            transaction,
+            Some(restored),
+            "The exact original Widgets setting was restored.",
+            Some("Explorer may refresh the visible taskbar asynchronously; Deslopper did not restart Explorer.".into()),
+        ))
+    }
+
+    fn auto_restore_owner(
+        &self,
+        mut transaction: MutationTransaction,
+        failure_category: &str,
+        failure_summary: &str,
+    ) -> Result<OwnerOperationResult, BrokerError> {
+        transaction.error_category = Some(failure_category.into());
+        transaction.error_summary = Some(failure_summary.into());
+        let pre_state = transaction.pre_state.clone().ok_or_else(|| {
+            BrokerError::new(
+                "rollback_unavailable",
+                "The exact original state is missing.",
+            )
+        })?;
+        let target = transaction.target_state;
+        let current = match handler(transaction.operation_id)
+            .inspect_pre_state(self.backend.as_ref())
+        {
+            Ok(current) => current,
+            Err(error) => {
+                transaction.rollback.available = false;
+                transaction.recovery_requirement = Some(
+                    "The current state could not be attributed safely after failed verification."
+                        .into(),
+                );
+                transaction.error_summary = Some(error.summary);
+                transition(
+                    &self.journal,
+                    &mut transaction,
+                    TransactionStatus::RecoveryRequired,
+                    "automatic_rollback_not_safe",
+                )?;
+                return Ok(owner_result(
+                    OwnerOperationOutcome::NeedsAttention,
+                    transaction,
+                    None,
+                    "Verification failed and Deslopper could not safely determine whether to restore.",
+                    None,
+                ));
+            }
+        };
+        set_post_state(&mut transaction, &current)?;
+        if !is_safe_attempted_state(&current, target) {
+            transaction.rollback.available = false;
+            transaction.recovery_requirement = Some(
+                "The current state was not the exact attempted state; no blind rollback was performed."
+                    .into(),
+            );
+            transition(
+                &self.journal,
+                &mut transaction,
+                TransactionStatus::RecoveryRequired,
+                "automatic_rollback_not_attributable",
+            )?;
+            return Ok(owner_result(
+                OwnerOperationOutcome::NeedsAttention,
+                transaction,
+                Some(current),
+                "Verification failed and the current value could not be safely attributed to this attempt.",
+                None,
+            ));
+        }
+        transaction.rollback.attempted_at = Some(crate::inspection::timestamp());
+        self.fault(FaultPoint::BeforeRollback)?;
+        transition(
+            &self.journal,
+            &mut transaction,
+            TransactionStatus::RollingBack,
+            "automatic_exact_rollback",
+        )?;
+        let write_result =
+            handler(transaction.operation_id).rollback(self.backend.as_ref(), &pre_state);
+        self.fault(FaultPoint::ImmediatelyAfterRollbackWrite)?;
+        let restored = match handler(transaction.operation_id)
+            .inspect_pre_state(self.backend.as_ref())
+        {
+            Ok(restored) => restored,
+            Err(error) => {
+                transaction.rollback.available = false;
+                transaction.rollback.result = Some("rollback_state_unreadable".into());
+                transaction.error_summary = Some(error.summary);
+                transaction.recovery_requirement =
+                    Some("Automatic rollback was attempted but could not be verified.".into());
+                transition(
+                    &self.journal,
+                    &mut transaction,
+                    TransactionStatus::RollbackVerificationFailed,
+                    "automatic_rollback_unreadable",
+                )?;
+                return Ok(owner_result(
+                    OwnerOperationOutcome::NeedsAttention,
+                    transaction,
+                    None,
+                    "Automatic rollback was attempted but the restored state could not be read.",
+                    None,
+                ));
+            }
+        };
+        transaction.rollback_state_hash =
+            Some(hash_serializable(&restored).map_err(serialization_error)?);
+        transaction.rollback_state = Some(restored.clone());
+        self.fault(FaultPoint::DuringRollbackVerification)?;
+        let exact = handler(transaction.operation_id)
+            .verify_rollback(self.backend.as_ref(), &pre_state)
+            .is_ok();
+        if exact {
+            transaction.rollback.available = false;
+            transaction.rollback.complete = true;
+            transaction.rollback.result = Some(
+                if write_result.is_ok() {
+                    "automatic_rollback_succeeded"
+                } else {
+                    "automatic_rollback_verified_after_write_error"
+                }
+                .into(),
+            );
+            transaction.rollback.verification_result = Some("exact_pre_state_restored".into());
+            transaction.completed_at = Some(crate::inspection::timestamp());
+            transition(
+                &self.journal,
+                &mut transaction,
+                TransactionStatus::RolledBack,
+                "automatic_rollback_verified",
+            )?;
+            return Ok(owner_result(
+                OwnerOperationOutcome::Restored,
+                transaction,
+                Some(restored),
+                "The change could not be verified, so Deslopper restored the exact original setting.",
+                None,
+            ));
+        }
+        transaction.rollback.available = false;
+        transaction.rollback.complete = false;
+        transaction.rollback.result = Some("automatic_rollback_failed".into());
+        transaction.rollback.verification_result = Some("exact_pre_state_not_proven".into());
+        transaction.recovery_requirement =
+            Some("Automatic rollback did not restore the exact original setting.".into());
+        transition(
+            &self.journal,
+            &mut transaction,
+            TransactionStatus::RollbackVerificationFailed,
+            "automatic_rollback_verification_failed",
+        )?;
+        Ok(owner_result(
+            OwnerOperationOutcome::NeedsAttention,
+            transaction,
+            Some(restored),
+            "The change failed verification and automatic rollback also needs attention.",
+            None,
+        ))
+    }
+
+    pub fn owner_history(
+        &self,
+        owner_scope: &str,
+    ) -> Result<Vec<MutationTransaction>, BrokerError> {
+        if !crate::owner_scope::is_valid(owner_scope) {
+            return Ok(Vec::new());
+        }
+        let mut result = Vec::new();
+        for transaction in self.journal.history().map_err(journal_error)? {
+            if transaction.machine_id != owner_scope
+                || transaction.operation_id != MutationOperationId::WidgetsVisibility
+            {
+                continue;
+            }
+            let Some(plan) = self
+                .journal
+                .load_plan(&transaction.plan_id)
+                .map_err(journal_error)?
+            else {
+                continue;
+            };
+            if plan.handler_version == OWNER_HANDLER_VERSION {
+                self.validate_transaction_integrity(&transaction)?;
+                result.push(transaction);
+            }
+        }
+        Ok(result)
+    }
+
+    #[cfg(feature = "mutation-alpha")]
     pub fn operation_options(&self, context: &BrokerContext) -> Vec<OperationOption> {
         if !self.live_validation.available
             || !self.live_validation.scope_is_valid()
@@ -280,6 +1814,7 @@ impl Broker {
             .collect()
     }
 
+    #[cfg(feature = "mutation-alpha")]
     pub fn generate_plan(
         &self,
         request: &PlanRequest,
@@ -398,6 +1933,7 @@ impl Broker {
         })
     }
 
+    #[cfg(feature = "mutation-alpha")]
     pub fn execute(
         &self,
         request: &super::request::ApprovalRequest,
@@ -633,6 +2169,7 @@ impl Broker {
         Ok(transaction)
     }
 
+    #[cfg(feature = "mutation-alpha")]
     pub fn rollback(
         &self,
         request: &RollbackRequest,
@@ -768,6 +2305,7 @@ impl Broker {
         Ok(transaction)
     }
 
+    #[cfg(feature = "mutation-alpha")]
     pub fn history(&self) -> Result<Vec<MutationTransaction>, BrokerError> {
         let transactions = self.journal.history().map_err(journal_error)?;
         for transaction in &transactions {
@@ -776,6 +2314,7 @@ impl Broker {
         Ok(transactions)
     }
 
+    #[cfg(feature = "mutation-alpha")]
     pub fn export_live_validation_evidence(
         &self,
         request: &EvidenceExportRequest,
@@ -831,6 +2370,7 @@ impl Broker {
         Ok(bundle)
     }
 
+    #[cfg(feature = "mutation-alpha")]
     pub fn cancel_before_mutation(
         &self,
         plan_id: &str,
@@ -868,6 +2408,7 @@ impl Broker {
         Ok(transaction)
     }
 
+    #[cfg(feature = "mutation-alpha")]
     pub fn complete_effective_verification(
         &self,
         mut transaction: MutationTransaction,
@@ -920,6 +2461,7 @@ impl Broker {
         Ok(transaction)
     }
 
+    #[cfg(feature = "mutation-alpha")]
     pub fn complete_rollback_effective_verification(
         &self,
         mut transaction: MutationTransaction,
@@ -1057,6 +2599,7 @@ impl Broker {
         }
     }
 
+    #[cfg(feature = "mutation-alpha")]
     fn maturity(&self, operation_id: MutationOperationId) -> ValidationMaturity {
         self.validation_maturities
             .lock()
@@ -1065,6 +2608,7 @@ impl Broker {
     }
 
     #[cfg(test)]
+    #[cfg(feature = "mutation-alpha")]
     pub fn set_validation_maturity(
         &self,
         operation_id: MutationOperationId,
@@ -1075,6 +2619,7 @@ impl Broker {
         }
     }
 
+    #[cfg(feature = "mutation-alpha")]
     fn require_gate(&self) -> Result<(), BrokerError> {
         let gate = self.gate_status();
         if gate.available {
@@ -1084,6 +2629,7 @@ impl Broker {
         }
     }
 
+    #[cfg(feature = "mutation-alpha")]
     fn require_rollback_gate(&self) -> Result<(), BrokerError> {
         if cfg!(debug_assertions)
             && self.command_line_opt_in
@@ -1098,6 +2644,7 @@ impl Broker {
         }
     }
 
+    #[cfg(feature = "mutation-alpha")]
     fn approval_class(&self) -> Result<String, BrokerError> {
         self.live_validation
             .approval_id
@@ -1112,6 +2659,7 @@ impl Broker {
             })
     }
 
+    #[cfg(feature = "mutation-alpha")]
     fn require_authorized(
         &self,
         operation_id: MutationOperationId,
@@ -1129,6 +2677,7 @@ impl Broker {
         }
     }
 
+    #[cfg(feature = "mutation-alpha")]
     fn require_target_eligibility(&self, context: &BrokerContext) -> Result<(), BrokerError> {
         let Some(target_type) = self.live_validation.approved_target_type else {
             return Err(BrokerError::new(
@@ -1175,6 +2724,147 @@ impl Broker {
         } else {
             Ok(())
         }
+    }
+}
+
+fn validate_owner_context(context: &BrokerContext) -> Result<(), BrokerError> {
+    if !crate::owner_scope::is_valid(&context.machine_id) {
+        return Err(BrokerError::new(
+            "owner_scope_unavailable",
+            "Run a new scan to establish a stable Windows machine and account scope.",
+        ));
+    }
+    if context.windows_build < 22_000 || !context.applicable {
+        return Err(BrokerError::new(
+            "unsupported_build",
+            "Owner Mode M1 supports Windows 11 only.",
+        ));
+    }
+    let architecture = context.architecture.trim().to_ascii_lowercase();
+    let is_x64 = !architecture.contains("arm")
+        && (architecture == "64-bit"
+            || architecture.contains("x64")
+            || architecture.contains("amd64"));
+    if !is_x64 {
+        return Err(BrokerError::new(
+            "unsupported_architecture",
+            "Owner Mode M1 supports the x64 product build only.",
+        ));
+    }
+    if !context.authority_acceptable {
+        return Err(BrokerError::new(
+            "external_authority",
+            "Windows policy manages or blocks this Widgets setting.",
+        ));
+    }
+    if !context.confidence_sufficient {
+        return Err(BrokerError::new(
+            "insufficient_confidence",
+            "The Widgets setting could not be determined confidently.",
+        ));
+    }
+    validate_context(
+        context,
+        &operation_definition(MutationOperationId::WidgetsVisibility),
+    )
+}
+
+fn owner_plan(
+    context: &BrokerContext,
+    definition: &OperationDefinition,
+    target: MutationTarget,
+    current_state: CapturedState,
+) -> Result<MutationPlan, BrokerError> {
+    let now = now_millis();
+    let sequence = BROKER_SEQUENCE.fetch_add(1, Ordering::SeqCst);
+    let plan_id = format!("owner-intent-{now}-{sequence}");
+    let mut plan = MutationPlan {
+        plan_id: plan_id.clone(),
+        machine_id: context.machine_id.clone(),
+        source_inspection_id: context.inspection_id.clone(),
+        source_observation_id: context.source_observation_id.clone(),
+        subject_id: definition.subject_id,
+        operation_id: definition.operation_id,
+        current_state,
+        target_state: target,
+        authority: context.authority.clone(),
+        applicability: context.applicability.clone(),
+        windows_build: context.windows_build,
+        edition: context.edition.clone(),
+        evidence_fingerprint: context.evidence_fingerprint.clone(),
+        generated_at: now.to_string(),
+        expires_at: (now + 300_000).to_string(),
+        // Retained only for backward-compatible serialization of the shared
+        // plan schema. Owner Mode does not interpret this as authorization.
+        approval_class: "not_applicable".into(),
+        rollback_method: definition.rollback_method.into(),
+        documentation: definition
+            .documentation
+            .iter()
+            .map(|source| (*source).into())
+            .collect(),
+        required_privilege: definition.required_privilege.into(),
+        expected_side_effects: definition
+            .side_effects
+            .iter()
+            .map(|effect| (*effect).into())
+            .collect(),
+        restart_requirement: definition.restart_requirement.into(),
+        handler_version: OWNER_HANDLER_VERSION.into(),
+        desired_state_revision_id: context.desired_state_revision_id,
+        automatic_remediation_eligible: false,
+        approval_nonce_hash: hash_text(&format!("{plan_id}:internal-owner-intent")),
+        consumed_at: None,
+        plan_hash: String::new(),
+    };
+    plan.refresh_hash()
+        .map_err(|error| BrokerError::new("plan_serialization_failed", error.to_string()))?;
+    Ok(plan)
+}
+
+fn same_effective_state(left: &CapturedState, right: &CapturedState) -> bool {
+    left.representation == right.representation
+        && left.effective_enabled == right.effective_enabled
+        && left.effective_state_known == right.effective_state_known
+        && left.authority == right.authority
+}
+
+fn owner_recovery_blocks_new_apply(transaction: &MutationTransaction) -> bool {
+    matches!(
+        transaction.status,
+        TransactionStatus::RecoveryRequired | TransactionStatus::RollbackVerificationFailed
+    )
+}
+
+fn is_safe_attempted_state(state: &CapturedState, target: MutationTarget) -> bool {
+    state.authority == "user"
+        && state.effective_state_known
+        && state.representation == expected(target)
+        && state.effective_enabled == target.enabled()
+}
+
+fn set_post_state(
+    transaction: &mut MutationTransaction,
+    state: &CapturedState,
+) -> Result<(), BrokerError> {
+    transaction.post_state_hash = Some(hash_serializable(state).map_err(serialization_error)?);
+    transaction.post_state = Some(state.clone());
+    Ok(())
+}
+
+fn owner_result(
+    outcome: OwnerOperationOutcome,
+    transaction: MutationTransaction,
+    current_state: Option<CapturedState>,
+    message: impl Into<String>,
+    note: Option<String>,
+) -> OwnerOperationResult {
+    OwnerOperationResult {
+        outcome,
+        transaction,
+        current_state,
+        message: message.into(),
+        note,
     }
 }
 
@@ -1248,6 +2938,7 @@ fn operation_definition(operation_id: MutationOperationId) -> OperationDefinitio
     }
 }
 
+#[cfg(feature = "mutation-alpha")]
 const fn operation_index(operation_id: MutationOperationId) -> usize {
     match operation_id {
         MutationOperationId::WidgetsVisibility => 0,
@@ -1331,6 +3022,7 @@ fn validate_captured_authority(state: &CapturedState) -> Result<(), BrokerError>
     }
 }
 
+#[cfg(feature = "mutation-alpha")]
 fn validate_plan_context(plan: &MutationPlan, context: &BrokerContext) -> Result<(), BrokerError> {
     if plan.machine_id != context.machine_id {
         return Err(BrokerError::new(
@@ -1451,6 +3143,7 @@ fn transition(
     journal.save_transaction(transaction).map_err(journal_error)
 }
 
+#[cfg(feature = "mutation-alpha")]
 fn fail_after_mutation(
     journal: &MutationJournal,
     transaction: &mut MutationTransaction,
@@ -1468,6 +3161,7 @@ fn fail_after_mutation(
     )
 }
 
+#[cfg(feature = "mutation-alpha")]
 fn confirmation_text(operation: MutationOperationId, target: MutationTarget) -> String {
     let action = if target.enabled() { "Show" } else { "Hide" };
     match operation {
@@ -1488,6 +3182,7 @@ fn confirmation_text(operation: MutationOperationId, target: MutationTarget) -> 
     }
 }
 
+#[cfg(feature = "mutation-alpha")]
 fn approval_phrase(operation: MutationOperationId) -> String {
     match operation {
         MutationOperationId::WidgetsVisibility => "APPROVE WIDGETS TEST",
@@ -1557,7 +3252,7 @@ impl Drop for MutationProcessLock {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "mutation-alpha"))]
 mod tests {
     use std::sync::{Arc, Mutex};
 
@@ -1675,15 +3370,20 @@ mod tests {
 
     fn context() -> BrokerContext {
         BrokerContext {
-            machine_id: "machine-1".into(),
+            machine_id: crate::owner_scope::from_stable_ids("machine", "S-1-5-21-1000"),
             inspection_id: "inspection-1".into(),
             inspection_timestamp: crate::inspection::timestamp(),
             source_observation_id: "inspection-1:taskbar_widgets".into(),
             windows_build: 26_100,
             edition: "Professional".into(),
+            architecture: "64-bit".into(),
+            #[cfg(feature = "mutation-alpha")]
             domain_joined: Some(false),
+            #[cfg(feature = "mutation-alpha")]
             entra_joined: Some(false),
+            #[cfg(feature = "mutation-alpha")]
             workplace_joined: Some(false),
+            #[cfg(feature = "mutation-alpha")]
             mdm_enrolled: Some(false),
             authority: "user".into(),
             authority_acceptable: true,
@@ -1693,6 +3393,8 @@ mod tests {
             applicable: true,
             evidence_fingerprint: hash_text("fixture evidence"),
             desired_state_revision_id: None,
+            detector_current_enabled: Some(true),
+            detector_status: "successful".into(),
         }
     }
 
@@ -2824,8 +4526,12 @@ mod tests {
         );
         let conn = crate::persistence::open_at(&path).unwrap();
         conn.execute(
-            "UPDATE mutation_plans SET plan_json=replace(plan_json,'machine-1','machine-tampered') WHERE id=?1",
-            [&issued.plan.plan_id],
+            "UPDATE mutation_plans SET plan_json=replace(plan_json,?2,?3) WHERE id=?1",
+            rusqlite::params![
+                &issued.plan.plan_id,
+                &context.machine_id,
+                "owner-scope-v1:sha256:tampered"
+            ],
         )
         .unwrap();
         drop(conn);

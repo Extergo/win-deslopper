@@ -2,19 +2,21 @@
 
 **Windows without the slop.**
 
-Deslopper `0.1.0-alpha.1` is a privacy-conscious, installable Windows
-configuration inspector. The Read-Only Product Alpha observes 20 documented
+Deslopper `0.1.0` is a privacy-conscious, installable Windows
+configuration inspector with an owner-operated Widgets vertical slice. Owner
+Mode observes 20 documented
 Windows components, explains uncertainty and authority, saves local inspection
 history, detects meaningful drift, records desired states, and creates
 non-executable previews.
 
-The normal build never applies a Windows change. It has no mutation command,
-filesystem capability, shell endpoint, network client, updater, elevation
-manifest, service, or privileged helper. Unknown does not mean broken,
+The normal build can apply and exactly undo one registered current-user change:
+showing or hiding the Windows 11 Widgets taskbar button. It has no generic
+mutation command, filesystem capability, shell endpoint, network client,
+updater, elevation manifest, service, or privileged helper. Unknown does not mean broken,
 permission-limited does not mean absent, and a preview is never presented as
 completed work.
 
-## Product Alpha features
+## Owner Mode M1 features
 
 - Compact first-run explanation and cancellable read-only inspection.
 - Honest dashboard summaries without fake health scores or optimisation claims.
@@ -27,16 +29,21 @@ completed work.
 - User-controlled privacy-safe JSON diagnostics saved through the system file
   picker. Nothing is uploaded automatically.
 - Settings/About with product/build status, redacted database location, local
-  history controls, privacy explanation, and explicit mutation unavailability.
+  history controls and privacy explanation.
+- Widgets actionability integrated into the normal component detail. One Apply
+  click performs fixed preflight, exact pre-state capture, durable transaction,
+  `TaskbarDa` write, direct and detector verification, and safe failure
+  recovery. One Undo click restores the exact prior DWORD or prior absence when
+  no conflict exists.
 
 See `docs/read-only-product-alpha.md` for the complete product and privacy
 contract.
 
-## Internal mutation broker
+## Internal validation harness
 
-The repository retains a separately compiled internal `mutation-alpha` feature
+The repository retains an explicit internal `mutation-alpha` feature
 for exactly three closed current-user taskbar experiments. It is not part of the
-normal Product Alpha command registration or presentation. Internal builds now
+normal Owner Mode authorization or presentation. Internal builds may
 show a compact Experimental Apply & Undo workflow only when Rust build metadata
 reports the mutation feature. The panel reads backend gate status, renders only
 backend-authorized options, reviews one-use plans, requires the backend-provided
@@ -61,9 +68,8 @@ scope, and execution allowance at plan, execution, and pre-write boundaries.
 This governance change grants no target or operation approval; the Widgets test
 remains unexecuted.
 
-The original development PC remains permanently denied by its local ignored
-`.deslopper/local/development-host-denylist.json`. Never commit or expose that
-identity.
+Those historical approval and deny-list rules apply only to the engineering
+harness. They are not runtime prerequisites for the installed owner product.
 
 ## Development and packaging
 
@@ -78,7 +84,7 @@ bun run tauri build --no-bundle
 bun run tauri build
 ```
 
-The normal NSIS installer uses Tauri's WebView2 downloaded-bootstrapper mode.
+The normal NSIS installer contains Owner Mode and uses Tauri's WebView2 downloaded-bootstrapper mode.
 Windows 11 normally supplies WebView2; the installer can obtain it when missing.
 The package is not code-signed and no public release is produced by this
 milestone. Application binaries uninstall normally; local history under

@@ -1786,6 +1786,7 @@ mod tests {
             manufacturer: Some("Microsoft Corporation".into()),
             model: Some("Virtual Machine".into()),
             user_sid: None,
+            owner_scope_id: None,
             elevated: false,
             domain_joined: Some(false),
             entra_joined: Some(false),

@@ -20,11 +20,18 @@ use crate::{
     presentation::AppView,
 };
 
+#[cfg(feature = "owner-mode")]
+use crate::mutation::{
+    Broker, BrokerContext, handlers::WindowsSettingStore, plan::hash_serializable,
+};
+
+#[cfg(feature = "owner-mode")]
+use crate::mutation::{OwnerApplyRequest, OwnerUndoRequest};
+
 #[cfg(feature = "mutation-alpha")]
 use crate::mutation::{
-    ApprovalRequest, Broker, BrokerContext, EvidenceExportRequest, LiveEvidenceBundle,
-    MutationJournal, PlanRequest, RollbackRequest, build_live_validation_gate,
-    handlers::WindowsSettingStore, plan::hash_serializable,
+    ApprovalRequest, EvidenceExportRequest, LiveEvidenceBundle, MutationJournal, PlanRequest,
+    RollbackRequest, build_live_validation_gate,
 };
 
 pub struct ManagedAppState(Mutex<AppState>);
@@ -40,7 +47,7 @@ struct ActiveInspection {
 
 pub struct InspectionCoordinator(Mutex<Option<ActiveInspection>>);
 
-#[cfg(feature = "mutation-alpha")]
+#[cfg(feature = "owner-mode")]
 pub struct MutationSession(Arc<Broker>);
 
 static INSPECTION_SEQUENCE: AtomicU64 = AtomicU64::new(1);
@@ -228,7 +235,7 @@ impl CommandError {
         }
     }
 
-    #[cfg(feature = "mutation-alpha")]
+    #[cfg(feature = "owner-mode")]
     fn mutation(error: crate::mutation::BrokerError) -> Self {
         Self {
             code: error.code,
@@ -717,7 +724,7 @@ fn validate_desired_request(
         });
     }
     if !request.always_require_approval {
-        warnings.push("The read-only Product Alpha records this choice locally. Automatic restoration is not available in this build.".into());
+        warnings.push("Desired states are local planning records and do not authorize a Windows change. Widgets Apply and Undo are separate owner actions.".into());
         status = "valid_with_warnings";
     }
     Ok(DesiredStateValidation { status: status.into(), valid: true, warnings, reason: "The requested state is valid for the current observation, subject to the listed warnings.".into() })
@@ -797,7 +804,7 @@ pub fn generate_preview_plan(
     } else {
         "preview_ready"
     };
-    let preview = serde_json::json!({"previewSchemaVersion":1,"componentId":component_id,"sourceInspectionId":store.snapshots.last().map(|snapshot|snapshot.id.clone()),"generatedAt":timestamp(),"currentState":observation.current,"desiredState":desired.state,"authority":observation.authority,"windowsBuild":observation.platform.build,"windowsEdition":observation.platform.edition,"mechanism":definition.configuration,"scope":desired.scope,"elevation":"No authority is requested for this preview","restart":definition.restart,"dataImpact":definition.purpose,"compatibility":definition.enterprise_notes,"knownRisk":definition.risk,"dependencies":definition.dependencies,"automaticReconciliationRecommended":false,"approvalRequired":definition.approval_required,"rollback":definition.rollback,"rollbackComplete":!matches!(definition.id,platform::ComponentId::Onedrive),"status":status,"executorEnabled":false,"createsMutationTransaction":false,"createsApprovalNonce":false,"cannotExecute":"Automatic restoration is not available in the read-only Product Alpha","documentation":definition.documentation});
+    let preview = serde_json::json!({"previewSchemaVersion":1,"componentId":component_id,"sourceInspectionId":store.snapshots.last().map(|snapshot|snapshot.id.clone()),"generatedAt":timestamp(),"currentState":observation.current,"desiredState":desired.state,"authority":observation.authority,"windowsBuild":observation.platform.build,"windowsEdition":observation.platform.edition,"mechanism":definition.configuration,"scope":desired.scope,"elevation":"No authority is requested for this preview","restart":definition.restart,"dataImpact":definition.purpose,"compatibility":definition.enterprise_notes,"knownRisk":definition.risk,"dependencies":definition.dependencies,"automaticReconciliationRecommended":false,"approvalRequired":definition.approval_required,"rollback":definition.rollback,"rollbackComplete":!matches!(definition.id,platform::ComponentId::Onedrive),"status":status,"executorEnabled":false,"createsMutationTransaction":false,"createsApprovalNonce":false,"cannotExecute":"Preview plans never execute Windows changes; use the separate Widgets owner action when it is available","documentation":definition.documentation});
     persistence::save_preview_plan(&component_id, &preview)
         .map_err(CommandError::invalid_action)?;
     Ok(preview)
@@ -1058,20 +1065,28 @@ pub fn get_product_info() -> ProductInfo {
     ProductInfo {
         product_name: "Deslopper",
         version: env!("CARGO_PKG_VERSION"),
-        release_label: "Read-Only Product Alpha",
-        build_mode: if cfg!(feature = "mutation-alpha") {
-            "internal mutation-alpha compile"
+        release_label: if cfg!(feature = "owner-mode") {
+            "Owner Mode M1"
         } else {
-            "normal read-only"
+            "Read-Only Engineering Build"
+        },
+        build_mode: if cfg!(feature = "mutation-alpha") {
+            "engineering mutation-alpha harness"
+        } else if cfg!(feature = "owner-mode") {
+            "owner mode"
+        } else {
+            "explicit read-only"
         },
         mutation_availability: if cfg!(feature = "mutation-alpha") {
-            "internal compile only; unavailable in Product Alpha"
+            "engineering validation harness"
+        } else if cfg!(feature = "owner-mode") {
+            "Widgets Apply and Undo for the current Windows account"
         } else {
             "unavailable in this build"
         },
         database_schema_version: persistence::SCHEMA_VERSION,
         database_location: "%LOCALAPPDATA%\\Deslopper\\deslopper.db",
-        supported_windows: "Windows 11; Windows 10 results are legacy observation only",
+        supported_windows: "Windows 11 x64; Windows 10 results are legacy observation only",
     }
 }
 
@@ -1295,9 +1310,9 @@ fn build_diagnostics_export(store: &Store, request: &DiagnosticsRequest) -> serd
         "product": {
             "name": "Deslopper",
             "version": env!("CARGO_PKG_VERSION"),
-            "release": "Read-Only Product Alpha",
-            "buildMode": if cfg!(feature = "mutation-alpha") { "internal_compile" } else { "normal_read_only" },
-            "mutationAvailability": if cfg!(feature = "mutation-alpha") { "internal_compile_only" } else { "unavailable_in_this_build" },
+            "release": if cfg!(feature = "owner-mode") { "Owner Mode M1" } else { "Read-Only Engineering Build" },
+            "buildMode": if cfg!(feature = "mutation-alpha") { "engineering_mutation_alpha_harness" } else if cfg!(feature = "owner-mode") { "owner_mode" } else { "explicit_read_only" },
+            "mutationAvailability": if cfg!(feature = "mutation-alpha") { "engineering_validation_harness" } else if cfg!(feature = "owner-mode") { "widgets_apply_and_undo" } else { "unavailable_in_this_build" },
         },
         "windows": latest.map(|snapshot| serde_json::json!({
             "productName": snapshot.platform.product_name,
@@ -1753,7 +1768,7 @@ fn apply_action(state: &mut AppState, action: AppAction) -> Result<(), CommandEr
     Ok(())
 }
 
-#[cfg(not(feature = "mutation-alpha"))]
+#[cfg(not(feature = "owner-mode"))]
 pub fn run() -> tauri::Result<()> {
     let app = tauri::Builder::default()
         .manage(ManagedAppState::new())
@@ -1785,6 +1800,218 @@ pub fn run() -> tauri::Result<()> {
             set_history_retention,
             clear_local_history,
             generate_diagnostics_export
+        ])
+        .build(tauri::generate_context!())?;
+    app.run(|handle, event| {
+        if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
+            let coordinator = handle.state::<InspectionCoordinator>();
+            if let Ok(active) = coordinator.0.lock()
+                && let Some(inspection) = active.as_ref()
+                && !inspection.completed.load(Ordering::SeqCst)
+            {
+                inspection.token.cancel();
+            }
+        }
+    });
+    Ok(())
+}
+
+#[cfg(feature = "owner-mode")]
+#[tauri::command]
+pub fn get_widgets_actionability(
+    session: State<'_, PlatformSession>,
+    mutation: State<'_, MutationSession>,
+) -> Result<crate::mutation::broker::OwnerActionability, CommandError> {
+    let store = session
+        .0
+        .lock()
+        .map_err(|_| CommandError::state_unavailable())?;
+    let context = mutation_context(
+        &store,
+        Some(crate::mutation::MutationOperationId::WidgetsVisibility),
+    )?;
+    Ok(mutation.0.owner_actionability(&context))
+}
+
+#[cfg(feature = "owner-mode")]
+#[tauri::command]
+pub fn apply_owner_operation(
+    request: OwnerApplyRequest,
+    session: State<'_, PlatformSession>,
+    mutation: State<'_, MutationSession>,
+) -> Result<crate::mutation::broker::OwnerOperationResult, CommandError> {
+    {
+        let store = session
+            .0
+            .lock()
+            .map_err(|_| CommandError::state_unavailable())?;
+        if store.snapshots.last().map(|snapshot| snapshot.id.as_str())
+            != Some(request.source_inspection_id.as_str())
+        {
+            return Err(CommandError::invalid_action(
+                "A newer scan exists. Review the latest Widgets state before applying.",
+            ));
+        }
+    }
+    let (fresh_snapshot, fresh_context) = owner_reinspection(request.operation_id)?;
+    persist_owner_snapshot(&session, fresh_snapshot)?;
+    let mut verification_snapshot = None;
+    let result = mutation
+        .0
+        .apply_owner_operation(request.operation_id, request.target, &fresh_context, || {
+            let (snapshot, context) =
+                owner_reinspection(request.operation_id).map_err(|error| error.message)?;
+            verification_snapshot = Some(snapshot);
+            Ok(context)
+        })
+        .map_err(CommandError::mutation)?;
+    if result.outcome == crate::mutation::broker::OwnerOperationOutcome::Restored {
+        let (restored_snapshot, _) = owner_reinspection(request.operation_id)?;
+        persist_owner_snapshot(&session, restored_snapshot)?;
+    } else if let Some(snapshot) = verification_snapshot {
+        persist_owner_snapshot(&session, snapshot)?;
+    }
+    Ok(result)
+}
+
+#[cfg(feature = "owner-mode")]
+#[tauri::command]
+pub fn undo_owner_operation(
+    request: OwnerUndoRequest,
+    session: State<'_, PlatformSession>,
+    mutation: State<'_, MutationSession>,
+) -> Result<crate::mutation::broker::OwnerOperationResult, CommandError> {
+    let (fresh_snapshot, fresh_context) =
+        owner_reinspection(crate::mutation::MutationOperationId::WidgetsVisibility)?;
+    persist_owner_snapshot(&session, fresh_snapshot)?;
+    let mut verification_snapshot = None;
+    let result = mutation
+        .0
+        .undo_owner_operation(&request.transaction_id, &fresh_context, || {
+            let (snapshot, context) =
+                owner_reinspection(crate::mutation::MutationOperationId::WidgetsVisibility)
+                    .map_err(|error| error.message)?;
+            verification_snapshot = Some(snapshot);
+            Ok(context)
+        })
+        .map_err(CommandError::mutation)?;
+    if let Some(snapshot) = verification_snapshot {
+        persist_owner_snapshot(&session, snapshot)?;
+    }
+    Ok(result)
+}
+
+#[cfg(feature = "owner-mode")]
+#[tauri::command]
+pub fn get_owner_change_history(
+    session: State<'_, PlatformSession>,
+    mutation: State<'_, MutationSession>,
+) -> Result<Vec<crate::mutation::MutationTransaction>, CommandError> {
+    let store = session
+        .0
+        .lock()
+        .map_err(|_| CommandError::state_unavailable())?;
+    let Some(scope) = store
+        .snapshots
+        .last()
+        .map(|snapshot| snapshot.machine_id.as_str())
+    else {
+        return Ok(Vec::new());
+    };
+    mutation
+        .0
+        .owner_history(scope)
+        .map_err(CommandError::mutation)
+}
+
+#[cfg(feature = "owner-mode")]
+fn owner_reinspection(
+    operation_id: crate::mutation::MutationOperationId,
+) -> Result<(Snapshot, BrokerContext), CommandError> {
+    let id = format!("owner-reinspection-{}", timestamp());
+    let token = CancellationToken::default();
+    let mut outcome = run_inspection(&WindowsPowerShellRunner, id.clone(), &token, |_| {});
+    complete_lifecycle(&mut outcome.lifecycle, false);
+    let machine_id = persistence::machine_identity(&outcome.platform);
+    let snapshot = Snapshot {
+        id,
+        timestamp: outcome.lifecycle.started_at.clone(),
+        platform: outcome.platform,
+        observations: outcome.observations,
+        lifecycle: Some(outcome.lifecycle),
+        query_failures: outcome.query_failures,
+        machine_id,
+    };
+    let store = Store {
+        schema_version: persistence::SCHEMA_VERSION,
+        snapshots: vec![snapshot.clone()],
+        ..Default::default()
+    };
+    let context = mutation_context(&store, Some(operation_id))?;
+    Ok((snapshot, context))
+}
+
+#[cfg(feature = "owner-mode")]
+fn persist_owner_snapshot(
+    session: &PlatformSession,
+    snapshot: Snapshot,
+) -> Result<(), CommandError> {
+    let mut store = session
+        .0
+        .lock()
+        .map_err(|_| CommandError::state_unavailable())?;
+    store.snapshots.push(snapshot);
+    update_drift(&mut store);
+    refresh_desired_validity(&mut store);
+    persistence::apply_history_retention(&mut store).map_err(CommandError::invalid_action)
+}
+
+#[cfg(all(feature = "owner-mode", not(feature = "mutation-alpha")))]
+pub fn run() -> tauri::Result<()> {
+    let store = persistence::load();
+    let broker = Arc::new(Broker::owner(Arc::new(WindowsSettingStore)));
+    if let Ok(context) = mutation_context(
+        &store,
+        Some(crate::mutation::MutationOperationId::WidgetsVisibility),
+    ) && crate::owner_scope::is_valid(&context.machine_id)
+    {
+        let _ = broker.recover_interrupted(&context);
+    }
+    let app = tauri::Builder::default()
+        .manage(ManagedAppState::new())
+        .manage(PlatformSession(Arc::new(Mutex::new(store))))
+        .manage(InspectionCoordinator(Mutex::new(None)))
+        .manage(MutationSession(broker))
+        .invoke_handler(tauri::generate_handler![
+            get_app_view,
+            dispatch_app_action,
+            get_platform_dashboard,
+            start_inspection,
+            cancel_inspection,
+            get_running_inspection_state,
+            get_inspection_history,
+            get_inspection_detail,
+            get_component_observation_timeline,
+            get_drift_history,
+            acknowledge_drift_event,
+            get_detailed_package_observations,
+            get_allowed_desired_state_options,
+            validate_desired_state,
+            save_desired_state,
+            clear_desired_state,
+            generate_preview_plan,
+            get_migration_status,
+            get_vm_validation_metadata,
+            get_product_info,
+            get_product_component_catalogue,
+            compare_inspections,
+            set_history_retention,
+            clear_local_history,
+            generate_diagnostics_export,
+            get_widgets_actionability,
+            apply_owner_operation,
+            undo_owner_operation,
+            get_owner_change_history
         ])
         .build(tauri::generate_context!())?;
     app.run(|handle, event| {
@@ -1971,7 +2198,7 @@ pub fn export_live_validation_evidence(
         .map_err(CommandError::mutation)
 }
 
-#[cfg(feature = "mutation-alpha")]
+#[cfg(feature = "owner-mode")]
 fn mutation_context(
     store: &Store,
     operation_id: Option<crate::mutation::MutationOperationId>,
@@ -1998,6 +2225,25 @@ fn mutation_context(
         .observations
         .iter()
         .find(|observation| observation.component_id == platform::ComponentId::WidgetsPlatform);
+    let widgets_detector = snapshot
+        .observations
+        .iter()
+        .find(|observation| observation.component_id == platform::ComponentId::TaskbarWidgets);
+    let detector_current_enabled =
+        widgets_detector.and_then(|observation| match &observation.current {
+            PlatformState::UserPreference { enabled } => Some(*enabled),
+            _ => None,
+        });
+    let detector_status = widgets_detector
+        .map(|observation| match observation.detector_status {
+            DetectorStatus::Successful => "successful",
+            DetectorStatus::Unknown => "unknown",
+            DetectorStatus::Failed => "failed",
+            DetectorStatus::Cancelled => "cancelled",
+            DetectorStatus::NotRun => "not_run",
+        })
+        .unwrap_or("not_run")
+        .to_owned();
     let externally_managed = matches!(
         operation_id,
         Some(crate::mutation::MutationOperationId::WidgetsVisibility)
@@ -2034,9 +2280,14 @@ fn mutation_context(
         source_observation_id: format!("{}:{subject}", snapshot.id),
         windows_build: snapshot.platform.build,
         edition: snapshot.platform.edition.clone(),
+        architecture: snapshot.platform.architecture.clone(),
+        #[cfg(feature = "mutation-alpha")]
         domain_joined: snapshot.platform.domain_joined,
+        #[cfg(feature = "mutation-alpha")]
         entra_joined: snapshot.platform.entra_joined,
+        #[cfg(feature = "mutation-alpha")]
         workplace_joined: snapshot.platform.workplace_joined,
+        #[cfg(feature = "mutation-alpha")]
         mdm_enrolled: snapshot.platform.mdm_enrolled,
         authority: if externally_managed {
             "external_policy".into()
@@ -2058,6 +2309,8 @@ fn mutation_context(
         evidence_fingerprint: hash_serializable(&evidence)
             .map_err(|error| CommandError::invalid_action(error.to_string()))?,
         desired_state_revision_id: None,
+        detector_current_enabled,
+        detector_status,
     })
 }
 
@@ -2114,6 +2367,10 @@ pub fn run() -> tauri::Result<()> {
             set_history_retention,
             clear_local_history,
             generate_diagnostics_export,
+            get_widgets_actionability,
+            apply_owner_operation,
+            undo_owner_operation,
+            get_owner_change_history,
             get_mutation_alpha_status,
             acknowledge_mutation_alpha_warning,
             get_mutation_operation_options,
@@ -2192,23 +2449,33 @@ mod tests {
     }
 
     #[test]
-    fn normal_command_registration_contains_no_mutation_surface() {
+    fn owner_command_registration_exposes_only_product_widgets_operations() {
         let source = include_str!("app.rs");
-        let normal = source
-            .split("#[cfg(not(feature = \"mutation-alpha\"))]")
+        let owner = source
+            .split("#[cfg(all(feature = \"owner-mode\", not(feature = \"mutation-alpha\")))]\npub fn run()")
             .nth(1)
             .and_then(|value| value.split("#[cfg(feature = \"mutation-alpha\")]").next())
-            .expect("normal run block should remain visible to the safety test");
+            .expect("owner run block should remain visible to the safety test");
+        for required in [
+            "get_widgets_actionability",
+            "apply_owner_operation",
+            "undo_owner_operation",
+            "get_owner_change_history",
+        ] {
+            assert!(owner.contains(required), "owner block omitted {required}");
+        }
         for prohibited in [
             "get_mutation_alpha_status",
             "generate_mutation_plan",
             "approve_and_execute_mutation",
             "rollback_mutation",
             "export_live_validation_evidence",
+            "set_taskbar_task_view_visibility",
+            "set_taskbar_show_desktop_enabled",
         ] {
             assert!(
-                !normal.contains(prohibited),
-                "normal block exposed {prohibited}"
+                !owner.contains(prohibited),
+                "owner block exposed {prohibited}"
             );
         }
     }

@@ -1,12 +1,18 @@
 # Mutation broker alpha
 
+> Historical engineering harness: D-015 supersedes this document for normal
+> product authorization. The gates below remain relevant only when explicitly
+> building/running the `mutation-alpha` validation flavor. Normal Owner Mode
+> uses the same closed broker, journal, handlers, and store without these gates.
+
 ## Release gates
 
 Mutation commands compile only with Cargo feature `mutation-alpha`. The broker
 also requires a debug/internal build, exact `--enable-mutation-alpha` CLI flag,
 in-app warning acknowledgement, fresh completed inspection, and valid plan. VM
-detection is not a gate. Ordinary builds register no mutation Tauri commands;
-the frontend hides the panel when its status command is absent.
+detection is not a gate. Explicit feature-off engineering builds register no
+mutation Tauri commands; the frontend hides the panel when its status command
+is absent. The default Owner Mode build is a separate composition.
 
 Live mutation now additionally requires `--enable-live-validation`, a fixed
 local scenario manifest, exact scenario/machine/checkpoint arguments,
@@ -16,11 +22,12 @@ platform, informational VM detection, and scenario. All three operations remain
 “Internal alpha - not live validated.”
 
 The internal Experimental Apply & Undo panel is instantiated only when
-`get_product_info` reports `internal mutation-alpha compile`. The normal binary's
-separate Tauri registration still omits every command below, so frontend code is
-not an authorization boundary. A denied development host receives a permanent
-block without executable controls. A permitted target must acknowledge the
-backend warning before the panel requests the backend-filtered options.
+`get_product_info` reports `engineering mutation-alpha harness`. The normal
+binary's separate Tauri registration omits every engineering command below and
+registers only the closed Widgets owner commands, so frontend code is not an
+authorization boundary. A denied development host receives a permanent block
+without executable controls. A permitted target must acknowledge the backend
+warning before the panel requests the backend-filtered options.
 
 ### Frontend command contract
 

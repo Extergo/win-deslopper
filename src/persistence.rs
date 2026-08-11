@@ -757,6 +757,7 @@ fn persist(tx: &Transaction<'_>, store: &Store) -> rusqlite::Result<()> {
         let mut redacted_platform = snapshot.platform.clone();
         redacted_platform.device_name = None;
         redacted_platform.user_sid = None;
+        redacted_platform.owner_scope_id = None;
         let phase = lifecycle
             .map(|value| format!("{:?}", value.phase))
             .unwrap_or_else(|| "CompletedWithPartialFailures".into());
@@ -1276,6 +1277,14 @@ fn hash(value: &str) -> String {
     format!("{:016x}", h.finish())
 }
 fn machine_id(info: &PlatformInfo) -> String {
+    #[cfg(feature = "owner-mode")]
+    if let Some(scope) = info
+        .owner_scope_id
+        .as_deref()
+        .filter(|scope| crate::owner_scope::is_valid(scope))
+    {
+        return scope.to_owned();
+    }
     hash(&format!(
         "{}:{}:{}",
         info.device_name.as_deref().unwrap_or("unknown"),

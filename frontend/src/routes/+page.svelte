@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
 
   import {
     createBackendClient,
@@ -12,6 +12,10 @@
     type DriftEvent,
     type InspectionHistoryItem,
     type InspectionProgress,
+    type MutationTarget,
+    type MutationTransaction,
+    type OwnerActionability,
+    type OwnerOperationResult,
     type PlatformDashboard,
     type ProductComponent,
     type ProductInfo,
@@ -106,10 +110,16 @@
   let diagnosticsIncludeErrors = true;
   let diagnosticsStatus = '';
   let clearingHistory = false;
+  let widgetsActionability: OwnerActionability | null = null;
+  let ownerHistory: MutationTransaction[] = [];
+  let ownerBusy = false;
+  let ownerPhase: 'idle' | 'checking' | 'applying' | 'verifying' = 'idle';
+  let ownerResult: OwnerOperationResult | null = null;
+  let ownerFeedback = '';
 
   $: observations = platform?.snapshot?.observations ?? [];
   $: sections =
-    productInfo?.buildMode === 'internal mutation-alpha compile'
+    productInfo?.buildMode === 'engineering mutation-alpha harness'
       ? [
           ...productSections,
           {
@@ -140,6 +150,18 @@
     if (driftStatusFilter === 'unreviewed' && event.reviewed) return false;
     return driftComponentFilter === 'all' || event.component_id === driftComponentFilter;
   });
+  $: latestOwnerUndo = ownerHistory.find(
+    (transaction) => transaction.status === 'rollback_available' && transaction.rollback.available
+  );
+  $: latestOwnerAttention = [
+    'recovery_required',
+    'rollback_verification_failed',
+    'failed_after_mutation'
+  ].includes(ownerHistory[0]?.status)
+    ? ownerHistory[0]
+    : undefined;
+  $: ownerTechnicalTransaction =
+    ownerResult?.transaction ?? latestOwnerAttention ?? latestOwnerUndo;
 
   onMount(() => {
     onboardingVisible = window.localStorage.getItem('deslopper-onboarding-complete') !== 'true';
@@ -168,6 +190,7 @@
       ]);
       if (platform.snapshot) onboardingVisible = false;
       initialiseComparison();
+      await refreshOwnerData();
     } catch (error) {
       errorMessage = describeCommandError(error);
     } finally {
@@ -182,6 +205,24 @@
       backend.getDriftHistory()
     ]);
     initialiseComparison();
+    await refreshOwnerData();
+  }
+
+  async function refreshOwnerData(): Promise<void> {
+    if (!platform?.snapshot || productInfo?.buildMode === 'explicit read-only') {
+      widgetsActionability = null;
+      ownerHistory = [];
+      return;
+    }
+    try {
+      [widgetsActionability, ownerHistory] = await Promise.all([
+        backend.getWidgetsActionability(),
+        backend.getOwnerChangeHistory()
+      ]);
+    } catch (error) {
+      widgetsActionability = null;
+      ownerFeedback = describeCommandError(error);
+    }
   }
 
   function initialiseComparison(): void {
@@ -247,6 +288,70 @@
     desiredStateKey = desiredOptions[0]?.key ?? '';
     desiredNote = desiredFor(componentId)?.note ?? '';
     selectedTimeline = platform?.snapshot ? await backend.getComponentTimeline(componentId) : [];
+    if (componentId === 'taskbar_widgets') await refreshOwnerData();
+  }
+
+  async function applyWidgets(target: MutationTarget): Promise<void> {
+    if (ownerBusy || !platform?.snapshot) return;
+    ownerBusy = true;
+    ownerResult = null;
+    ownerFeedback = '';
+    ownerPhase = 'checking';
+    let verifyingTimer: ReturnType<typeof setTimeout> | null = null;
+    try {
+      widgetsActionability = await backend.getWidgetsActionability();
+      if (
+        widgetsActionability.status !== 'ready' ||
+        !widgetsActionability.availableTargets.includes(target)
+      ) {
+        ownerFeedback = widgetsActionability.reason;
+        return;
+      }
+      ownerPhase = 'applying';
+      await tick();
+      verifyingTimer = setTimeout(() => (ownerPhase = 'verifying'), 250);
+      const result = await backend.applyWidgets(target, platform.snapshot.id);
+      ownerPhase = 'verifying';
+      await tick();
+      ownerResult = result;
+      ownerFeedback = result.message;
+      await refreshSavedData();
+    } catch (error) {
+      ownerFeedback = describeCommandError(error);
+      await refreshOwnerData();
+    } finally {
+      if (verifyingTimer) clearTimeout(verifyingTimer);
+      ownerBusy = false;
+      ownerPhase = 'idle';
+    }
+  }
+
+  async function undoWidgets(): Promise<void> {
+    if (ownerBusy || !latestOwnerUndo) return;
+    ownerBusy = true;
+    ownerResult = null;
+    ownerFeedback = '';
+    ownerPhase = 'checking';
+    let verifyingTimer: ReturnType<typeof setTimeout> | null = null;
+    try {
+      await backend.getWidgetsActionability();
+      ownerPhase = 'applying';
+      await tick();
+      verifyingTimer = setTimeout(() => (ownerPhase = 'verifying'), 250);
+      const result = await backend.undoWidgets(latestOwnerUndo.transactionId);
+      ownerPhase = 'verifying';
+      await tick();
+      ownerResult = result;
+      ownerFeedback = result.message;
+      await refreshSavedData();
+    } catch (error) {
+      ownerFeedback = describeCommandError(error);
+      await refreshOwnerData();
+    } finally {
+      if (verifyingTimer) clearTimeout(verifyingTimer);
+      ownerBusy = false;
+      ownerPhase = 'idle';
+    }
   }
 
   function desiredRequest(): DesiredStateRequest {
@@ -397,10 +502,10 @@
 </script>
 
 <svelte:head>
-  <title>Deslopper - Read-Only Product Alpha</title>
+  <title>Deslopper - Owner Mode</title>
   <meta
     name="description"
-    content="A privacy-conscious, read-only Windows configuration inspector."
+    content="A privacy-conscious Windows configuration inspector with safe Widgets Apply and Undo."
   />
 </svelte:head>
 
@@ -418,9 +523,9 @@
         <div class="logo" aria-hidden="true">D</div>
         <div>
           <strong>Deslopper</strong><span
-            >{productInfo.buildMode === 'internal mutation-alpha compile'
+            >{productInfo.buildMode === 'engineering mutation-alpha harness'
               ? 'Internal Mutation Alpha'
-              : 'Read-Only Product Alpha'}</span
+              : productInfo.releaseLabel}</span
           >
         </div>
       </div>
@@ -437,15 +542,15 @@
         {/each}
       </nav>
       <div class="sidebar-spacer"></div>
-      {#if productInfo.buildMode === 'internal mutation-alpha compile'}
+      {#if productInfo.buildMode === 'engineering mutation-alpha harness'}
         <section class="safety-note internal" aria-label="Build safety status">
           <strong><span aria-hidden="true">●</span> Internal build</strong>
           <p>Mutation remains unavailable unless every backend safety gate passes.</p>
         </section>
       {:else}
         <section class="safety-note" aria-label="Build safety status">
-          <strong><span aria-hidden="true">●</span> Read-only</strong>
-          <p>I inspect and explain. I do not apply Windows changes in this build.</p>
+          <strong><span aria-hidden="true">●</span> Owner mode</strong>
+          <p>Widgets changes are explicit, verified, recorded locally, and undoable when safe.</p>
         </section>
       {/if}
     </aside>
@@ -487,8 +592,8 @@
               </div>
             </div>
             <div class="read-only-seal">
-              <span aria-hidden="true">✓</span><strong>Read-only Product Alpha</strong><small
-                >No UAC. No silent changes. Local history.</small
+              <span aria-hidden="true">✓</span><strong>Owner Mode M1</strong><small
+                >One supported setting. No UAC. Verified local history.</small
               >
             </div>
           </header>
@@ -747,13 +852,136 @@
                     <p>{selectedComponent.gamingNotes} {selectedComponent.enterpriseNotes}</p>
                   </article>
                 </div>
+                {#if selectedComponent.componentId === 'taskbar_widgets'}
+                  <section class="owner-action" aria-labelledby="widgets-owner-title">
+                    <div class="section-heading">
+                      <div>
+                        <span class="eyebrow">Owner control</span>
+                        <h3 id="widgets-owner-title">Apply Widgets visibility</h3>
+                        <p>
+                          Current-user scope. Deslopper checks the latest state, records the exact
+                          pre-state, applies one fixed setting, verifies it, and preserves Undo only
+                          when restoration is safe.
+                        </p>
+                      </div>
+                      <span class="badge">Undo supported</span>
+                    </div>
+                    {#if !platform.snapshot}
+                      <div class="validation invalid">
+                        <strong>Fresh scan required</strong>
+                        <p>Run an inspection before applying a Widgets change.</p>
+                      </div>
+                    {:else if widgetsActionability}
+                      <div
+                        class="validation"
+                        class:invalid={widgetsActionability.status !== 'ready'}
+                      >
+                        <strong>{widgetsActionability.status.replaceAll('_', ' ')}</strong>
+                        <p>{widgetsActionability.reason}</p>
+                        <small>Scope: {widgetsActionability.scope.replaceAll('_', ' ')}</small>
+                      </div>
+                    {:else}
+                      <div class="validation invalid">
+                        <strong>Action unavailable</strong>
+                        <p>
+                          {ownerFeedback ||
+                            'Run a fresh inspection to establish the current state.'}
+                        </p>
+                      </div>
+                    {/if}
+                    {#if latestOwnerAttention && ownerResult?.transaction.transactionId !== latestOwnerAttention.transactionId}
+                      <div class="owner-result needs-attention" role="alert">
+                        <strong>Needs attention</strong>
+                        <p>
+                          {latestOwnerAttention.recoveryRequirement ??
+                            latestOwnerAttention.errorSummary ??
+                            'The latest Widgets transaction requires review before another change.'}
+                        </p>
+                      </div>
+                    {/if}
+                    <div class="button-row">
+                      {#each widgetsActionability?.availableTargets ?? [] as target (target)}
+                        <button
+                          class="primary"
+                          disabled={ownerBusy || widgetsActionability?.status !== 'ready'}
+                          onclick={() => void applyWidgets(target)}
+                        >
+                          {target === 'disabled' ? 'Hide Widgets button' : 'Show Widgets button'}
+                        </button>
+                      {/each}
+                      {#if latestOwnerUndo}
+                        <button
+                          class="secondary"
+                          disabled={ownerBusy}
+                          onclick={() => void undoWidgets()}>Undo last Widgets change</button
+                        >
+                      {/if}
+                    </div>
+                    {#if ownerBusy}
+                      <div class="owner-progress" aria-live="polite">
+                        <strong>
+                          {ownerPhase === 'checking'
+                            ? 'Checking current state…'
+                            : ownerPhase === 'applying'
+                              ? 'Applying Widgets setting…'
+                              : 'Verifying result…'}
+                        </strong>
+                        <span>Keep Deslopper open while this local operation completes.</span>
+                      </div>
+                    {:else if ownerFeedback}
+                      <div
+                        class="owner-result"
+                        class:needs-attention={ownerResult?.outcome === 'needs_attention'}
+                        aria-live="polite"
+                      >
+                        <strong
+                          >{ownerResult?.outcome.replaceAll('_', ' ') ?? 'Widgets status'}</strong
+                        >
+                        <p>{ownerFeedback}</p>
+                        {#if ownerResult?.note}<small>{ownerResult.note}</small>{/if}
+                      </div>
+                    {/if}
+                    {#if ownerResult || latestOwnerAttention || latestOwnerUndo}
+                      <details class="technical">
+                        <summary>Technical details</summary>
+                        {#if ownerTechnicalTransaction}
+                          <article>
+                            <strong>Transaction {ownerTechnicalTransaction.transactionId}</strong>
+                            <span
+                              >Status: {ownerTechnicalTransaction.status.replaceAll('_', ' ')}</span
+                            >
+                            <span>Target: {ownerTechnicalTransaction.targetState}</span>
+                            <span>
+                              Exact pre-state: {JSON.stringify(
+                                ownerTechnicalTransaction.preState?.representation ?? null
+                              )}
+                            </span>
+                            {#if ownerResult?.note}<small>{ownerResult.note}</small>{/if}
+                            <small>
+                              {ownerTechnicalTransaction.errorSummary ??
+                                ownerTechnicalTransaction.verificationResult ??
+                                'No error recorded.'}
+                            </small>
+                          </article>
+                        {/if}
+                      </details>
+                    {/if}
+                  </section>
+                {/if}
                 <section class="support-strip" aria-label="Product support levels">
                   <span><strong>Observe</strong> Supported</span><span
                     ><strong>Preview</strong>
                     {desiredOptions.length
                       ? 'Available with complete evidence'
                       : 'Unavailable for current evidence'}</span
-                  ><span><strong>Apply</strong> Unavailable in Product Alpha</span>
+                  ><span
+                    ><strong>Apply</strong>
+                    {selectedComponent.componentId === 'taskbar_widgets'
+                      ? widgetsActionability?.status === 'ready'
+                        ? 'Available'
+                        : 'Unavailable for current evidence'
+                      : 'Inspection only'}</span
+                  >
                 </section>
                 <section class="desired-editor">
                   <div class="section-heading">
@@ -1197,14 +1425,14 @@
                 </li>
                 <li>Machine identity and the development-host denylist never enter diagnostics.</li>
                 <li>
-                  The normal capability set has no filesystem, shell, network, updater, or mutation
-                  permission.
+                  Owner Mode has no filesystem, shell, network, or updater permission. Its only
+                  Windows write is the fixed current-user Widgets visibility operation.
                 </li>
               </ul>
             </section>
           </div>
         </section>
-      {:else if productInfo.buildMode === 'internal mutation-alpha compile'}
+      {:else if productInfo.buildMode === 'engineering mutation-alpha harness'}
         <MutationAlphaPanel
           buildMode={productInfo.buildMode}
           sourceInspectionId={platform.snapshot?.id ?? null}
@@ -1217,11 +1445,11 @@
     <div class="scrim">
       <dialog use:modalDialog class="onboarding" aria-labelledby="onboarding-title">
         <div class="logo" aria-hidden="true">D</div>
-        <span class="eyebrow">Welcome to the Product Alpha</span>
+        <span class="eyebrow">Welcome to Owner Mode</span>
         <h1 id="onboarding-title">Understand Windows before deciding what you want.</h1>
         <p>
           Deslopper gives you a careful local record of supported settings, packages, policy,
-          uncertainty, and change over time.
+          uncertainty, and change over time, plus one verified Widgets control.
         </p>
         <ul>
           {#each onboardingPrinciples as principle (principle)}<li>
@@ -1806,6 +2034,36 @@
     padding: var(--space-4);
     border-radius: var(--radius-control);
     background: var(--color-surface-tonal);
+  }
+  .owner-action {
+    display: grid;
+    gap: var(--space-3);
+    margin-top: var(--space-4);
+    padding: var(--space-5);
+    border: 1px solid var(--color-primary);
+    border-radius: var(--radius-card);
+    background: color-mix(in srgb, var(--color-primary-container) 42%, var(--color-surface));
+  }
+  .owner-action .section-heading p,
+  .owner-result p {
+    margin-bottom: 0;
+  }
+  .owner-progress,
+  .owner-result {
+    display: grid;
+    gap: 4px;
+    padding: var(--space-4);
+    border-radius: var(--radius-control);
+    background: var(--color-success-container);
+  }
+  .owner-progress span,
+  .owner-result p,
+  .owner-result small {
+    color: var(--color-text-secondary);
+    font-size: var(--type-supporting);
+  }
+  .owner-result.needs-attention {
+    background: var(--color-warning-container);
   }
   .support-strip {
     display: flex;

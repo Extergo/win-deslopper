@@ -24,7 +24,7 @@ export type ComponentFilter =
 
 export const onboardingPrinciples = [
   'Deslopper inspects before it proposes anything.',
-  'This Product Alpha is read-only and never silently alters Windows.',
+  'Owner Mode changes only Widgets visibility after an explicit click and never silently alters Windows.',
   'Unknown does not mean broken, and permission-limited does not mean absent.',
   'Inspection history stays local by default and sensitive evidence is redacted.'
 ] as const;
@@ -34,7 +34,7 @@ export const diagnosticsCategories = [
   'Windows edition and build',
   'Inspection and detector summaries',
   'Redacted evidence and errors',
-  'Read-only capability summary'
+  'Owner-mode capability summary'
 ] as const;
 
 export function stateText(state: Record<string, unknown> | undefined): string {

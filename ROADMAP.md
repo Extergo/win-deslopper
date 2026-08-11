@@ -3,20 +3,18 @@
 This roadmap records sequencing, not authorization. `AGENTS.md`, `SECURITY.md`,
 `ARCHITECTURE.md`, and `.deslopper/policy.toml` remain authoritative.
 
-## Current milestone - Read-Only Product Alpha
+## Current milestone - Owner Mode M1: Widgets
 
-**Status:** Implemented on `read-only-product-alpha`; validation and packaging
-gates must pass before the milestone tag is created.
+**Status:** Implemented and packaged; manual Windows smoke test pending.
 
-The Product Alpha turns the 20-component read-only engine into a useful Windows
-application: compact onboarding, an honest system summary, component browsing,
-desired-state validation, non-executable previews, reviewed/resolved drift,
-snapshot comparison, retained history, privacy-safe diagnostics, local settings,
-and a normal feature-off installer.
+M1 productizes only Taskbar Widgets visibility in the ordinary release. Apply
+is one click and must preflight, capture, journal, write, directly verify, verify
+through the matching detector, and recover safely. Undo is one click when the
+current state still equals Deslopper's applied state.
 
-The normal build remains unelevated and has no usable mutation surface. It does
-not claim optimisation, removal, repair, production readiness, or universal
-Windows support.
+The normal build remains unelevated, local, Windows 11 x64/current-user scoped,
+and has no generic mutation surface. Task View and Show Desktop remain
+non-actionable until matching detectors exist.
 
 ## Read-only validation and hardening
 
@@ -31,7 +29,7 @@ Windows support.
 
 ## Internal mutation research remains separate
 
-The compile-gated broker still contains exactly three closed taskbar operations.
+The explicit engineering harness still contains exactly three closed taskbar operations.
 All evidence is synthetic and zero handlers are live validated. The former
 physical target was withdrawn because it was sold before approval or mutation;
 no mutation failure occurred. Any future work requires a new disposable target,
@@ -43,7 +41,7 @@ milestone. The original development host is permanently prohibited.
 - Inspection failure is never absence.
 - Normal package version servicing is not configuration drift.
 - Preview state is never represented as completed work.
-- No automatic restoration or Apply control appears until an explicitly
-  authorized, tested, reversible operation reaches the normal product boundary.
+- No Apply control appears until an explicitly authorized, tested, reversible
+  operation reaches the normal product boundary. M1 authorizes Widgets only.
 - Do not weaken gaming, anti-cheat, Xbox, Game Pass, or Windows security
   compatibility to increase removal coverage.

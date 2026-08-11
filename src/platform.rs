@@ -292,6 +292,8 @@ pub struct PlatformInfo {
     pub model: Option<String>,
     #[serde(alias = "user_sid")]
     pub user_sid: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner_scope_id: Option<String>,
     pub elevated: bool,
     #[serde(alias = "domain_joined")]
     pub domain_joined: Option<bool>,

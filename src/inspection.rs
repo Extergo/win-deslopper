@@ -252,7 +252,7 @@ fn failure(
 fn powershell_script(query_id: QueryId) -> &'static str {
     match query_id {
         QueryId::PlatformInventory => {
-            r#"$ErrorActionPreference='Stop';$os=Get-CimInstance Win32_OperatingSystem;$cs=Get-CimInstance Win32_ComputerSystem;$cv=Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion';[pscustomobject]@{ProductName=$cv.ProductName;Edition=$cv.EditionID;Build=[int]$cv.CurrentBuildNumber;DisplayVersion=$cv.DisplayVersion;UBR=$cv.UBR;Architecture=$os.OSArchitecture;DeviceName=$cs.Name;Manufacturer=$cs.Manufacturer;Model=$cs.Model;DomainJoined=[bool]$cs.PartOfDomain;Windows11=([int]$cv.CurrentBuildNumber -ge 22000)}|ConvertTo-Json -Compress"#
+            r#"$ErrorActionPreference='Stop';$os=Get-CimInstance Win32_OperatingSystem;$cs=Get-CimInstance Win32_ComputerSystem;$cv=Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion';$sid=[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value;$machineGuid=Get-ItemPropertyValue 'HKLM:\SOFTWARE\Microsoft\Cryptography' 'MachineGuid';[pscustomobject]@{ProductName=$cv.ProductName;Edition=$cv.EditionID;Build=[int]$cv.CurrentBuildNumber;DisplayVersion=$cv.DisplayVersion;UBR=$cv.UBR;Architecture=$os.OSArchitecture;DeviceName=$cs.Name;Manufacturer=$cs.Manufacturer;Model=$cs.Model;UserSid=$sid;MachineGuid=$machineGuid;DomainJoined=[bool]$cs.PartOfDomain;Windows11=([int]$cv.CurrentBuildNumber -ge 22000)}|ConvertTo-Json -Compress"#
         }
         QueryId::AppxCurrentUser => {
             r#"$ErrorActionPreference='Stop';@(Get-AppxPackage|Select-Object Name,PackageFamilyName,PackageFullName,Version,Architecture,PublisherId,IsFramework,IsResourcePackage,PackageUserInformation,InstallLocation,NonRemovable,Dependencies,SignatureKind)|ConvertTo-Json -Depth 6 -Compress"#
@@ -663,6 +663,19 @@ fn parse_inventory(value: Option<&Value>) -> PlatformInfo {
         manufacturer: value["Manufacturer"].as_str().map(str::to_owned),
         model: value["Model"].as_str().map(str::to_owned),
         user_sid: None,
+        owner_scope_id: {
+            #[cfg(feature = "owner-mode")]
+            {
+                value["MachineGuid"]
+                    .as_str()
+                    .zip(value["UserSid"].as_str())
+                    .map(|(machine, user)| crate::owner_scope::from_stable_ids(machine, user))
+            }
+            #[cfg(not(feature = "owner-mode"))]
+            {
+                None
+            }
+        },
         elevated: false,
         domain_joined: value["DomainJoined"].as_bool(),
         entra_joined: None,
@@ -692,6 +705,7 @@ pub fn default_platform() -> PlatformInfo {
         manufacturer: None,
         model: None,
         user_sid: None,
+        owner_scope_id: None,
         elevated: false,
         domain_joined: None,
         entra_joined: None,

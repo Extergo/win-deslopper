@@ -12,6 +12,7 @@ pub enum MutationOperationId {
 }
 
 impl MutationOperationId {
+    #[cfg(any(test, feature = "mutation-alpha"))]
     pub const ALL: [Self; 3] = [
         Self::WidgetsVisibility,
         Self::TaskViewVisibility,
@@ -66,6 +67,7 @@ impl MutationTarget {
     }
 }
 
+#[cfg(feature = "mutation-alpha")]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PlanRequest {
@@ -74,6 +76,7 @@ pub struct PlanRequest {
     pub source_inspection_id: String,
 }
 
+#[cfg(feature = "mutation-alpha")]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ApprovalRequest {
@@ -82,6 +85,7 @@ pub struct ApprovalRequest {
     pub acknowledged: bool,
 }
 
+#[cfg(feature = "mutation-alpha")]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RollbackRequest {
@@ -90,6 +94,21 @@ pub struct RollbackRequest {
     pub allow_conflict: bool,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OwnerApplyRequest {
+    pub operation_id: MutationOperationId,
+    pub target: MutationTarget,
+    pub source_inspection_id: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OwnerUndoRequest {
+    pub transaction_id: String,
+}
+
+#[cfg(feature = "mutation-alpha")]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AlphaGateStatus {
@@ -103,7 +122,7 @@ pub struct AlphaGateStatus {
     pub reason: String,
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "mutation-alpha"))]
 mod tests {
     use super::PlanRequest;
 
