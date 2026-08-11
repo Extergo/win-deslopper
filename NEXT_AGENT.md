@@ -28,6 +28,17 @@ and the broader `ConfigureWindowsSpotlight` policy do not establish exact parity
   visible Explorer refresh without restart, full process exit, persistence,
   relaunch with durable Undo, exact restoration to DWORD 0, and independent
   final verification.
+- M3 Tips and suggestions `SoftLandingEnabled` was DWORD 1. An independent
+  non-elevated same-state write succeeded. Deslopper applied DWORD 0; the
+  installed process fully exited; relaunch preserved durable Undo; and
+  independent final verification confirmed exact restoration to DWORD 1.
+- M3 Notification suggestions `SubscribedContent-338389Enabled` followed the
+  same successful sequence from DWORD 1 to 0 and back to exact DWORD 1 after
+  complete process exit, relaunch, and Undo.
+- Welcome experience `SubscribedContent-310093Enabled` and Suggested content in
+  Settings `SubscribedContent-338393Enabled` were absent before and after the
+  test. They were not created or mutated. This is the intended unsupported-
+  missing contract, not a failed operation.
 - `TaskbarSd` was absent and was not tested. Do not touch or productize it.
 
 ## Safety contract
@@ -47,6 +58,7 @@ The completed physical evidence is in
 in `docs/owner-mode-task-view-smoke-test.md`. Do not rerun it as part of coding
 or CI.
 
-M3 physical validation has not been run. Use
-`docs/owner-mode-m3-current-user-cleanup-smoke-test.md` manually on the installed
-normal product; never turn it into an automated or approval-file workflow.
+M3 physical validation is recorded as PASS in
+`docs/owner-mode-m3-physical-validation.md`. The original practical checklist
+remains in `docs/owner-mode-m3-current-user-cleanup-smoke-test.md`; never turn it
+into an automated or approval-file workflow.

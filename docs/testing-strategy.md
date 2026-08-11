@@ -140,5 +140,15 @@ automatic rollback, failed recovery, exact conflict-safe Undo, relaunch,
 owner-scope binding, operation-scoped direct-change-unavailable behavior, and
 duplicate-submit locking. Detector tests separately prove the fixed value and
 policy names and the opposite preference/policy DWORD interpretation. No test
-opens a writable live registry key. The unexecuted physical protocol is
-`docs/owner-mode-m3-current-user-cleanup-smoke-test.md`.
+opens a writable live registry key.
+
+The separate installed-product M3 physical run validated Tips and suggestions
+and Notification suggestions from DWORD 1 through Apply to DWORD 0, complete
+process exit, relaunch, durable Undo, and exact DWORD 1 restoration. Independent
+same-state writes established ordinary-user writability before Deslopper Apply.
+Welcome experience and Suggested content in Settings were absent before and
+after testing, confirming that the run did not create unsupported missing
+representations. The authoritative evidence is
+`docs/owner-mode-m3-physical-validation.md`; the retained protocol is
+`docs/owner-mode-m3-current-user-cleanup-smoke-test.md`. Automated tests and CI
+remain fake-backend only and perform no live mutation.

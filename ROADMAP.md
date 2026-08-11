@@ -5,9 +5,9 @@ This roadmap records sequencing, not authorization. `AGENTS.md`, `SECURITY.md`,
 
 ## Current milestone - Owner Mode M3: Current-user cleanup pack
 
-**Status:** Implemented and packaged as `0.3.0`; physical validation is pending
-the manual smoke protocol. Automated implementation and verification performed
-no live Windows mutation.
+**Status:** Implemented and packaged as `0.3.0`; physical validation PASS on the
+Windows 11 x64 owner machine under ordinary current-user execution with no UAC.
+Automated implementation and verification performed no live Windows mutation.
 
 M3 productizes four existing current-user findings alongside the M1/M2 taskbar
 operations: welcome experience, tips and suggestions, notification suggestions,
@@ -16,6 +16,13 @@ DWORD plus its matching read-only Cloud Content policy check. Missing and
 non-binary representations remain unsupported; policy-owned states are refused.
 Lock-screen suggestions remain inspection-only because their current preference
 and broader Spotlight policy do not prove exact setting parity.
+
+The M3 physical sequence changed and exactly restored Tips and suggestions
+(`SoftLandingEnabled` 1 -> 0 -> relaunch Undo -> 1) and Notification suggestions
+(`SubscribedContent-338389Enabled` 1 -> 0 -> relaunch Undo -> 1). Welcome
+experience and Suggested content in Settings were absent and correctly remained
+absent rather than being invented for testing. See
+`docs/owner-mode-m3-physical-validation.md`.
 
 M2 productized Taskbar Task View visibility alongside the M1 Widgets operation.
 Apply is one click and must preflight, capture, journal, write, directly verify,

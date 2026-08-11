@@ -66,9 +66,14 @@ restoration to DWORD 0, and independent registry verification. See
 evidence record.
 
 M3 automated verification uses fake/fault-injection backends only. The practical
-installed-product protocol is in
-`docs/owner-mode-m3-current-user-cleanup-smoke-test.md`; it has not been executed
-as part of implementation.
+installed-product validation has now passed for Tips and suggestions and
+Notification suggestions. Both fixed DWORDs changed from 1 to 0, survived a
+complete process exit as durable transactions, and were exactly restored to 1
+through Undo after relaunch. The two initially absent M3 values remained absent,
+consistent with M3's unsupported-missing contract. See
+`docs/owner-mode-m3-physical-validation.md` for the authoritative release
+identity and evidence, and
+`docs/owner-mode-m3-current-user-cleanup-smoke-test.md` for the retained protocol.
 
 See `docs/read-only-product-alpha.md` for the complete product and privacy
 contract.

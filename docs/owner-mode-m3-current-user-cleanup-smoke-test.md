@@ -1,6 +1,13 @@
 # Owner Mode M3 current-user cleanup physical smoke test
 
-**Status:** Not executed. This is a manual protocol for the installed normal
+**Status:** Completed for the available exact DWORD representations. Owner Mode
+M3 physical validation is PASS. Tips and suggestions and Notification
+suggestions completed Apply, process exit/relaunch, durable Undo, and exact
+restoration. Welcome experience and Suggested content in Settings were absent
+and remained absent under the unsupported-missing contract. See
+`owner-mode-m3-physical-validation.md` for the authoritative evidence record.
+
+This file remains the reproducible manual protocol for the installed normal
 Deslopper `0.3.0` product. It is not an automated test, approval system, or
 authorization for additional operations.
 
