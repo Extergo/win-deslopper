@@ -17,6 +17,7 @@ use super::{
         HandlerError, MutationBackend as HandlerBackend, OperationHandler,
         TaskbarShowDesktopHandler, TaskbarTaskViewHandler, TaskbarWidgetsHandler, expected,
     },
+    is_owner_handler_version,
     journal::MutationJournal,
     plan::{CapturedState, MutationPlan, hash_serializable, hash_text},
     request::{MutationOperationId, MutationTarget},
@@ -93,8 +94,11 @@ mod owner_tests {
     enum WriteBehavior {
         Succeed,
         FailBefore,
+        DeniedBefore,
         FailAfter,
+        FailAmbiguous,
         Ignore,
+        Unexpected,
     }
 
     struct FakeBackend {
@@ -138,6 +142,12 @@ mod owner_tests {
                         "synthetic write failed before change",
                     ));
                 }
+                WriteBehavior::DeniedBefore => {
+                    return Err(HandlerError::new(
+                        HandlerErrorKind::PermissionDenied,
+                        "synthetic Windows error category: PermissionDenied",
+                    ));
+                }
                 WriteBehavior::FailAfter => {
                     self.set(state.clone());
                     return Err(HandlerError::new(
@@ -145,7 +155,18 @@ mod owner_tests {
                         "synthetic write failed after change",
                     ));
                 }
+                WriteBehavior::FailAmbiguous => {
+                    self.set(CapturedRepresentation::Dword(2));
+                    return Err(HandlerError::new(
+                        HandlerErrorKind::WriteFailed,
+                        "synthetic write result was ambiguous",
+                    ));
+                }
                 WriteBehavior::Ignore => {}
+                WriteBehavior::Unexpected => {
+                    self.set(state.clone());
+                    self.policy.store(true, Ordering::SeqCst);
+                }
             }
             Ok(())
         }
@@ -165,15 +186,15 @@ mod owner_tests {
         }
 
         fn read_task_view(&self) -> Result<CapturedRepresentation, HandlerError> {
-            Ok(CapturedRepresentation::Dword(1))
+            Ok(self.widgets.lock().unwrap().clone())
         }
 
         fn task_view_externally_managed(&self) -> Result<bool, HandlerError> {
             Ok(false)
         }
 
-        fn write_task_view(&self, _: &CapturedRepresentation) -> Result<(), HandlerError> {
-            panic!("Task View is not an owner operation")
+        fn write_task_view(&self, state: &CapturedRepresentation) -> Result<(), HandlerError> {
+            self.write(state)
         }
 
         fn read_show_desktop(&self) -> Result<CapturedRepresentation, HandlerError> {
@@ -237,10 +258,10 @@ mod owner_tests {
     }
 
     #[test]
-    fn owner_registry_exposes_only_widgets() {
+    fn owner_registry_exposes_widgets_and_task_view_only() {
         let (broker, backend, path) = broker("closed", CapturedRepresentation::Dword(1));
         let result = broker.apply_owner_operation(
-            MutationOperationId::TaskViewVisibility,
+            MutationOperationId::ShowDesktopEnabled,
             MutationTarget::Disabled,
             &context(Some(true)),
             || Ok(context(Some(false))),
@@ -251,20 +272,98 @@ mod owner_tests {
     }
 
     #[test]
+    fn task_view_owner_apply_is_verified_and_undoable() {
+        let (broker, backend, path) = broker("task-view", CapturedRepresentation::Dword(0));
+        let applied = broker
+            .apply_owner_operation(
+                MutationOperationId::TaskViewVisibility,
+                MutationTarget::Enabled,
+                &context(Some(false)),
+                || Ok(context(Some(true))),
+            )
+            .unwrap();
+        assert_eq!(applied.outcome, OwnerOperationOutcome::Changed);
+        assert_eq!(
+            applied.classification,
+            OwnerResultClassification::ChangedVerified
+        );
+        assert_eq!(
+            *backend.widgets.lock().unwrap(),
+            CapturedRepresentation::Dword(1)
+        );
+        let undone = broker
+            .undo_owner_operation(
+                &applied.transaction.transaction_id,
+                &context(Some(true)),
+                || Ok(context(Some(false))),
+            )
+            .unwrap();
+        assert_eq!(undone.classification, OwnerResultClassification::Restored);
+        assert_eq!(
+            *backend.widgets.lock().unwrap(),
+            CapturedRepresentation::Dword(0)
+        );
+        cleanup(&path);
+    }
+
+    #[test]
+    fn widgets_permission_denial_is_machine_scoped_direct_unavailability() {
+        let (broker, backend, path) = broker("widgets-denied", CapturedRepresentation::Dword(0));
+        backend.queue(WriteBehavior::DeniedBefore);
+        let result = broker
+            .apply_owner_operation(
+                MutationOperationId::WidgetsVisibility,
+                MutationTarget::Enabled,
+                &context(Some(false)),
+                || panic!("unchanged rejected write must not run detector verification"),
+            )
+            .unwrap();
+        assert_eq!(
+            result.classification,
+            OwnerResultClassification::WriteRejectedUnchanged
+        );
+        assert!(!result.transaction.rollback.available);
+        assert_eq!(
+            broker
+                .owner_actionability(
+                    MutationOperationId::WidgetsVisibility,
+                    &context(Some(false))
+                )
+                .status,
+            OwnerActionabilityStatus::DirectChangeUnavailable
+        );
+        assert_eq!(
+            broker
+                .owner_actionability(
+                    MutationOperationId::TaskViewVisibility,
+                    &context(Some(false))
+                )
+                .status,
+            OwnerActionabilityStatus::Ready
+        );
+        cleanup(&path);
+    }
+
+    #[test]
     fn owner_actionability_handles_managed_unknown_and_missing_states() {
         let (broker, backend, path) = broker("actionability", CapturedRepresentation::Missing);
-        let missing = broker.owner_actionability(&context(None));
+        let missing =
+            broker.owner_actionability(MutationOperationId::WidgetsVisibility, &context(None));
         assert_eq!(missing.status, OwnerActionabilityStatus::Ready);
         assert_eq!(missing.available_targets.len(), 2);
         backend.set(CapturedRepresentation::Dword(2));
         assert_eq!(
-            broker.owner_actionability(&context(None)).status,
+            broker
+                .owner_actionability(MutationOperationId::WidgetsVisibility, &context(None))
+                .status,
             OwnerActionabilityStatus::Unknown
         );
         backend.set(CapturedRepresentation::Dword(1));
         backend.policy.store(true, Ordering::SeqCst);
         assert_eq!(
-            broker.owner_actionability(&context(Some(true))).status,
+            broker
+                .owner_actionability(MutationOperationId::WidgetsVisibility, &context(Some(true)))
+                .status,
             OwnerActionabilityStatus::Managed
         );
         cleanup(&path);
@@ -276,7 +375,9 @@ mod owner_tests {
         let mut old_windows = context(Some(true));
         old_windows.windows_build = 19_045;
         assert_eq!(
-            broker.owner_actionability(&old_windows).status,
+            broker
+                .owner_actionability(MutationOperationId::WidgetsVisibility, &old_windows)
+                .status,
             OwnerActionabilityStatus::Unsupported
         );
         assert_eq!(
@@ -295,7 +396,9 @@ mod owner_tests {
         let mut arm64 = context(Some(true));
         arm64.architecture = "ARM64".into();
         assert_eq!(
-            broker.owner_actionability(&arm64).status,
+            broker
+                .owner_actionability(MutationOperationId::WidgetsVisibility, &arm64)
+                .status,
             OwnerActionabilityStatus::Unsupported
         );
         assert_eq!(
@@ -451,12 +554,16 @@ mod owner_tests {
             )
             .unwrap();
         assert_eq!(before.outcome, OwnerOperationOutcome::CouldNotChange);
+        assert_eq!(
+            before.classification,
+            OwnerResultClassification::WriteRejectedUnchanged
+        );
         assert!(before.transaction.post_state.is_some());
         assert!(!before.transaction.rollback.available);
 
         backend.queue(WriteBehavior::FailAfter);
         backend.queue(WriteBehavior::Succeed);
-        let ambiguous = broker
+        let rolled_back = broker
             .apply_owner_operation(
                 MutationOperationId::WidgetsVisibility,
                 MutationTarget::Disabled,
@@ -464,11 +571,64 @@ mod owner_tests {
                 || Ok(context(Some(false))),
             )
             .unwrap();
-        assert_eq!(ambiguous.outcome, OwnerOperationOutcome::Restored);
-        assert!(ambiguous.transaction.post_state.is_some());
-        assert!(ambiguous.transaction.rollback.complete);
+        assert_eq!(rolled_back.outcome, OwnerOperationOutcome::Restored);
+        assert_eq!(
+            rolled_back.classification,
+            OwnerResultClassification::VerificationFailedRolledBack
+        );
+        assert_eq!(
+            rolled_back.transaction.verification_result.as_deref(),
+            Some("verification_failed_rolled_back")
+        );
+        assert!(rolled_back.transaction.post_state.is_some());
+        assert!(rolled_back.transaction.rollback.complete);
+        assert!(!rolled_back.transaction.rollback.available);
+
+        backend.set(CapturedRepresentation::Dword(1));
+        backend.queue(WriteBehavior::FailAmbiguous);
+        let ambiguous = broker
+            .apply_owner_operation(
+                MutationOperationId::WidgetsVisibility,
+                MutationTarget::Disabled,
+                &context(Some(true)),
+                || panic!("ambiguous write must not run detector verification"),
+            )
+            .unwrap();
+        assert_eq!(
+            ambiguous.classification,
+            OwnerResultClassification::WriteResultAmbiguous
+        );
+        assert_eq!(
+            ambiguous.transaction.verification_result.as_deref(),
+            Some("write_result_ambiguous")
+        );
         assert!(!ambiguous.transaction.rollback.available);
+
+        let changed_backend = Arc::new(FakeBackend::new(CapturedRepresentation::Dword(1)));
+        let changed_path = temp_database("verification-changed");
+        let changed_broker = Broker::with_owner_journal(
+            changed_backend.clone(),
+            MutationJournal::at(changed_path.clone()),
+        );
+        changed_backend.queue(WriteBehavior::Unexpected);
+        let changed = changed_broker
+            .apply_owner_operation(
+                MutationOperationId::WidgetsVisibility,
+                MutationTarget::Disabled,
+                &context(Some(true)),
+                || panic!("changed verification failure must not run detector verification"),
+            )
+            .unwrap();
+        assert_eq!(
+            changed.classification,
+            OwnerResultClassification::VerificationFailedChanged
+        );
+        assert_eq!(
+            changed.transaction.verification_result.as_deref(),
+            Some("verification_failed_changed")
+        );
         cleanup(&path);
+        cleanup(&changed_path);
     }
 
     #[test]
@@ -483,6 +643,10 @@ mod owner_tests {
             )
             .unwrap();
         assert_eq!(restored.outcome, OwnerOperationOutcome::Restored);
+        assert_eq!(
+            restored.classification,
+            OwnerResultClassification::VerificationFailedRolledBack
+        );
         assert_eq!(restored.transaction.status, TransactionStatus::RolledBack);
         assert!(!restored.transaction.rollback.available);
 
@@ -613,7 +777,12 @@ mod owner_tests {
         assert_eq!(recovered.len(), 1);
         assert_eq!(recovered[0].status, TransactionStatus::RecoveryRequired);
         assert_eq!(
-            reopened.owner_actionability(&context(Some(false))).status,
+            reopened
+                .owner_actionability(
+                    MutationOperationId::WidgetsVisibility,
+                    &context(Some(false)),
+                )
+                .status,
             OwnerActionabilityStatus::Unknown
         );
         assert_eq!(
@@ -692,6 +861,7 @@ pub struct IssuedPlan {
 #[serde(rename_all = "snake_case")]
 pub enum OwnerActionabilityStatus {
     Ready,
+    DirectChangeUnavailable,
     NeedsScan,
     Managed,
     Unsupported,
@@ -721,10 +891,24 @@ pub enum OwnerOperationOutcome {
     NeedsAttention,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OwnerResultClassification {
+    ChangedVerified,
+    AlreadySet,
+    WriteRejectedUnchanged,
+    WriteResultAmbiguous,
+    VerificationFailedChanged,
+    VerificationFailedRolledBack,
+    Restored,
+    Conflict,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OwnerOperationResult {
     pub outcome: OwnerOperationOutcome,
+    pub classification: OwnerResultClassification,
     pub transaction: MutationTransaction,
     pub current_state: Option<CapturedState>,
     pub message: String,
@@ -884,15 +1068,19 @@ impl Broker {
         self.gate_status()
     }
 
-    pub fn owner_actionability(&self, context: &BrokerContext) -> OwnerActionability {
-        let operation_id = MutationOperationId::WidgetsVisibility;
+    pub fn owner_actionability(
+        &self,
+        operation_id: MutationOperationId,
+        context: &BrokerContext,
+    ) -> OwnerActionability {
+        let label = owner_operation_label(operation_id);
         let base = |status, reason, current_state, available_targets| OwnerActionability {
             status,
             operation_id,
             current_state,
             available_targets,
             reason,
-            scope: "Changes the Widgets button for this Windows account.",
+            scope: owner_operation_scope(operation_id),
             undo_supported: true,
         };
         if self.execution_lock.try_lock().is_err() {
@@ -911,7 +1099,15 @@ impl Broker {
                 Vec::new(),
             );
         }
-        if let Err(error) = validate_owner_context(context) {
+        if !is_owner_operation(operation_id) {
+            return base(
+                OwnerActionabilityStatus::Unsupported,
+                "This setting is not available in Owner Mode M2.".into(),
+                None,
+                Vec::new(),
+            );
+        }
+        if let Err(error) = validate_owner_context(operation_id, context) {
             let status = match error.code {
                 "external_authority" => OwnerActionabilityStatus::Managed,
                 "unsupported_build" | "unsupported_edition" | "unsupported_architecture" => {
@@ -925,8 +1121,7 @@ impl Broker {
             Ok(history) if history.iter().any(owner_recovery_blocks_new_apply) => {
                 return base(
                     OwnerActionabilityStatus::Unknown,
-                    "A previous Widgets transaction needs attention before another change can be applied."
-                        .into(),
+                    "A previous Owner Mode transaction needs attention before another change can be applied.".into(),
                     None,
                     Vec::new(),
                 );
@@ -934,12 +1129,23 @@ impl Broker {
             Err(_) => {
                 return base(
                     OwnerActionabilityStatus::Unknown,
-                    "Widgets transaction history could not be verified safely.".into(),
+                    format!("{label} transaction history could not be verified safely."),
                     None,
                     Vec::new(),
                 );
             }
             _ => {}
+        }
+        if operation_id == MutationOperationId::WidgetsVisibility
+            && let Ok(history) = self.owner_history(&context.machine_id)
+            && history.iter().any(owner_direct_change_unavailable)
+        {
+            return base(
+                OwnerActionabilityStatus::DirectChangeUnavailable,
+                "Windows prevented this setting from being changed for this Windows account. Direct change is unavailable on this machine/account scope.".into(),
+                None,
+                Vec::new(),
+            );
         }
         let state = match handler(operation_id).inspect_pre_state(self.backend.as_ref()) {
             Ok(state) => state,
@@ -964,8 +1170,9 @@ impl Broker {
             if context.detector_current_enabled != Some(state.effective_enabled) {
                 return base(
                     OwnerActionabilityStatus::NeedsScan,
-                    "The Widgets detector and direct setting no longer agree. Run a new scan."
-                        .into(),
+                    format!(
+                        "The {label} detector and direct setting no longer agree. Run a new scan."
+                    ),
                     Some(state),
                     Vec::new(),
                 );
@@ -983,7 +1190,7 @@ impl Broker {
         } else {
             return base(
                 OwnerActionabilityStatus::Unknown,
-                "The Widgets setting has an unsupported representation.".into(),
+                format!("The {label} setting has an unsupported representation."),
                 Some(state),
                 Vec::new(),
             );
@@ -991,9 +1198,11 @@ impl Broker {
         base(
             OwnerActionabilityStatus::Ready,
             if state.effective_state_known {
-                "Widgets is ready for a verified owner-mode change.".into()
+                format!("{label} is ready for a verified owner-mode change.")
             } else {
-                "Windows has no explicit Widgets preference. Choose Show or Hide; Undo will restore the original absence.".into()
+                format!(
+                    "Windows has no explicit {label} preference. Choose Show or Hide; Undo will restore the original absence."
+                )
             },
             Some(state),
             targets,
@@ -1010,13 +1219,14 @@ impl Broker {
     where
         F: FnOnce() -> Result<BrokerContext, String>,
     {
-        if operation_id != MutationOperationId::WidgetsVisibility {
+        if !is_owner_operation(operation_id) {
             return Err(BrokerError::new(
                 "operation_not_productized",
-                "Only Taskbar Widgets is available in Owner Mode M1.",
+                "Only Widgets and Task View are available in Owner Mode M2.",
             ));
         }
-        validate_owner_context(context)?;
+        validate_owner_context(operation_id, context)?;
+        let label = owner_operation_label(operation_id);
         if self
             .owner_history(&context.machine_id)?
             .iter()
@@ -1024,7 +1234,7 @@ impl Broker {
         {
             return Err(BrokerError::new(
                 "owner_recovery_required",
-                "A previous Widgets transaction needs attention before another change can be applied.",
+                "A previous Owner Mode transaction needs attention before another change can be applied.",
             ));
         }
         let _in_process = self.execution_lock.try_lock().map_err(|_| {
@@ -1051,7 +1261,9 @@ impl Broker {
         {
             return Err(BrokerError::new(
                 "unsupported_representation",
-                "The Widgets setting has an unsupported representation and was not changed.",
+                format!(
+                    "The {label} setting has an unsupported representation and was not changed."
+                ),
             ));
         }
         if pre_state.effective_state_known
@@ -1059,7 +1271,9 @@ impl Broker {
         {
             return Err(BrokerError::new(
                 "stale_source_state",
-                "The Widgets detector and direct setting changed before Apply. Run a new scan.",
+                format!(
+                    "The {label} detector and direct setting changed before Apply. Run a new scan."
+                ),
             ));
         }
 
@@ -1116,7 +1330,8 @@ impl Broker {
                 OwnerOperationOutcome::CouldNotChange,
                 transaction,
                 Some(rechecked),
-                "Widgets changed before Deslopper could apply the request.",
+                format!("{label} changed before Deslopper could apply the request."),
+                OwnerResultClassification::Conflict,
                 None,
             ));
         }
@@ -1139,7 +1354,8 @@ impl Broker {
                 OwnerOperationOutcome::AlreadySet,
                 transaction,
                 Some(pre_state),
-                "Widgets was already set that way. No registry write was performed.",
+                format!("{label} was already set that way. No registry write was performed."),
+                OwnerResultClassification::AlreadySet,
                 None,
             ));
         }
@@ -1175,6 +1391,7 @@ impl Broker {
                 transaction.rollback.available = false;
                 transaction.error_category = Some(format!("{:?}", error.kind));
                 transaction.error_summary = Some(error.summary);
+                transaction.verification_result = Some("write_result_ambiguous".into());
                 transaction.recovery_requirement = Some(
                     "The post-attempt registry representation could not be read. Do not retry blindly."
                         .into(),
@@ -1190,6 +1407,7 @@ impl Broker {
                     transaction,
                     None,
                     "Deslopper could not determine the setting after the write attempt.",
+                    OwnerResultClassification::WriteResultAmbiguous,
                     None,
                 ));
             }
@@ -1200,8 +1418,7 @@ impl Broker {
             transaction.error_summary = Some(error.summary.clone());
             if same_effective_state(&actual, &pre_state) {
                 transaction.rollback.available = false;
-                transaction.verification_result =
-                    Some("write_failed_original_state_present".into());
+                transaction.verification_result = Some("write_rejected_unchanged".into());
                 transaction.completed_at = Some(crate::inspection::timestamp());
                 transition(
                     &self.journal,
@@ -1213,7 +1430,8 @@ impl Broker {
                     OwnerOperationOutcome::CouldNotChange,
                     transaction,
                     Some(actual),
-                    "Windows rejected the change and the original setting is still present.",
+                    "Windows prevented this setting from being changed.",
+                    OwnerResultClassification::WriteRejectedUnchanged,
                     None,
                 ));
             }
@@ -1225,6 +1443,7 @@ impl Broker {
                 );
             }
             transaction.rollback.available = false;
+            transaction.verification_result = Some("write_result_ambiguous".into());
             transaction.recovery_requirement = Some(
                 "The actual setting differs from both the original and requested values.".into(),
             );
@@ -1239,6 +1458,7 @@ impl Broker {
                 transaction,
                 Some(actual),
                 "The write failed and the current setting is ambiguous; Deslopper did not overwrite it.",
+                OwnerResultClassification::WriteResultAmbiguous,
                 None,
             ));
         }
@@ -1261,7 +1481,10 @@ impl Broker {
                     OwnerOperationOutcome::CouldNotChange,
                     transaction,
                     Some(actual),
-                    "Windows did not apply the requested Widgets setting; the original state remains.",
+                    format!(
+                        "Windows did not apply the requested {label} setting; the original state remains."
+                    ),
+                    OwnerResultClassification::WriteRejectedUnchanged,
                     None,
                 ));
             }
@@ -1269,6 +1492,7 @@ impl Broker {
                 "The post-write state differed from both the original and requested setting."
                     .into(),
             );
+            transaction.verification_result = Some("verification_failed_changed".into());
             transaction.recovery_requirement = Some(
                 "The current value could not be safely attributed to this attempt; no blind rollback was performed."
                     .into(),
@@ -1283,7 +1507,10 @@ impl Broker {
                 OwnerOperationOutcome::NeedsAttention,
                 transaction,
                 Some(actual),
-                "The Widgets setting is in an unexpected state and was not overwritten again.",
+                format!(
+                    "The {label} setting is in an unexpected state and was not overwritten again."
+                ),
+                OwnerResultClassification::VerificationFailedChanged,
                 None,
             ));
         }
@@ -1317,7 +1544,7 @@ impl Broker {
                 return self.auto_restore_owner(
                     transaction,
                     "detector_verification_failed",
-                    "The matching Widgets detector could not complete.",
+                    &format!("The matching {label} detector could not complete."),
                 );
             }
         };
@@ -1330,12 +1557,13 @@ impl Broker {
             && detector_context.detector_current_enabled == Some(target.enabled());
         if !detector_matches {
             transaction.error_category = Some("detector_verification_failed".into());
-            transaction.error_summary =
-                Some("The Widgets detector did not confirm the requested state.".into());
+            transaction.error_summary = Some(format!(
+                "The {label} detector did not confirm the requested state."
+            ));
             return self.auto_restore_owner(
                 transaction,
                 "detector_verification_failed",
-                "The matching Widgets detector did not confirm the change.",
+                &format!("The matching {label} detector did not confirm the change."),
             );
         }
         let final_direct = handler(operation_id)
@@ -1355,7 +1583,8 @@ impl Broker {
             OwnerOperationOutcome::Changed,
             transaction,
             Some(final_direct),
-            "Widgets changed and the setting was verified.",
+            format!("{label} changed and the setting was verified."),
+            OwnerResultClassification::ChangedVerified,
             Some("Explorer may refresh the visible taskbar asynchronously; Deslopper did not restart Explorer.".into()),
         ))
     }
@@ -1369,7 +1598,6 @@ impl Broker {
     where
         F: FnOnce() -> Result<BrokerContext, String>,
     {
-        validate_owner_context(context)?;
         let _in_process = self.execution_lock.try_lock().map_err(|_| {
             BrokerError::new(
                 "operation_in_progress",
@@ -1391,14 +1619,16 @@ impl Broker {
             .ok_or_else(|| {
                 BrokerError::new("tampered_transaction", "The owner intent is missing.")
             })?;
-        if plan.handler_version != OWNER_HANDLER_VERSION
-            || transaction.operation_id != MutationOperationId::WidgetsVisibility
+        if !is_owner_handler_version(&plan.handler_version)
+            || !is_owner_operation(transaction.operation_id)
         {
             return Err(BrokerError::new(
                 "not_owner_transaction",
-                "This record was not created by the Owner Mode Widgets flow.",
+                "This record was not created by the Owner Mode taskbar flow.",
             ));
         }
+        validate_owner_context(transaction.operation_id, context)?;
+        let label = owner_operation_label(transaction.operation_id);
         if transaction.status != TransactionStatus::RollbackAvailable
             || !transaction.rollback.available
         {
@@ -1448,7 +1678,8 @@ impl Broker {
                 OwnerOperationOutcome::NeedsAttention,
                 transaction,
                 Some(current.clone()),
-                "Widgets changed after Deslopper applied it, so Undo was not performed.",
+                format!("{label} changed after Deslopper applied it, so Undo was not performed."),
+                OwnerResultClassification::Conflict,
                 Some(format!(
                     "Original: {:?}; applied: {:?}; current: {:?}",
                     pre_state.representation, applied_state.representation, current.representation
@@ -1496,7 +1727,8 @@ impl Broker {
                 OwnerOperationOutcome::NeedsAttention,
                 transaction,
                 Some(restored),
-                "Undo could not prove that the original Widgets setting was restored.",
+                format!("Undo could not prove that the original {label} setting was restored."),
+                OwnerResultClassification::VerificationFailedChanged,
                 None,
             ));
         }
@@ -1522,6 +1754,7 @@ impl Broker {
                     transaction,
                     Some(restored),
                     "The original registry representation was restored, but detector verification did not complete.",
+                    OwnerResultClassification::VerificationFailedChanged,
                     None,
                 ));
             }
@@ -1540,8 +1773,9 @@ impl Broker {
             transaction.rollback.available = false;
             transaction.rollback.result = Some("restored_detector_disagreed".into());
             transaction.rollback.verification_result = Some("detector_disagreed".into());
-            transaction.recovery_requirement =
-                Some("The registry was restored but the Widgets detector disagreed.".into());
+            transaction.recovery_requirement = Some(format!(
+                "The registry was restored but the {label} detector disagreed."
+            ));
             transition(
                 &self.journal,
                 &mut transaction,
@@ -1553,6 +1787,7 @@ impl Broker {
                 transaction,
                 Some(restored),
                 "The original registry representation was restored, but detector verification needs attention.",
+                OwnerResultClassification::VerificationFailedChanged,
                 None,
             ));
         }
@@ -1571,7 +1806,8 @@ impl Broker {
             OwnerOperationOutcome::Restored,
             transaction,
             Some(restored),
-            "The exact original Widgets setting was restored.",
+            format!("The exact original {label} setting was restored."),
+            OwnerResultClassification::Restored,
             Some("Explorer may refresh the visible taskbar asynchronously; Deslopper did not restart Explorer.".into()),
         ))
     }
@@ -1613,6 +1849,7 @@ impl Broker {
                     transaction,
                     None,
                     "Verification failed and Deslopper could not safely determine whether to restore.",
+                    OwnerResultClassification::WriteResultAmbiguous,
                     None,
                 ));
             }
@@ -1635,6 +1872,7 @@ impl Broker {
                 transaction,
                 Some(current),
                 "Verification failed and the current value could not be safely attributed to this attempt.",
+                OwnerResultClassification::WriteResultAmbiguous,
                 None,
             ));
         }
@@ -1670,6 +1908,7 @@ impl Broker {
                     transaction,
                     None,
                     "Automatic rollback was attempted but the restored state could not be read.",
+                    OwnerResultClassification::VerificationFailedChanged,
                     None,
                 ));
             }
@@ -1693,6 +1932,7 @@ impl Broker {
                 .into(),
             );
             transaction.rollback.verification_result = Some("exact_pre_state_restored".into());
+            transaction.verification_result = Some("verification_failed_rolled_back".into());
             transaction.completed_at = Some(crate::inspection::timestamp());
             transition(
                 &self.journal,
@@ -1705,6 +1945,7 @@ impl Broker {
                 transaction,
                 Some(restored),
                 "The change could not be verified, so Deslopper restored the exact original setting.",
+                OwnerResultClassification::VerificationFailedRolledBack,
                 None,
             ));
         }
@@ -1725,6 +1966,7 @@ impl Broker {
             transaction,
             Some(restored),
             "The change failed verification and automatic rollback also needs attention.",
+            OwnerResultClassification::VerificationFailedChanged,
             None,
         ))
     }
@@ -1739,7 +1981,7 @@ impl Broker {
         let mut result = Vec::new();
         for transaction in self.journal.history().map_err(journal_error)? {
             if transaction.machine_id != owner_scope
-                || transaction.operation_id != MutationOperationId::WidgetsVisibility
+                || !is_owner_operation(transaction.operation_id)
             {
                 continue;
             }
@@ -1750,7 +1992,7 @@ impl Broker {
             else {
                 continue;
             };
-            if plan.handler_version == OWNER_HANDLER_VERSION {
+            if is_owner_handler_version(&plan.handler_version) {
                 self.validate_transaction_integrity(&transaction)?;
                 result.push(transaction);
             }
@@ -2727,7 +2969,10 @@ impl Broker {
     }
 }
 
-fn validate_owner_context(context: &BrokerContext) -> Result<(), BrokerError> {
+fn validate_owner_context(
+    operation_id: MutationOperationId,
+    context: &BrokerContext,
+) -> Result<(), BrokerError> {
     if !crate::owner_scope::is_valid(&context.machine_id) {
         return Err(BrokerError::new(
             "owner_scope_unavailable",
@@ -2737,7 +2982,7 @@ fn validate_owner_context(context: &BrokerContext) -> Result<(), BrokerError> {
     if context.windows_build < 22_000 || !context.applicable {
         return Err(BrokerError::new(
             "unsupported_build",
-            "Owner Mode M1 supports Windows 11 only.",
+            "Owner Mode M2 supports Windows 11 only.",
         ));
     }
     let architecture = context.architecture.trim().to_ascii_lowercase();
@@ -2748,25 +2993,28 @@ fn validate_owner_context(context: &BrokerContext) -> Result<(), BrokerError> {
     if !is_x64 {
         return Err(BrokerError::new(
             "unsupported_architecture",
-            "Owner Mode M1 supports the x64 product build only.",
+            "Owner Mode M2 supports the x64 product build only.",
         ));
     }
     if !context.authority_acceptable {
         return Err(BrokerError::new(
             "external_authority",
-            "Windows policy manages or blocks this Widgets setting.",
+            format!(
+                "Windows policy manages or blocks this {} setting.",
+                owner_operation_label(operation_id)
+            ),
         ));
     }
     if !context.confidence_sufficient {
         return Err(BrokerError::new(
             "insufficient_confidence",
-            "The Widgets setting could not be determined confidently.",
+            format!(
+                "The {} setting could not be determined confidently.",
+                owner_operation_label(operation_id)
+            ),
         ));
     }
-    validate_context(
-        context,
-        &operation_definition(MutationOperationId::WidgetsVisibility),
-    )
+    validate_context(context, &operation_definition(operation_id))
 }
 
 fn owner_plan(
@@ -2836,6 +3084,57 @@ fn owner_recovery_blocks_new_apply(transaction: &MutationTransaction) -> bool {
     )
 }
 
+fn owner_direct_change_unavailable(transaction: &MutationTransaction) -> bool {
+    transaction.operation_id == MutationOperationId::WidgetsVisibility
+        && transaction.status == TransactionStatus::FailedAfterMutation
+        && !transaction.rollback.available
+        && !transaction.rollback.complete
+        && matches!(
+            transaction.verification_result.as_deref(),
+            Some("write_rejected_unchanged" | "write_failed_original_state_present")
+        )
+        && transaction
+            .error_category
+            .as_deref()
+            .is_some_and(|category| category == "PermissionDenied" || category == "WriteFailed")
+        && transaction
+            .error_summary
+            .as_deref()
+            .is_some_and(|summary| summary.contains("PermissionDenied"))
+        && transaction
+            .pre_state
+            .as_ref()
+            .zip(transaction.post_state.as_ref())
+            .is_some_and(|(pre, post)| same_effective_state(pre, post))
+}
+
+fn is_owner_operation(operation_id: MutationOperationId) -> bool {
+    matches!(
+        operation_id,
+        MutationOperationId::WidgetsVisibility | MutationOperationId::TaskViewVisibility
+    )
+}
+
+fn owner_operation_label(operation_id: MutationOperationId) -> &'static str {
+    match operation_id {
+        MutationOperationId::WidgetsVisibility => "Widgets",
+        MutationOperationId::TaskViewVisibility => "Task View",
+        MutationOperationId::ShowDesktopEnabled => "Show desktop",
+    }
+}
+
+fn owner_operation_scope(operation_id: MutationOperationId) -> &'static str {
+    match operation_id {
+        MutationOperationId::WidgetsVisibility => {
+            "Changes the Widgets button for this Windows account."
+        }
+        MutationOperationId::TaskViewVisibility => {
+            "Changes the Task View button for this Windows account."
+        }
+        MutationOperationId::ShowDesktopEnabled => "Unavailable in Owner Mode.",
+    }
+}
+
 fn is_safe_attempted_state(state: &CapturedState, target: MutationTarget) -> bool {
     state.authority == "user"
         && state.effective_state_known
@@ -2857,10 +3156,12 @@ fn owner_result(
     transaction: MutationTransaction,
     current_state: Option<CapturedState>,
     message: impl Into<String>,
+    classification: OwnerResultClassification,
     note: Option<String>,
 ) -> OwnerOperationResult {
     OwnerOperationResult {
         outcome,
+        classification,
         transaction,
         current_state,
         message: message.into(),

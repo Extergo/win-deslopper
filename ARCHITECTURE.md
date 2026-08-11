@@ -1,8 +1,8 @@
 # Architecture
 
-The normal Deslopper build is Owner Mode. It combines the existing read-only
-20-component inspector with one productized, closed, unelevated operation:
-current-user Taskbar Widgets visibility. The historical `mutation-alpha`
+The normal Deslopper build is Owner Mode. It combines the read-only
+21-component inspector with two closed, unelevated operations: current-user
+Taskbar Widgets and Task View visibility. The historical `mutation-alpha`
 feature remains an explicit engineering validation flavor; it is not the
 authorization path for the installed product.
 
@@ -10,7 +10,7 @@ authorization path for the installed product.
 
 1. **Tauri/Svelte presentation.** Svelte renders onboarding, dashboard,
    component browsing, desired-state previews, drift/history comparison,
-   diagnostics review, local settings, and Widgets actionability on the normal
+   diagnostics review, local settings, and taskbar actionability on the normal
    component detail. Presentation never owns Windows paths, values, scripts,
    applicability, authority, or redaction rules. It is an untrusted transport
    client: Rust owns the registered product operation, exact representation,
@@ -18,7 +18,8 @@ authorization path for the installed product.
 2. **Application orchestration.** Rust owns inspection coordination, progress,
    desired-state validation, drift, feature-gated command transport, and fresh
    pre/post-operation inspection. Tauri handlers do not execute settings.
-3. **Domain models.** The exact 20-component read-only catalogue remains intact.
+3. **Domain models.** The 21-component read-only catalogue includes a distinct
+   Task View detector; Taskbar Search remains a separate component.
    Mutation uses separate closed operation/subject/target enums and an immutable
    three-entry registry.
 4. **Read-only Windows inspection.** The existing eight fixed PowerShell queries
@@ -32,8 +33,8 @@ authorization path for the installed product.
    exact capture, dispatch, actual post-attempt capture, verification,
    automatic safe rollback, journal, one-click Undo, recovery, and test-only
    fault injection. There is no generic registry setter or command runner. Only
-   Widgets is in the owner product registry for M1; Task View and Show Desktop
-   remain internal.
+   Widgets and Task View are in the owner product registry for M2. Show Desktop
+   remains internal and `TaskbarSd` is not productized.
 7. **Windows setting store.** A safe registry wrapper exposes only named
    operation-specific preference reads/writes plus fixed read-only checks for
    Widgets policy, `HideTaskViewButton`, and `NoSetTaskbar`. No caller can
@@ -72,9 +73,9 @@ authorization path for the installed product.
 
 ## Dependency direction and release boundary
 
-Presentation sends typed IDs to Rust. Normal orchestration calls only the owner
-Widgets API; the broker selects the fixed Widgets handler; the handler calls its
-fixed store method. Inspection never imports mutation. Persistence stores data
+Presentation sends typed IDs to Rust. Normal orchestration calls only the two
+closed owner APIs; the broker selects the fixed Widgets or Task View handler;
+the handler calls its fixed store method. Inspection never imports mutation. Persistence stores data
 but cannot apply it. Normal builds compile the closed owner broker and register
 owner actionability/Apply/Undo/history commands. They do not register legacy
 live-validation approval or evidence commands. The explicit `mutation-alpha`

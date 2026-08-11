@@ -12,6 +12,7 @@
     type DriftEvent,
     type InspectionHistoryItem,
     type InspectionProgress,
+    type MutationOperationId,
     type MutationTarget,
     type MutationTransaction,
     type OwnerActionability,
@@ -49,7 +50,7 @@
     description: string;
   }> = [
     { id: 'overview', label: 'Overview', glyph: 'O', description: 'Current system summary' },
-    { id: 'components', label: 'Components', glyph: 'C', description: '20 observed surfaces' },
+    { id: 'components', label: 'Components', glyph: 'C', description: '21 observed surfaces' },
     {
       id: 'desired',
       label: 'Desired states',
@@ -111,6 +112,7 @@
   let diagnosticsStatus = '';
   let clearingHistory = false;
   let widgetsActionability: OwnerActionability | null = null;
+  let taskViewActionability: OwnerActionability | null = null;
   let ownerHistory: MutationTransaction[] = [];
   let ownerBusy = false;
   let ownerPhase: 'idle' | 'checking' | 'applying' | 'verifying' = 'idle';
@@ -150,16 +152,27 @@
     if (driftStatusFilter === 'unreviewed' && event.reviewed) return false;
     return driftComponentFilter === 'all' || event.component_id === driftComponentFilter;
   });
+  $: selectedOwnerOperation = (
+    selectedComponentId === 'taskbar_widgets'
+      ? 'set_taskbar_widgets_visibility'
+      : selectedComponentId === 'taskbar_task_view'
+        ? 'set_taskbar_task_view_visibility'
+        : null
+  ) as MutationOperationId | null;
+  $: selectedOwnerLabel = selectedComponentId === 'taskbar_task_view' ? 'Task View' : 'Widgets';
+  $: selectedOwnerActionability =
+    selectedComponentId === 'taskbar_task_view' ? taskViewActionability : widgetsActionability;
   $: latestOwnerUndo = ownerHistory.find(
-    (transaction) => transaction.status === 'rollback_available' && transaction.rollback.available
+    (transaction) =>
+      transaction.operationId === selectedOwnerOperation &&
+      transaction.status === 'rollback_available' &&
+      transaction.rollback.available
   );
-  $: latestOwnerAttention = [
-    'recovery_required',
-    'rollback_verification_failed',
-    'failed_after_mutation'
-  ].includes(ownerHistory[0]?.status)
-    ? ownerHistory[0]
-    : undefined;
+  $: latestOwnerAttention = ownerHistory.find(
+    (transaction) =>
+      transaction.operationId === selectedOwnerOperation &&
+      ['recovery_required', 'rollback_verification_failed'].includes(transaction.status)
+  );
   $: ownerTechnicalTransaction =
     ownerResult?.transaction ?? latestOwnerAttention ?? latestOwnerUndo;
 
@@ -211,16 +224,19 @@
   async function refreshOwnerData(): Promise<void> {
     if (!platform?.snapshot || productInfo?.buildMode === 'explicit read-only') {
       widgetsActionability = null;
+      taskViewActionability = null;
       ownerHistory = [];
       return;
     }
     try {
-      [widgetsActionability, ownerHistory] = await Promise.all([
+      [widgetsActionability, taskViewActionability, ownerHistory] = await Promise.all([
         backend.getWidgetsActionability(),
+        backend.getTaskViewActionability(),
         backend.getOwnerChangeHistory()
       ]);
     } catch (error) {
       widgetsActionability = null;
+      taskViewActionability = null;
       ownerFeedback = describeCommandError(error);
     }
   }
@@ -288,29 +304,39 @@
     desiredStateKey = desiredOptions[0]?.key ?? '';
     desiredNote = desiredFor(componentId)?.note ?? '';
     selectedTimeline = platform?.snapshot ? await backend.getComponentTimeline(componentId) : [];
-    if (componentId === 'taskbar_widgets') await refreshOwnerData();
+    if (componentId === 'taskbar_widgets' || componentId === 'taskbar_task_view') {
+      await refreshOwnerData();
+    }
   }
 
-  async function applyWidgets(target: MutationTarget): Promise<void> {
-    if (ownerBusy || !platform?.snapshot) return;
+  async function getSelectedOwnerActionability(): Promise<OwnerActionability> {
+    return selectedComponentId === 'taskbar_task_view'
+      ? backend.getTaskViewActionability()
+      : backend.getWidgetsActionability();
+  }
+
+  async function applyOwnerChange(target: MutationTarget): Promise<void> {
+    if (ownerBusy || !platform?.snapshot || !selectedOwnerOperation) return;
     ownerBusy = true;
     ownerResult = null;
     ownerFeedback = '';
     ownerPhase = 'checking';
     let verifyingTimer: ReturnType<typeof setTimeout> | null = null;
     try {
-      widgetsActionability = await backend.getWidgetsActionability();
-      if (
-        widgetsActionability.status !== 'ready' ||
-        !widgetsActionability.availableTargets.includes(target)
-      ) {
-        ownerFeedback = widgetsActionability.reason;
+      const actionability = await getSelectedOwnerActionability();
+      if (selectedComponentId === 'taskbar_task_view') taskViewActionability = actionability;
+      else widgetsActionability = actionability;
+      if (actionability.status !== 'ready' || !actionability.availableTargets.includes(target)) {
+        ownerFeedback = actionability.reason;
         return;
       }
       ownerPhase = 'applying';
       await tick();
       verifyingTimer = setTimeout(() => (ownerPhase = 'verifying'), 250);
-      const result = await backend.applyWidgets(target, platform.snapshot.id);
+      const result =
+        selectedOwnerOperation === 'set_taskbar_task_view_visibility'
+          ? await backend.applyTaskView(target, platform.snapshot.id)
+          : await backend.applyWidgets(target, platform.snapshot.id);
       ownerPhase = 'verifying';
       await tick();
       ownerResult = result;
@@ -326,7 +352,7 @@
     }
   }
 
-  async function undoWidgets(): Promise<void> {
+  async function undoOwnerChange(): Promise<void> {
     if (ownerBusy || !latestOwnerUndo) return;
     ownerBusy = true;
     ownerResult = null;
@@ -334,11 +360,11 @@
     ownerPhase = 'checking';
     let verifyingTimer: ReturnType<typeof setTimeout> | null = null;
     try {
-      await backend.getWidgetsActionability();
+      await getSelectedOwnerActionability();
       ownerPhase = 'applying';
       await tick();
       verifyingTimer = setTimeout(() => (ownerPhase = 'verifying'), 250);
-      const result = await backend.undoWidgets(latestOwnerUndo.transactionId);
+      const result = await backend.undoOwnerChange(latestOwnerUndo.transactionId);
       ownerPhase = 'verifying';
       await tick();
       ownerResult = result;
@@ -505,7 +531,7 @@
   <title>Deslopper - Owner Mode</title>
   <meta
     name="description"
-    content="A privacy-conscious Windows configuration inspector with safe Widgets Apply and Undo."
+    content="A privacy-conscious Windows configuration inspector with safe Widgets and Task View controls."
   />
 </svelte:head>
 
@@ -550,7 +576,7 @@
       {:else}
         <section class="safety-note" aria-label="Build safety status">
           <strong><span aria-hidden="true">●</span> Owner mode</strong>
-          <p>Widgets changes are explicit, verified, recorded locally, and undoable when safe.</p>
+          <p>Taskbar changes are explicit, verified, recorded locally, and undoable when safe.</p>
         </section>
       {/if}
     </aside>
@@ -592,8 +618,8 @@
               </div>
             </div>
             <div class="read-only-seal">
-              <span aria-hidden="true">✓</span><strong>Owner Mode M1</strong><small
-                >One supported setting. No UAC. Verified local history.</small
+              <span aria-hidden="true">✓</span><strong>Owner Mode M2</strong><small
+                >Task View and scoped Widgets controls. No UAC. Verified local history.</small
               >
             </div>
           </header>
@@ -852,12 +878,12 @@
                     <p>{selectedComponent.gamingNotes} {selectedComponent.enterpriseNotes}</p>
                   </article>
                 </div>
-                {#if selectedComponent.componentId === 'taskbar_widgets'}
-                  <section class="owner-action" aria-labelledby="widgets-owner-title">
+                {#if selectedOwnerOperation}
+                  <section class="owner-action" aria-labelledby="owner-control-title">
                     <div class="section-heading">
                       <div>
                         <span class="eyebrow">Owner control</span>
-                        <h3 id="widgets-owner-title">Apply Widgets visibility</h3>
+                        <h3 id="owner-control-title">Apply {selectedOwnerLabel} visibility</h3>
                         <p>
                           Current-user scope. Deslopper checks the latest state, records the exact
                           pre-state, applies one fixed setting, verifies it, and preserves Undo only
@@ -869,16 +895,17 @@
                     {#if !platform.snapshot}
                       <div class="validation invalid">
                         <strong>Fresh scan required</strong>
-                        <p>Run an inspection before applying a Widgets change.</p>
+                        <p>Run an inspection before applying a {selectedOwnerLabel} change.</p>
                       </div>
-                    {:else if widgetsActionability}
+                    {:else if selectedOwnerActionability}
                       <div
                         class="validation"
-                        class:invalid={widgetsActionability.status !== 'ready'}
+                        class:invalid={selectedOwnerActionability.status !== 'ready'}
                       >
-                        <strong>{widgetsActionability.status.replaceAll('_', ' ')}</strong>
-                        <p>{widgetsActionability.reason}</p>
-                        <small>Scope: {widgetsActionability.scope.replaceAll('_', ' ')}</small>
+                        <strong>{selectedOwnerActionability.status.replaceAll('_', ' ')}</strong>
+                        <p>{selectedOwnerActionability.reason}</p>
+                        <small>Scope: {selectedOwnerActionability.scope.replaceAll('_', ' ')}</small
+                        >
                       </div>
                     {:else}
                       <div class="validation invalid">
@@ -895,25 +922,28 @@
                         <p>
                           {latestOwnerAttention.recoveryRequirement ??
                             latestOwnerAttention.errorSummary ??
-                            'The latest Widgets transaction requires review before another change.'}
+                            `The latest ${selectedOwnerLabel} transaction requires review before another change.`}
                         </p>
                       </div>
                     {/if}
                     <div class="button-row">
-                      {#each widgetsActionability?.availableTargets ?? [] as target (target)}
+                      {#each selectedOwnerActionability?.availableTargets ?? [] as target (target)}
                         <button
                           class="primary"
-                          disabled={ownerBusy || widgetsActionability?.status !== 'ready'}
-                          onclick={() => void applyWidgets(target)}
+                          disabled={ownerBusy || selectedOwnerActionability?.status !== 'ready'}
+                          onclick={() => void applyOwnerChange(target)}
                         >
-                          {target === 'disabled' ? 'Hide Widgets button' : 'Show Widgets button'}
+                          {target === 'disabled'
+                            ? `Hide ${selectedOwnerLabel} button`
+                            : `Show ${selectedOwnerLabel} button`}
                         </button>
                       {/each}
                       {#if latestOwnerUndo}
                         <button
                           class="secondary"
                           disabled={ownerBusy}
-                          onclick={() => void undoWidgets()}>Undo last Widgets change</button
+                          onclick={() => void undoOwnerChange()}
+                          >Undo last {selectedOwnerLabel} change</button
                         >
                       {/if}
                     </div>
@@ -923,7 +953,7 @@
                           {ownerPhase === 'checking'
                             ? 'Checking current state…'
                             : ownerPhase === 'applying'
-                              ? 'Applying Widgets setting…'
+                              ? `Applying ${selectedOwnerLabel} setting…`
                               : 'Verifying result…'}
                         </strong>
                         <span>Keep Deslopper open while this local operation completes.</span>
@@ -976,8 +1006,8 @@
                       : 'Unavailable for current evidence'}</span
                   ><span
                     ><strong>Apply</strong>
-                    {selectedComponent.componentId === 'taskbar_widgets'
-                      ? widgetsActionability?.status === 'ready'
+                    {selectedOwnerOperation
+                      ? selectedOwnerActionability?.status === 'ready'
                         ? 'Available'
                         : 'Unavailable for current evidence'
                       : 'Inspection only'}</span
@@ -1425,8 +1455,8 @@
                 </li>
                 <li>Machine identity and the development-host denylist never enter diagnostics.</li>
                 <li>
-                  Owner Mode has no filesystem, shell, network, or updater permission. Its only
-                  Windows write is the fixed current-user Widgets visibility operation.
+                  Owner Mode has no filesystem, shell, network, or updater permission. Its Windows
+                  writes are limited to fixed current-user Widgets and Task View visibility values.
                 </li>
               </ul>
             </section>
@@ -1449,7 +1479,7 @@
         <h1 id="onboarding-title">Understand Windows before deciding what you want.</h1>
         <p>
           Deslopper gives you a careful local record of supported settings, packages, policy,
-          uncertainty, and change over time, plus one verified Widgets control.
+          uncertainty, and change over time, plus verified Task View and scoped Widgets controls.
         </p>
         <ul>
           {#each onboardingPrinciples as principle (principle)}<li>

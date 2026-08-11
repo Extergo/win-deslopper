@@ -267,10 +267,10 @@ fn powershell_script(query_id: QueryId) -> &'static str {
             r#"$ErrorActionPreference='SilentlyContinue';$cs=Get-CimInstance Win32_ComputerSystem;$entra=@(Get-ChildItem 'HKLM:\SYSTEM\CurrentControlSet\Control\CloudDomainJoin\JoinInfo');$work=@(Get-ChildItem 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\WorkplaceJoin\JoinInfo');$metadata=@(Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Enrollments'|ForEach-Object{$p=Get-ItemProperty $_.PSPath;if($p.ProviderID){[pscustomobject]@{Id=$_.PSChildName;Properties=$p}}});$enroll=@($metadata|Where-Object{$id=$_.Id;$p=$_.Properties;$account=Test-Path "HKLM:\SOFTWARE\Microsoft\Provisioning\OMADM\Accounts\$id";$task=Test-Path "$env:windir\System32\Tasks\Microsoft\Windows\EnterpriseMgmt\$id";$certificate=-not[string]::IsNullOrWhiteSpace([string]$p.DMPCertThumbPrint);$account -or $task -or $certificate});$providers=@(Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\PolicyManager\Providers');$history=@(Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Group Policy\History' -Recurse|ForEach-Object{Get-ItemProperty $_.PSPath}|Where-Object{$_.DSPath -like 'LDAP://*'});[pscustomobject]@{DomainJoined=[bool]$cs.PartOfDomain;EntraJoined=($entra.Count -gt 0);WorkplaceJoined=($work.Count -gt 0);MdmEnrollmentCount=$enroll.Count;MdmEnrollmentMetadataCount=$metadata.Count;MdmPolicyProviderCount=$providers.Count;DomainGpoHistoryCount=$history.Count;LocalPolicyStorePresent=(Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Group Policy')}|ConvertTo-Json -Compress"#
         }
         QueryId::PolicyRegistry => {
-            r#"$ErrorActionPreference='SilentlyContinue';function V($p,$n){try{Get-ItemPropertyValue -LiteralPath $p -Name $n -ErrorAction Stop}catch{$null}};[pscustomobject]@{Widgets=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Dsh' 'AllowNewsAndInterests');ConsumerExperiences=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent' 'DisableWindowsConsumerFeatures');Welcome=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent' 'DisableWindowsSpotlightWindowsWelcomeExperience');Tips=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent' 'DisableSoftLanding');LockScreen=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent' 'ConfigureWindowsSpotlight');StartRecommendations=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Explorer' 'HideRecommendedSection');NotificationSuggestions=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent' 'DisableWindowsSpotlightOnActionCenter');SettingsSuggestions=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent' 'DisableWindowsSpotlightOnSettings');SearchWeb=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search' 'DisableWebSearch');SearchHighlights=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search' 'EnableDynamicContentInWSB')}|ConvertTo-Json -Compress"#
+            r#"$ErrorActionPreference='SilentlyContinue';function V($p,$n){try{Get-ItemPropertyValue -LiteralPath $p -Name $n -ErrorAction Stop}catch{$null}};[pscustomobject]@{Widgets=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Dsh' 'AllowNewsAndInterests');ConsumerExperiences=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent' 'DisableWindowsConsumerFeatures');Welcome=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent' 'DisableWindowsSpotlightWindowsWelcomeExperience');Tips=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent' 'DisableSoftLanding');LockScreen=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent' 'ConfigureWindowsSpotlight');StartRecommendations=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Explorer' 'HideRecommendedSection');NotificationSuggestions=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent' 'DisableWindowsSpotlightOnActionCenter');SettingsSuggestions=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent' 'DisableWindowsSpotlightOnSettings');SearchWeb=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search' 'DisableWebSearch');SearchHighlights=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search' 'EnableDynamicContentInWSB');TaskViewMachineHide=(V 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Explorer' 'HideTaskViewButton');TaskViewUserHide=(V 'HKCU:\SOFTWARE\Policies\Microsoft\Windows\Explorer' 'HideTaskViewButton');TaskbarMachineLocked=(V 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer' 'NoSetTaskbar');TaskbarUserLocked=(V 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer' 'NoSetTaskbar')}|ConvertTo-Json -Compress"#
         }
         QueryId::UserPreferences => {
-            r#"$ErrorActionPreference='SilentlyContinue';function V($p,$n){try{Get-ItemPropertyValue -LiteralPath $p -Name $n -ErrorAction Stop}catch{$null}};$cd='HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager';[pscustomobject]@{Welcome=(V $cd 'SubscribedContent-310093Enabled');Tips=(V $cd 'SoftLandingEnabled');LockScreen=(V $cd 'RotatingLockScreenOverlayEnabled');NotificationSuggestions=(V $cd 'SubscribedContent-338389Enabled');SettingsSuggestions=(V $cd 'SubscribedContent-338393Enabled');TaskbarWidgets=(V 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' 'TaskbarDa');TaskbarSearch=(V 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Search' 'SearchboxTaskbarMode')}|ConvertTo-Json -Compress"#
+            r#"$ErrorActionPreference='SilentlyContinue';function V($p,$n){try{Get-ItemPropertyValue -LiteralPath $p -Name $n -ErrorAction Stop}catch{$null}};$cd='HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager';[pscustomobject]@{Welcome=(V $cd 'SubscribedContent-310093Enabled');Tips=(V $cd 'SoftLandingEnabled');LockScreen=(V $cd 'RotatingLockScreenOverlayEnabled');NotificationSuggestions=(V $cd 'SubscribedContent-338389Enabled');SettingsSuggestions=(V $cd 'SubscribedContent-338393Enabled');TaskbarWidgets=(V 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' 'TaskbarDa');TaskbarTaskView=(V 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' 'ShowTaskViewButton');TaskbarSearch=(V 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Search' 'SearchboxTaskbarMode')}|ConvertTo-Json -Compress"#
         }
         QueryId::OneDriveMetadata => {
             r#"$ErrorActionPreference='SilentlyContinue';$paths=@("$env:LOCALAPPDATA\Microsoft\OneDrive\OneDrive.exe","$env:ProgramFiles\Microsoft OneDrive\OneDrive.exe","${env:ProgramFiles(x86)}\Microsoft OneDrive\OneDrive.exe");$exe=$paths|Where-Object{Test-Path -LiteralPath $_}|Select-Object -First 1;$accounts=@(Get-ChildItem 'HKCU:\Software\Microsoft\OneDrive\Accounts');$props=@($accounts|ForEach-Object{Get-ItemProperty $_.PSPath});$roots=@($props.UserFolder|Where-Object{$_});$shell=Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders';$run=Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -ErrorAction SilentlyContinue;function Inside($p){if(!$p){return $false};@($roots|Where-Object{$p.StartsWith($_,[StringComparison]::OrdinalIgnoreCase)}).Count -gt 0};$fod=@($props|ForEach-Object{$_.FilesOnDemandEnabled}|Where-Object{$_ -ne $null});$fodPolicy=Get-ItemPropertyValue 'HKLM:\SOFTWARE\Policies\Microsoft\OneDrive' 'FilesOnDemandEnabled' -ErrorAction SilentlyContinue;$kfm=Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\OneDrive' -ErrorAction SilentlyContinue;[pscustomobject]@{Installed=[bool]$exe;Version=$(if($exe){(Get-Item -LiteralPath $exe).VersionInfo.FileVersion});Running=[bool](Get-Process OneDrive);Startup=[bool]$run.OneDrive;Personal=[bool]($accounts|Where-Object{$_.PSChildName -eq 'Personal'});Work=[bool]($accounts|Where-Object{$_.PSChildName -like 'Business*'});SyncRootCount=$roots.Count;DesktopRedirected=(Inside $shell.Desktop);DocumentsRedirected=(Inside $shell.Personal);PicturesRedirected=(Inside $shell.'My Pictures');KfmPolicy=[bool]$kfm;FilesOnDemandPolicy=$fodPolicy;FilesOnDemandValues=@($fod);FilesOnDemandEvidenceComplete=($accounts.Count -eq $fod.Count)}|ConvertTo-Json -Depth 4 -Compress"#
@@ -1214,6 +1214,9 @@ fn setting_detection(
     info: &PlatformInfo,
     context: &SharedContext,
 ) -> DetectionResult {
+    if id == ComponentId::TaskbarTaskView {
+        return task_view_detection(info, context);
+    }
     let applicability = applicability::evaluate(id, info);
     if matches!(
         applicability.status,
@@ -1377,6 +1380,195 @@ fn setting_detection(
         detector_status: DetectorStatus::Successful,
         authority_attribution: attribution,
         control_precedence,
+        package_completeness: PackageCompleteness::NotApplicable,
+        packages: Vec::new(),
+    }
+}
+
+fn task_view_detection(info: &PlatformInfo, context: &SharedContext) -> DetectionResult {
+    let id = ComponentId::TaskbarTaskView;
+    let applicability = applicability::evaluate(id, info);
+    if matches!(
+        applicability.status,
+        ApplicabilityStatus::UnsupportedBuild
+            | ApplicabilityStatus::UnsupportedEdition
+            | ApplicabilityStatus::Removed
+            | ApplicabilityStatus::MissingPrerequisite
+    ) {
+        return unsupported(id, info, applicability);
+    }
+    let preferences = match query_state(context, QueryId::UserPreferences) {
+        Ok(value) => value,
+        Err(error) => {
+            return base_unknown(
+                id,
+                info,
+                DetectorStatus::Failed,
+                &error.message,
+                QueryId::UserPreferences,
+                error.kind,
+            );
+        }
+    };
+    let policies = match query_state(context, QueryId::PolicyRegistry) {
+        Ok(value) => value,
+        Err(error) => {
+            return base_unknown(
+                id,
+                info,
+                DetectorStatus::Failed,
+                &error.message,
+                QueryId::PolicyRegistry,
+                error.kind,
+            );
+        }
+    };
+    let read_optional_dword = |value: &serde_json::Value, field: &str| {
+        let raw = value.get(field).unwrap_or(&serde_json::Value::Null);
+        if raw.is_null() {
+            Ok(None)
+        } else if matches!(raw.as_i64(), Some(0 | 1)) {
+            Ok(raw.as_i64())
+        } else {
+            Err(())
+        }
+    };
+    let preference = match read_optional_dword(preferences, "TaskbarTaskView") {
+        Ok(value) => value,
+        Err(()) => {
+            return base_unknown(
+                id,
+                info,
+                DetectorStatus::Unknown,
+                "ShowTaskViewButton was not a supported DWORD value; no effective state was inferred",
+                QueryId::UserPreferences,
+                QueryErrorKind::SchemaMismatch,
+            );
+        }
+    };
+    let machine_hide = read_optional_dword(policies, "TaskViewMachineHide");
+    let user_hide = read_optional_dword(policies, "TaskViewUserHide");
+    let machine_locked = read_optional_dword(policies, "TaskbarMachineLocked");
+    let user_locked = read_optional_dword(policies, "TaskbarUserLocked");
+    if machine_hide.is_err()
+        || user_hide.is_err()
+        || machine_locked.is_err()
+        || user_locked.is_err()
+    {
+        return base_unknown(
+            id,
+            info,
+            DetectorStatus::Unknown,
+            "A Task View policy control was not a supported DWORD value; authority is unknown",
+            QueryId::PolicyRegistry,
+            QueryErrorKind::SchemaMismatch,
+        );
+    }
+    let machine_hide = machine_hide.ok().flatten();
+    let user_hide = user_hide.ok().flatten();
+    let taskbar_locked =
+        machine_locked.ok().flatten() == Some(1) || user_locked.ok().flatten() == Some(1);
+    let hide_policy = machine_hide.or(user_hide);
+    let policy_present = hide_policy.is_some() || taskbar_locked;
+    let preference_enabled = preference.is_none_or(|value| value == 1);
+    let effective_enabled = hide_policy.map_or(preference_enabled, |hide| hide == 0);
+    let preference_state = Some(
+        if preference_enabled {
+            "Shown"
+        } else {
+            "Hidden"
+        }
+        .into(),
+    );
+    let policy_state = hide_policy
+        .map(|hide| if hide == 1 { "Hidden" } else { "Shown" }.into())
+        .or_else(|| taskbar_locked.then(|| "Taskbar changes locked".into()));
+    let attribution = if !policy_present && preference.is_none() {
+        AuthorityAttribution {
+            authority: Authority::User,
+            confidence: AuthorityConfidence::Confirmed,
+            exact_source_proven: true,
+            evidence: vec![
+                "The current-user value is absent and the documented shown default applies".into(),
+            ],
+            alternatives: Vec::new(),
+        }
+    } else {
+        management_attribution(context, policy_present, preference.is_some())
+    };
+    let conflict = hide_policy.is_some() && effective_enabled != preference_enabled;
+    let current = if let Some(hide) = hide_policy {
+        State::Policy {
+            configured: true,
+            enabled: hide == 0,
+        }
+    } else {
+        State::UserPreference {
+            enabled: preference_enabled,
+        }
+    };
+    let mut warnings = Vec::new();
+    if conflict {
+        warnings.push(
+            "The current-user Task View preference conflicts with policy; policy is effective"
+                .into(),
+        );
+    }
+    if taskbar_locked {
+        warnings.push("NoSetTaskbar blocks direct Task View changes for this account".into());
+    }
+    if machine_hide.is_some() && user_hide.is_some() && machine_hide != user_hide {
+        warnings.push("Machine and user HideTaskViewButton policy values conflict; machine policy is treated as effective".into());
+    }
+    DetectionResult {
+        component_id: id,
+        current,
+        authority: attribution.authority,
+        platform: info.clone(),
+        applicable: matches!(
+            applicability.status,
+            ApplicabilityStatus::Applicable | ApplicabilityStatus::PartiallyApplicable
+        ),
+        applicability,
+        evidence: vec![evidence(
+            QueryId::UserPreferences,
+            "Task View current-user preference and fixed policy controls",
+            format!(
+                "preference={preference_state:?}; policy={policy_state:?}; documented default=Shown"
+            ),
+            if policy_present { 85 } else { 95 },
+        )],
+        detected_at: timestamp(),
+        error: None,
+        warnings,
+        package_identities: Vec::new(),
+        policy_state: policy_state.clone(),
+        preference_state: preference_state.clone(),
+        provisioning_state: None,
+        detector_status: DetectorStatus::Successful,
+        authority_attribution: attribution.clone(),
+        control_precedence: ControlPrecedence {
+            documented_default: Some("Shown".into()),
+            user_preference: preference_state,
+            local_policy: if attribution.authority == Authority::LocalPolicy {
+                policy_state.clone()
+            } else {
+                None
+            },
+            domain_policy: if attribution.authority == Authority::DomainPolicy {
+                policy_state.clone()
+            } else {
+                None
+            },
+            mdm_policy: if attribution.authority == Authority::Mdm {
+                policy_state.clone()
+            } else {
+                None
+            },
+            effective_state: Some(if effective_enabled { "Shown" } else { "Hidden" }.into()),
+            effective_authority: attribution,
+            conflicting_evidence: conflict,
+        },
         package_completeness: PackageCompleteness::NotApplicable,
         packages: Vec::new(),
     }
@@ -1664,6 +1856,72 @@ mod tests {
         )
     }
 
+    fn task_view_fixture(
+        preference: serde_json::Value,
+        policies: serde_json::Value,
+    ) -> DetectionResult {
+        let mut values = BTreeMap::new();
+        values.insert(QueryId::PolicyRegistry, Ok(policies));
+        values.insert(
+            QueryId::UserPreferences,
+            Ok(serde_json::json!({ "TaskbarTaskView": preference })),
+        );
+        task_view_detection(
+            &default_platform(),
+            &SharedContext {
+                values,
+                executions: BTreeMap::new(),
+            },
+        )
+    }
+
+    #[test]
+    fn task_view_detector_matches_fixed_preference_default_and_policy_contract() {
+        let no_policy = serde_json::json!({
+            "TaskViewMachineHide": null,
+            "TaskViewUserHide": null,
+            "TaskbarMachineLocked": null,
+            "TaskbarUserLocked": null
+        });
+        for (preference, enabled) in [
+            (serde_json::json!(0), false),
+            (serde_json::json!(1), true),
+            (serde_json::Value::Null, true),
+        ] {
+            let result = task_view_fixture(preference, no_policy.clone());
+            assert_eq!(result.detector_status, DetectorStatus::Successful);
+            assert!(
+                matches!(result.current, State::UserPreference { enabled: value } if value == enabled)
+            );
+            assert_eq!(
+                result.control_precedence.documented_default.as_deref(),
+                Some("Shown")
+            );
+        }
+        for invalid in [serde_json::json!(2), serde_json::json!("0")] {
+            let result = task_view_fixture(invalid, no_policy.clone());
+            assert_eq!(result.detector_status, DetectorStatus::Unknown);
+            assert!(matches!(result.current, State::Unknown { .. }));
+        }
+        let hidden_by_policy = task_view_fixture(
+            serde_json::json!(1),
+            serde_json::json!({
+                "TaskViewMachineHide": 1,
+                "TaskViewUserHide": null,
+                "TaskbarMachineLocked": null,
+                "TaskbarUserLocked": null
+            }),
+        );
+        assert!(matches!(
+            hidden_by_policy.current,
+            State::Policy {
+                configured: true,
+                enabled: false
+            }
+        ));
+        assert_eq!(hidden_by_policy.authority, Authority::LocalPolicy);
+    }
+
     #[test]
     fn taskbar_widgets_detector_does_not_infer_absence_or_invalid_values_as_compliance() {
         let absent = widgets_detection(serde_json::Value::Null);
@@ -1743,11 +2001,11 @@ mod tests {
     }
 
     #[test]
-    fn shared_queries_execute_once_for_twenty_detectors() {
+    fn shared_queries_execute_once_for_twenty_one_detectors() {
         let token = CancellationToken::default();
         let runner = FixtureRunner::new(None, token.clone());
         let outcome = run_inspection(&runner, "test".into(), &token, |_| {});
-        assert_eq!(outcome.observations.len(), 20);
+        assert_eq!(outcome.observations.len(), 21);
         assert!(
             outcome
                 .query_execution_counts
@@ -1783,7 +2041,7 @@ mod tests {
                 .windows(2)
                 .all(|pair| pair[0].completed_work <= pair[1].completed_work)
         );
-        assert_eq!(outcome.lifecycle.completed_detector_count, 20);
+        assert_eq!(outcome.lifecycle.completed_detector_count, 21);
     }
 
     #[test]
@@ -1793,7 +2051,7 @@ mod tests {
         let mut outcome = run_inspection(&runner, "cancel".into(), &token, |_| {});
         complete_lifecycle(&mut outcome.lifecycle, false);
         assert_eq!(outcome.lifecycle.phase, InspectionPhase::Cancelled);
-        assert_eq!(outcome.lifecycle.cancelled_detector_count, 20);
+        assert_eq!(outcome.lifecycle.cancelled_detector_count, 21);
     }
 
     #[test]
@@ -1906,7 +2164,7 @@ mod tests {
         let runner = FixtureRunner::new(None, token.clone());
         let mut outcome = run_inspection(&runner, "cancel-before".into(), &token, |_| {});
         complete_lifecycle(&mut outcome.lifecycle, false);
-        assert_eq!(outcome.lifecycle.cancelled_detector_count, 20);
+        assert_eq!(outcome.lifecycle.cancelled_detector_count, 21);
         assert_eq!(outcome.lifecycle.phase, InspectionPhase::Cancelled);
     }
 
@@ -1920,7 +2178,7 @@ mod tests {
                 callback_token.cancel();
             }
         });
-        assert_eq!(outcome.lifecycle.completed_detector_count, 20);
+        assert_eq!(outcome.lifecycle.completed_detector_count, 21);
         assert!(outcome.lifecycle.cancelled_detector_count >= 15);
         assert!(outcome.lifecycle.successful_detector_count > 0);
     }

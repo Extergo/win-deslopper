@@ -92,7 +92,7 @@ if ($ownerStart -lt 0 -or $alphaStart -le $ownerStart) {
     $failures.Add('src\app.rs: distinct normal owner-mode composition is missing')
 } else {
     $ownerComposition = $appSource.Substring($ownerStart, $alphaStart - $ownerStart)
-    foreach ($command in 'get_widgets_actionability', 'apply_owner_operation', 'undo_owner_operation', 'get_owner_change_history') {
+    foreach ($command in 'get_widgets_actionability', 'get_task_view_actionability', 'apply_owner_operation', 'undo_owner_operation', 'get_owner_change_history') {
         if (-not $ownerComposition.Contains($command)) {
             $failures.Add("src\app.rs: normal owner-mode composition is missing '$command'")
         }
@@ -108,13 +108,16 @@ $frontendBackend = Get-Content -Raw -LiteralPath (Join-Path $repo 'frontend\src\
 if ($frontendBackend -notmatch "applyWidgets:[\s\S]*operationId: 'set_taskbar_widgets_visibility'") {
     $failures.Add('frontend\src\lib\backend.ts: owner Apply must hardcode the closed Widgets operation ID')
 }
+if ($frontendBackend -notmatch "applyTaskView:[\s\S]*operationId: 'set_taskbar_task_view_visibility'") {
+    $failures.Add('frontend\src\lib\backend.ts: owner Apply must hardcode the closed Task View operation ID')
+}
 $productPage = Get-Content -Raw -LiteralPath (Join-Path $repo 'frontend\src\routes\+page.svelte')
-foreach ($operation in 'set_taskbar_task_view_visibility', 'set_taskbar_show_desktop_enabled') {
+foreach ($operation in 'set_taskbar_show_desktop_enabled') {
     if ($productPage.Contains($operation)) {
         $failures.Add("frontend\src\routes\+page.svelte: non-product operation '$operation' is exposed")
     }
 }
-foreach ($token in 'TaskbarDa', 'CurrentVersion\Explorer\Advanced') {
+foreach ($token in 'TaskbarDa', 'ShowTaskViewButton', 'CurrentVersion\Explorer\Advanced') {
     if ($productPage.Contains($token)) {
         $failures.Add("frontend\src\routes\+page.svelte: raw registry token '$token' leaked into product input/UI")
     }
@@ -150,8 +153,8 @@ if ($failures.Count -gt 0) {
 }
 
 Write-Host 'Mutation boundary scan passed.'
-Write-Host 'Normal product write: TaskbarDa in the fixed HKCU Widgets operation only.'
-Write-Host 'Engineering harness only: closed ShowTaskViewButton and TaskbarSd handlers remain compiled/testable but are not registered by normal launch.'
+Write-Host 'Normal product writes: TaskbarDa and ShowTaskViewButton in two fixed HKCU taskbar operations only.'
+Write-Host 'Engineering harness only: the closed TaskbarSd handler remains compiled/testable but is not registered by normal launch.'
 Write-Host 'Allowed machine reads: fixed Widgets, HideTaskViewButton, and NoSetTaskbar policy checks only.'
 Write-Host 'Normal launch and Scan reach no write call; registry writes remain isolated behind explicit owner commands.'
 Write-Host 'Allowed process boundary: fixed read-only inspection PowerShell only.'

@@ -269,11 +269,17 @@ export type MutationOperationId =
 export type MutationTarget = 'enabled' | 'disabled';
 
 export type OwnerActionabilityStatus =
-  'ready' | 'needs_scan' | 'managed' | 'unsupported' | 'unknown' | 'busy';
+  | 'ready'
+  | 'direct_change_unavailable'
+  | 'needs_scan'
+  | 'managed'
+  | 'unsupported'
+  | 'unknown'
+  | 'busy';
 
 export interface OwnerActionability {
   status: OwnerActionabilityStatus;
-  operationId: 'set_taskbar_widgets_visibility';
+  operationId: 'set_taskbar_widgets_visibility' | 'set_taskbar_task_view_visibility';
   currentState: MutationCapturedState | null;
   availableTargets: MutationTarget[];
   reason: string;
@@ -490,8 +496,19 @@ export interface MutationTransaction {
 export type OwnerOperationOutcome =
   'changed' | 'already_set' | 'could_not_change' | 'restored' | 'needs_attention';
 
+export type OwnerResultClassification =
+  | 'changed_verified'
+  | 'already_set'
+  | 'write_rejected_unchanged'
+  | 'write_result_ambiguous'
+  | 'verification_failed_changed'
+  | 'verification_failed_rolled_back'
+  | 'restored'
+  | 'conflict';
+
 export interface OwnerOperationResult {
   outcome: OwnerOperationOutcome;
+  classification: OwnerResultClassification;
   transaction: MutationTransaction;
   currentState: MutationCapturedState | null;
   message: string;
@@ -551,8 +568,10 @@ export interface BackendClient {
     includeRedactedErrors: boolean;
   }): Promise<Record<string, unknown>>;
   getWidgetsActionability(): Promise<OwnerActionability>;
+  getTaskViewActionability(): Promise<OwnerActionability>;
   applyWidgets(target: MutationTarget, sourceInspectionId: string): Promise<OwnerOperationResult>;
-  undoWidgets(transactionId: string): Promise<OwnerOperationResult>;
+  applyTaskView(target: MutationTarget, sourceInspectionId: string): Promise<OwnerOperationResult>;
+  undoOwnerChange(transactionId: string): Promise<OwnerOperationResult>;
   getOwnerChangeHistory(): Promise<MutationTransaction[]>;
   getMutationAlphaStatus(): Promise<MutationAlphaStatus>;
   acknowledgeMutationAlphaWarning(acknowledged: boolean): Promise<MutationAlphaStatus>;
@@ -656,6 +675,8 @@ export function createBackendClient(
       (await invokeCommand('generate_diagnostics_export', { request })) as Record<string, unknown>,
     getWidgetsActionability: async () =>
       (await invokeCommand('get_widgets_actionability')) as OwnerActionability,
+    getTaskViewActionability: async () =>
+      (await invokeCommand('get_task_view_actionability')) as OwnerActionability,
     applyWidgets: async (target, sourceInspectionId) =>
       (await invokeCommand('apply_owner_operation', {
         request: {
@@ -664,7 +685,15 @@ export function createBackendClient(
           sourceInspectionId
         }
       })) as OwnerOperationResult,
-    undoWidgets: async (transactionId) =>
+    applyTaskView: async (target, sourceInspectionId) =>
+      (await invokeCommand('apply_owner_operation', {
+        request: {
+          operationId: 'set_taskbar_task_view_visibility',
+          target,
+          sourceInspectionId
+        }
+      })) as OwnerOperationResult,
+    undoOwnerChange: async (transactionId) =>
       (await invokeCommand('undo_owner_operation', {
         request: { transactionId }
       })) as OwnerOperationResult,

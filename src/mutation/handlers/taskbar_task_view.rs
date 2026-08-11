@@ -1,9 +1,8 @@
-//! Search mode was not given a write handler: Microsoft documents its UI and
-//! device policy, but not a stable current-user setter. The approved substitute
-//! is the documented Task View button presentation setting.
+//! Fixed handler for the current user's Task View taskbar button.
 
 use super::{
-    HandlerError, MutationBackend, OperationHandler, capture, expected, verify_exact, verify_target,
+    HandlerError, MutationBackend, OperationHandler, capture, expected, require_user_authority,
+    verify_exact, verify_target,
 };
 use crate::mutation::{
     plan::{CapturedRepresentation, CapturedState},
@@ -28,8 +27,7 @@ impl OperationHandler for TaskbarTaskViewHandler {
         )
     }
 
-    fn validate_target(&self, target: MutationTarget) -> Result<(), HandlerError> {
-        let _ = target;
+    fn validate_target(&self, _target: MutationTarget) -> Result<(), HandlerError> {
         Ok(())
     }
 
@@ -58,6 +56,7 @@ impl OperationHandler for TaskbarTaskViewHandler {
         backend: &dyn MutationBackend,
         pre_state: &CapturedState,
     ) -> Result<(), HandlerError> {
+        require_user_authority(pre_state)?;
         backend.write_task_view(&self.build_rollback(pre_state))
     }
 

@@ -724,7 +724,7 @@ fn validate_desired_request(
         });
     }
     if !request.always_require_approval {
-        warnings.push("Desired states are local planning records and do not authorize a Windows change. Widgets Apply and Undo are separate owner actions.".into());
+        warnings.push("Desired states are local planning records and do not authorize a Windows change. Owner Mode Apply and Undo are separate explicit actions.".into());
         status = "valid_with_warnings";
     }
     Ok(DesiredStateValidation { status: status.into(), valid: true, warnings, reason: "The requested state is valid for the current observation, subject to the listed warnings.".into() })
@@ -1066,7 +1066,7 @@ pub fn get_product_info() -> ProductInfo {
         product_name: "Deslopper",
         version: env!("CARGO_PKG_VERSION"),
         release_label: if cfg!(feature = "owner-mode") {
-            "Owner Mode M1"
+            "Owner Mode M2"
         } else {
             "Read-Only Engineering Build"
         },
@@ -1080,7 +1080,7 @@ pub fn get_product_info() -> ProductInfo {
         mutation_availability: if cfg!(feature = "mutation-alpha") {
             "engineering validation harness"
         } else if cfg!(feature = "owner-mode") {
-            "Widgets Apply and Undo for the current Windows account"
+            "Task View Apply and Undo, with scoped Widgets capability, for the current Windows account"
         } else {
             "unavailable in this build"
         },
@@ -1830,7 +1830,25 @@ pub fn get_widgets_actionability(
         &store,
         Some(crate::mutation::MutationOperationId::WidgetsVisibility),
     )?;
-    Ok(mutation.0.owner_actionability(&context))
+    Ok(mutation.0.owner_actionability(
+        crate::mutation::MutationOperationId::WidgetsVisibility,
+        &context,
+    ))
+}
+
+#[cfg(feature = "owner-mode")]
+#[tauri::command]
+pub fn get_task_view_actionability(
+    session: State<'_, PlatformSession>,
+    mutation: State<'_, MutationSession>,
+) -> Result<crate::mutation::broker::OwnerActionability, CommandError> {
+    let store = session
+        .0
+        .lock()
+        .map_err(|_| CommandError::state_unavailable())?;
+    let operation_id = crate::mutation::MutationOperationId::TaskViewVisibility;
+    let context = mutation_context(&store, Some(operation_id))?;
+    Ok(mutation.0.owner_actionability(operation_id, &context))
 }
 
 #[cfg(feature = "owner-mode")]
@@ -1849,7 +1867,7 @@ pub fn apply_owner_operation(
             != Some(request.source_inspection_id.as_str())
         {
             return Err(CommandError::invalid_action(
-                "A newer scan exists. Review the latest Widgets state before applying.",
+                "A newer scan exists. Review the latest taskbar state before applying.",
             ));
         }
     }
@@ -1881,16 +1899,33 @@ pub fn undo_owner_operation(
     session: State<'_, PlatformSession>,
     mutation: State<'_, MutationSession>,
 ) -> Result<crate::mutation::broker::OwnerOperationResult, CommandError> {
-    let (fresh_snapshot, fresh_context) =
-        owner_reinspection(crate::mutation::MutationOperationId::WidgetsVisibility)?;
+    let operation_id = {
+        let store = session
+            .0
+            .lock()
+            .map_err(|_| CommandError::state_unavailable())?;
+        let scope = store
+            .snapshots
+            .last()
+            .map(|snapshot| snapshot.machine_id.as_str())
+            .ok_or_else(|| CommandError::invalid_action("Run a fresh inspection before Undo."))?;
+        mutation
+            .0
+            .owner_history(scope)
+            .map_err(CommandError::mutation)?
+            .into_iter()
+            .find(|transaction| transaction.transaction_id == request.transaction_id)
+            .map(|transaction| transaction.operation_id)
+            .ok_or_else(|| CommandError::invalid_action("The Owner Mode change was not found."))?
+    };
+    let (fresh_snapshot, fresh_context) = owner_reinspection(operation_id)?;
     persist_owner_snapshot(&session, fresh_snapshot)?;
     let mut verification_snapshot = None;
     let result = mutation
         .0
         .undo_owner_operation(&request.transaction_id, &fresh_context, || {
             let (snapshot, context) =
-                owner_reinspection(crate::mutation::MutationOperationId::WidgetsVisibility)
-                    .map_err(|error| error.message)?;
+                owner_reinspection(operation_id).map_err(|error| error.message)?;
             verification_snapshot = Some(snapshot);
             Ok(context)
         })
@@ -2009,6 +2044,7 @@ pub fn run() -> tauri::Result<()> {
             clear_local_history,
             generate_diagnostics_export,
             get_widgets_actionability,
+            get_task_view_actionability,
             apply_owner_operation,
             undo_owner_operation,
             get_owner_change_history
@@ -2225,16 +2261,24 @@ fn mutation_context(
         .observations
         .iter()
         .find(|observation| observation.component_id == platform::ComponentId::WidgetsPlatform);
-    let widgets_detector = snapshot
+    let detector_component = match operation_id {
+        Some(crate::mutation::MutationOperationId::TaskViewVisibility) => {
+            platform::ComponentId::TaskbarTaskView
+        }
+        _ => platform::ComponentId::TaskbarWidgets,
+    };
+    let selected_detector = snapshot
         .observations
         .iter()
-        .find(|observation| observation.component_id == platform::ComponentId::TaskbarWidgets);
+        .find(|observation| observation.component_id == detector_component);
     let detector_current_enabled =
-        widgets_detector.and_then(|observation| match &observation.current {
-            PlatformState::UserPreference { enabled } => Some(*enabled),
+        selected_detector.and_then(|observation| match &observation.current {
+            PlatformState::UserPreference { enabled } | PlatformState::Policy { enabled, .. } => {
+                Some(*enabled)
+            }
             _ => None,
         });
-    let detector_status = widgets_detector
+    let detector_status = selected_detector
         .map(|observation| match observation.detector_status {
             DetectorStatus::Successful => "successful",
             DetectorStatus::Unknown => "unknown",
@@ -2244,10 +2288,12 @@ fn mutation_context(
         })
         .unwrap_or("not_run")
         .to_owned();
-    let externally_managed = matches!(
-        operation_id,
-        Some(crate::mutation::MutationOperationId::WidgetsVisibility)
-    ) && widgets_policy.is_some_and(|observation| {
+    let selected_policy_observation = match operation_id {
+        Some(crate::mutation::MutationOperationId::WidgetsVisibility) => widgets_policy,
+        Some(crate::mutation::MutationOperationId::TaskViewVisibility) => selected_detector,
+        _ => None,
+    };
+    let externally_managed = selected_policy_observation.is_some_and(|observation| {
         observation.policy_state.is_some()
             || matches!(
                 observation.authority,
@@ -2265,7 +2311,7 @@ fn mutation_context(
         "workplaceJoined": snapshot.platform.workplace_joined,
         "mdmEnrolled": snapshot.platform.mdm_enrolled,
         "subject": subject,
-        "widgetsPolicy": widgets_policy.map(|observation| serde_json::json!({
+        "ownerControl": selected_policy_observation.map(|observation| serde_json::json!({
             "policyState": observation.policy_state,
             "authority": observation.authority,
             "applicability": observation.applicability.status,
@@ -2368,6 +2414,7 @@ pub fn run() -> tauri::Result<()> {
             clear_local_history,
             generate_diagnostics_export,
             get_widgets_actionability,
+            get_task_view_actionability,
             apply_owner_operation,
             undo_owner_operation,
             get_owner_change_history,
@@ -2442,14 +2489,14 @@ mod tests {
     }
 
     #[test]
-    fn product_alpha_catalogue_exposes_all_twenty_read_only_components() {
+    fn product_catalogue_exposes_all_twenty_one_read_only_components() {
         let catalogue = get_product_component_catalogue();
-        assert_eq!(catalogue.len(), 20);
+        assert_eq!(catalogue.len(), 21);
         assert!(catalogue.iter().all(|component| !component.name.is_empty()));
     }
 
     #[test]
-    fn owner_command_registration_exposes_only_product_widgets_operations() {
+    fn owner_command_registration_exposes_only_product_taskbar_operations() {
         let source = include_str!("app.rs");
         let owner = source
             .split("#[cfg(all(feature = \"owner-mode\", not(feature = \"mutation-alpha\")))]\npub fn run()")
@@ -2458,6 +2505,7 @@ mod tests {
             .expect("owner run block should remain visible to the safety test");
         for required in [
             "get_widgets_actionability",
+            "get_task_view_actionability",
             "apply_owner_operation",
             "undo_owner_operation",
             "get_owner_change_history",
@@ -2470,7 +2518,6 @@ mod tests {
             "approve_and_execute_mutation",
             "rollback_mutation",
             "export_live_validation_evidence",
-            "set_taskbar_task_view_visibility",
             "set_taskbar_show_desktop_enabled",
         ] {
             assert!(

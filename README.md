@@ -2,25 +2,27 @@
 
 **Windows without the slop.**
 
-Deslopper `0.1.0` is a privacy-conscious, installable Windows
-configuration inspector with an owner-operated Widgets vertical slice. Owner
-Mode observes 20 documented
+Deslopper `0.2.0` is a privacy-conscious, installable Windows
+configuration inspector with owner-operated Task View and scoped Widgets controls. Owner
+Mode observes 21 documented
 Windows components, explains uncertainty and authority, saves local inspection
 history, detects meaningful drift, records desired states, and creates
 non-executable previews.
 
-The normal build can apply and exactly undo one registered current-user change:
-showing or hiding the Windows 11 Widgets taskbar button. It has no generic
+The normal build can apply and exactly undo two registered current-user changes:
+showing or hiding the Windows 11 Task View or Widgets taskbar buttons. Widgets
+direct change is suppressed for a machine/account scope after a verified unchanged
+access denial. It has no generic
 mutation command, filesystem capability, shell endpoint, network client,
 updater, elevation manifest, service, or privileged helper. Unknown does not mean broken,
 permission-limited does not mean absent, and a preview is never presented as
 completed work.
 
-## Owner Mode M1 features
+## Owner Mode M2 features
 
 - Compact first-run explanation and cancellable read-only inspection.
 - Honest dashboard summaries without fake health scores or optimisation claims.
-- All 20 registered components with applicability, authority, confidence,
+- All 21 registered components with applicability, authority, confidence,
   completeness, desired state, drift, trade-offs, and redacted evidence.
 - Persisted SQLite history, snapshot comparison, reviewed drift, and retention
   controls.
@@ -30,11 +32,14 @@ completed work.
   picker. Nothing is uploaded automatically.
 - Settings/About with product/build status, redacted database location, local
   history controls and privacy explanation.
-- Widgets actionability integrated into the normal component detail. One Apply
+- Task View and Widgets actionability integrated into their normal component details. One Apply
   click performs fixed preflight, exact pre-state capture, durable transaction,
-  `TaskbarDa` write, direct and detector verification, and safe failure
+  fixed `ShowTaskViewButton` or `TaskbarDa` write, direct and detector verification, and safe failure
   recovery. One Undo click restores the exact prior DWORD or prior absence when
   no conflict exists.
+- Rejected unchanged writes are classified separately from ambiguous or changed
+  failures. They expose no Undo; a proven Widgets permission denial suppresses
+  only that machine/account capability without elevation or ACL changes.
 
 See `docs/read-only-product-alpha.md` for the complete product and privacy
 contract.
@@ -48,16 +53,13 @@ show a compact Experimental Apply & Undo workflow only when Rust build metadata
 reports the mutation feature. The panel reads backend gate status, renders only
 backend-authorized options, reviews one-use plans, requires the backend-provided
 exact phrase, follows durable transaction state, records manual visual outcomes
-through live evidence, and offers only transaction-bound exact rollback. All
-mutation results remain synthetic: zero handlers are live validated and none is
-production-ready.
+through live evidence, and offers only transaction-bound exact rollback.
 
-The physical validation laptop completed read-only preparation and was then
-retired before mutation because the hardware was being sold. That event remains
-in history. It is now temporarily reactivated and ready only for a separate
-Widgets approval review before its final reset, but remains unapproved with zero
-live scenarios and no mutation attempt. Reactivation and review readiness do not
-themselves authorize mutation.
+Historical engineering evidence remains separate from product authorization.
+The first physical Owner Mode test later established a narrower product fact:
+the Widgets write was denied unchanged for that machine/account, while a Task
+View same-state write succeeded unelevated. This does not graduate the internal
+harness or authorize any other operation.
 
 Scoped approval version 2 introduced explicit operation and target-direction
 binding. Under the committed explicit-target governance policy, it is now a
@@ -65,8 +67,7 @@ VM-only compatibility format; physical approval requires strict version 3
 recovery, identity, management, expiry, final-plan, and final-disposition
 evidence. The broker revalidates policy, denylist, approval, source evidence,
 scope, and execution allowance at plan, execution, and pre-write boundaries.
-This governance change grants no target or operation approval; the Widgets test
-remains unexecuted.
+This governance change grants no target or operation approval.
 
 Those historical approval and deny-list rules apply only to the engineering
 harness. They are not runtime prerequisites for the installed owner product.

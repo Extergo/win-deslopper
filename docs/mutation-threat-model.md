@@ -75,17 +75,19 @@ elevation, service, generic helper, or remote principal.
 - Real apply/rollback behavior is unproven until the disposable-VM matrix runs.
 - The cross-process lock coordinates local instances; it is not a standalone
   security boundary.
-- The normal product enables only Widgets; the other alpha handlers are not product-ready.
+- The normal product enables only Widgets and Task View; Show Desktop remains non-productized.
 - Deslopper protects against accidental misuse, frontend parameter tampering,
   stale plans, and implementation errors. It is not a security boundary against
   an already-compromised user account with arbitrary same-user code execution.
 
-## Owner Mode M1 delta
+## Owner Mode M2 delta
 
 Owner Mode removes debug/CLI/scenario/target/approval/phrase/nonce ceremony from
 the product path. It retains the closed registry, fixed store, fresh detector
 and direct preflight, exact durable capture, locks, actual post-attempt capture,
-direct plus Widgets-detector verification, safe automatic rollback, exact
+direct plus matching-detector verification, safe automatic rollback, exact
 conflict-aware Undo, tamper checks, and no startup replay. Product transactions
-bind to a versioned SHA-256 machine-plus-user scope. Only Widgets is exposed;
-Task View and Show Desktop remain engineering-only.
+bind to a versioned SHA-256 machine-plus-user scope. Widgets and Task View are
+exposed through separate fixed operations; Show Desktop remains engineering-only.
+A rejected unchanged permission failure exposes no Undo and can suppress only
+the proven operation/machine/account capability. There is no elevation or ACL path.

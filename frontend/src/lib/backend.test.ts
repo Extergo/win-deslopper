@@ -47,7 +47,7 @@ describe('backend client', () => {
       inspectionId: 'inspection-1',
       phase: 'running_detectors',
       completedWork: 3,
-      totalWork: 20,
+      totalWork: 21,
       currentComponent: 'phone_link',
       detectorResultStatus: null,
       warningCount: 0,
@@ -178,17 +178,20 @@ describe('backend client', () => {
     expect(JSON.stringify(invokeCommand.mock.calls[0])).not.toContain('registry');
   });
 
-  it('exposes the normal Widgets owner workflow without arbitrary mutation parameters', async () => {
+  it('exposes the normal Widgets and Task View owner workflows without arbitrary parameters', async () => {
     const invokeCommand = vi.fn<BackendInvoker>().mockResolvedValue({});
     const client = createBackendClient(invokeCommand);
 
     await client.getWidgetsActionability();
+    await client.getTaskViewActionability();
     await client.applyWidgets('disabled', 'inspection-1');
-    await client.undoWidgets('transaction-1');
+    await client.applyTaskView('enabled', 'inspection-1');
+    await client.undoOwnerChange('transaction-1');
     await client.getOwnerChangeHistory();
 
     expect(invokeCommand.mock.calls).toEqual([
       ['get_widgets_actionability'],
+      ['get_task_view_actionability'],
       [
         'apply_owner_operation',
         {
@@ -199,11 +202,21 @@ describe('backend client', () => {
           }
         }
       ],
+      [
+        'apply_owner_operation',
+        {
+          request: {
+            operationId: 'set_taskbar_task_view_visibility',
+            target: 'enabled',
+            sourceInspectionId: 'inspection-1'
+          }
+        }
+      ],
       ['undo_owner_operation', { request: { transactionId: 'transaction-1' } }],
       ['get_owner_change_history']
     ]);
     expect(JSON.stringify(invokeCommand.mock.calls)).not.toMatch(
-      /registry|taskbarDa|currentVersion|explorer\\advanced|task_view|show_desktop/i
+      /registry|taskbarDa|showTaskViewButton|currentVersion|explorer\\advanced|show_desktop/i
     );
   });
 

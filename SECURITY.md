@@ -17,11 +17,11 @@ crashes, rollback conflict, and misleading success.
 - Tauri grants the normal window only the event listen/unlisten lifecycle used
   for backend inspection progress. It grants no frontend event emission,
   shell, filesystem, network, updater, or external-URL plugin.
-- Normal builds register only the closed owner Widgets actionability, Apply,
+- Normal builds register only closed owner Widgets and Task View actionability, Apply,
   Undo, and history commands. There is no elevation manifest, `runas`, helper,
   service, backend, telemetry, plugin execution, arbitrary registry API, or
   mutation shell command.
-- Desired-state previews remain non-executable. One deliberate Widgets Apply
+- Desired-state previews remain non-executable. One deliberate owner Apply
   click creates an internal durable transaction intent; no phrase, approval
   file, validation target, CLI flag, or user-visible nonce is involved.
 - Diagnostics are built from an allowlisted schema and exclude machine
@@ -33,10 +33,11 @@ crashes, rollback conflict, and misleading success.
   read-only database records. They do not alter Windows or erase internal
   mutation audit tables.
 
-### Owner Widgets boundary
+### Owner taskbar boundary
 
-- The only M1 product operation is `set_taskbar_widgets_visibility`, mapped in
-  Rust to HKCU Explorer Advanced `TaskbarDa` DWORD 0/1.
+- The M2 product operations are `set_taskbar_widgets_visibility` and
+  `set_taskbar_task_view_visibility`, mapped in Rust to fixed HKCU Explorer
+  Advanced `TaskbarDa` and `ShowTaskViewButton` DWORD 0/1 values.
 - The app runs unelevated and affects only the current Windows account. It
   refuses unsupported/non-Windows-11 contexts, unknown representations, and
   fixed external policy ownership.
@@ -54,6 +55,11 @@ crashes, rollback conflict, and misleading success.
   against actual state and otherwise surfaced as needing attention.
 - Automated tests and build commands use fake backends and never touch the live
   registry.
+- A rejected write whose exact pre-state remains present is classified as
+  unchanged, has no Undo, and is not a recovery alarm. A proven Widgets
+  PermissionDenied result suppresses only Widgets direct change for that stable
+  machine/account scope. Deslopper never elevates or changes registry ACLs.
+- Show Desktop and `TaskbarSd` are outside Owner Mode M2.
 
 ## Separate internal mutation-alpha harness
 

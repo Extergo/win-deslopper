@@ -4,19 +4,20 @@ import mutationPanel from './MutationAlphaPanel.svelte?raw';
 import productPage from '../routes/+page.svelte?raw';
 
 describe('normal Owner Mode presentation boundary', () => {
-  it('exposes only Widgets Apply and Undo while keeping the alpha harness gated', () => {
-    expect(productPage).toMatch(/applyWidgets\(target\)/);
-    expect(productPage).toMatch(/undoWidgets\(\)/);
+  it('exposes only Widgets and Task View Apply and Undo while keeping the alpha harness gated', () => {
+    expect(productPage).toMatch(/applyOwnerChange\(target\)/);
+    expect(productPage).toMatch(/undoOwnerChange\(\)/);
     expect(productPage).toMatch(/productInfo\.buildMode === 'engineering mutation-alpha harness'/);
     expect(productPage).toMatch(/Experimental Apply & Undo/);
-    expect(productPage).toMatch(/Owner Mode M1/);
-    expect(productPage).toMatch(/Undo last Widgets change/);
+    expect(productPage).toMatch(/Owner Mode M2/);
+    expect(productPage).toMatch(/Undo last \{selectedOwnerLabel\} change/);
     expect(productPage.match(/if \(ownerBusy/g)?.length).toBeGreaterThanOrEqual(2);
     expect(productPage).toMatch(/disabled=\{ownerBusy/);
+    expect(productPage).toMatch(/set_taskbar_task_view_visibility/);
+    expect(productPage).not.toMatch(/set_taskbar_show_desktop_enabled/);
     expect(productPage).not.toMatch(
-      /set_taskbar_task_view_visibility|set_taskbar_show_desktop_enabled/
+      /CurrentVersion\\Explorer\\Advanced|TaskbarDa|ShowTaskViewButton/
     );
-    expect(productPage).not.toMatch(/CurrentVersion\\Explorer\\Advanced|TaskbarDa/);
     expect(mutationPanel).toMatch(/Internal Mutation Alpha/);
     expect(mutationPanel).toMatch(/This development machine is permanently blocked/);
     const historyMarkup = mutationPanel.split('Mutation transaction history')[1] ?? '';

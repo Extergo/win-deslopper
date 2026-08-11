@@ -24,7 +24,7 @@ export type ComponentFilter =
 
 export const onboardingPrinciples = [
   'Deslopper inspects before it proposes anything.',
-  'Owner Mode changes only Widgets visibility after an explicit click and never silently alters Windows.',
+  'Owner Mode changes only supported taskbar visibility after an explicit click and never silently alters Windows.',
   'Unknown does not mean broken, and permission-limited does not mean absent.',
   'Inspection history stays local by default and sensitive evidence is redacted.'
 ] as const;

@@ -21,6 +21,7 @@ pub enum ComponentId {
     SearchWebResults,
     SearchHighlights,
     TaskbarWidgets,
+    TaskbarTaskView,
     TaskbarSearch,
     PersonalTeamsChat,
     Clipchamp,
@@ -402,6 +403,7 @@ impl ComponentId {
             Self::SearchWebResults => "search_web_results",
             Self::SearchHighlights => "search_highlights",
             Self::TaskbarWidgets => "taskbar_widgets",
+            Self::TaskbarTaskView => "taskbar_task_view",
             Self::TaskbarSearch => "taskbar_search",
             Self::PersonalTeamsChat => "personal_teams_chat",
             Self::Clipchamp => "clipchamp",
@@ -602,6 +604,16 @@ pub fn v1_catalogue() -> Vec<ComponentDefinition> {
             "https://learn.microsoft.com/windows/configuration/taskbar/policy-settings"
         ),
         v1!(
+            TaskbarTaskView,
+            "Taskbar Task View button",
+            "Taskbar",
+            Safe,
+            "Controls the Task View taskbar entry point.",
+            "Set the current-user Task View preference after policy checks.",
+            "Restore the exact captured preference.",
+            "https://learn.microsoft.com/windows/configuration/taskbar/policy-settings"
+        ),
+        v1!(
             TaskbarSearch,
             "Taskbar Search button/box",
             "Taskbar",
@@ -759,9 +771,9 @@ mod tests {
     }
 
     #[test]
-    fn roadmap_contains_exactly_twenty_v1_components() {
+    fn roadmap_contains_exactly_twenty_one_components() {
         let catalogue = v1_catalogue();
-        assert_eq!(catalogue.len(), 20);
+        assert_eq!(catalogue.len(), 21);
         assert!(
             catalogue
                 .iter()

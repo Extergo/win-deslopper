@@ -26,4 +26,9 @@ pub use transaction::MutationTransaction;
 
 #[cfg(feature = "mutation-alpha")]
 pub const HANDLER_VERSION: &str = "mutation-alpha.1";
-pub const OWNER_HANDLER_VERSION: &str = "owner-widgets.1";
+pub const OWNER_HANDLER_VERSION_V1: &str = "owner-widgets.1";
+pub const OWNER_HANDLER_VERSION: &str = "owner-taskbar.2";
+
+pub fn is_owner_handler_version(version: &str) -> bool {
+    matches!(version, OWNER_HANDLER_VERSION_V1 | OWNER_HANDLER_VERSION)
+}

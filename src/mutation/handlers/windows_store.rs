@@ -114,10 +114,10 @@ mod implementation {
 
     fn map_error(error: io::Error, action: &str) -> HandlerError {
         HandlerError::new(
-            if error.kind() == io::ErrorKind::NotFound {
-                HandlerErrorKind::MissingRepresentation
-            } else {
-                HandlerErrorKind::WriteFailed
+            match error.kind() {
+                io::ErrorKind::NotFound => HandlerErrorKind::MissingRepresentation,
+                io::ErrorKind::PermissionDenied => HandlerErrorKind::PermissionDenied,
+                _ => HandlerErrorKind::WriteFailed,
             },
             format!(
                 "Could not {action}; Windows error category: {:?}.",
@@ -128,10 +128,10 @@ mod implementation {
 
     fn map_read_error(error: io::Error, action: &str) -> HandlerError {
         HandlerError::new(
-            if error.kind() == io::ErrorKind::NotFound {
-                HandlerErrorKind::MissingRepresentation
-            } else {
-                HandlerErrorKind::ReadFailed
+            match error.kind() {
+                io::ErrorKind::NotFound => HandlerErrorKind::MissingRepresentation,
+                io::ErrorKind::InvalidData => HandlerErrorKind::InvalidRepresentation,
+                _ => HandlerErrorKind::ReadFailed,
             },
             format!(
                 "Could not {action}; Windows error category: {:?}.",

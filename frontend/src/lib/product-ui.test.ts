@@ -67,8 +67,8 @@ function observation(status = 'successful'): DetectionObservation {
 }
 
 describe('Owner Mode presentation rules', () => {
-  it('explains the explicit Widgets and honest unknown boundary during onboarding', () => {
-    expect(onboardingPrinciples.join(' ')).toMatch(/Widgets visibility.*explicit click/i);
+  it('explains the explicit owner action and honest unknown boundary during onboarding', () => {
+    expect(onboardingPrinciples.join(' ')).toMatch(/taskbar visibility.*explicit click/i);
     expect(onboardingPrinciples.join(' ')).toMatch(/Unknown does not mean broken/i);
     expect(onboardingPrinciples.join(' ')).toMatch(/redacted/i);
   });

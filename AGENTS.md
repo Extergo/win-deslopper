@@ -43,9 +43,10 @@ restore. Safety lives in Rust's fixed operation registry, preflight, exact state
 capture, durable journal, verification, and rollback. Frontend input must never
 provide a registry path, value name, command, script, or arbitrary data mapping.
 
-Owner Mode M1 permits only current-user Widgets visibility through the fixed
-`TaskbarDa` handler. It remains unelevated and Windows 11 x64 only. Task View,
-Show Desktop, AppX, HKLM, services, scheduled tasks, generic PowerShell, generic
+Owner Mode M2 permits only current-user Widgets visibility through fixed
+`TaskbarDa` and Task View visibility through fixed `ShowTaskViewButton` handlers.
+It remains unelevated and Windows 11 x64 only. Show Desktop/`TaskbarSd`, AppX,
+HKLM writes, services, scheduled tasks, generic PowerShell, generic
 registry editing, and automatic Explorer restart are outside this milestone.
 Automated tests must use fake backends and must not perform a live Windows
 mutation.
@@ -54,7 +55,7 @@ Historical Mutation Alpha target, approval, scenario, deny-list, evidence, and
 Hyper-V infrastructure may remain as an engineering validation harness. It does
 not authorize or block the installed owner product. Manual live smoke testing
 is a separate maintainer action after reviewing the release artifact and
-`docs/owner-mode-widgets-smoke-test.md`; implementation and CI do not run it.
+`docs/owner-mode-task-view-smoke-test.md`; implementation and CI do not run it.
 
 ## Pre-change checklist
 

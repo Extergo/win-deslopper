@@ -1,5 +1,5 @@
 mod search_highlights;
-mod taskbar_search;
+mod taskbar_task_view;
 mod taskbar_widgets;
 mod windows_store;
 
@@ -11,7 +11,7 @@ use super::{
 };
 
 pub use search_highlights::TaskbarShowDesktopHandler;
-pub use taskbar_search::TaskbarTaskViewHandler;
+pub use taskbar_task_view::TaskbarTaskViewHandler;
 pub use taskbar_widgets::TaskbarWidgetsHandler;
 pub use windows_store::WindowsSettingStore;
 
@@ -20,6 +20,7 @@ pub use windows_store::WindowsSettingStore;
 pub enum HandlerErrorKind {
     ReadFailed,
     WriteFailed,
+    PermissionDenied,
     MissingRepresentation,
     InvalidRepresentation,
     PolicyOverride,
