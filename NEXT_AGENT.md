@@ -1,9 +1,19 @@
-# Owner Mode M3 handoff
+# Owner Mode M4 handoff
 
-Deslopper `0.3.0` implements Owner Mode M3. The normal release observes 21
-components and exposes exactly six closed current-user operations: Widgets,
+Deslopper `0.4.0` retains the physically validated M1-M3 setting engine and adds
+four first-class current-user package operations. The normal release observes 21
+components and exposes six closed setting operations: Widgets,
 Task View, welcome experience, tips and suggestions, notification suggestions,
-and suggested content in Settings.
+and suggested content in Settings; plus exact current-user removal for Consumer
+Copilot, Phone Link, Clipchamp, and Solitaire.
+
+M4 package state and history are separate from DWORD captures. Native
+`PackageManager` performs exact current-user inventory/removal and deterministic
+registration only when staged/provisioned identity and dependencies prove
+Restore available. Provisioning and other users remain observational. Any
+collateral disappearance is Needs Attention. Implementation/testing performed
+no live AppX mutation. Before physical work, follow
+`docs/owner-mode-m4-appx-smoke-test.md` and inventory every candidate read-only.
 
 The four cleanup handlers use fixed DWORD values under
 `HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager`.

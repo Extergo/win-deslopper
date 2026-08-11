@@ -3,11 +3,31 @@
 This roadmap records sequencing, not authorization. `AGENTS.md`, `SECURITY.md`,
 `ARCHITECTURE.md`, and `.deslopper/policy.toml` remain authoritative.
 
-## Current milestone - Owner Mode M3: Current-user cleanup pack
+## Current milestone - Owner Mode M4: Current-user AppX debloat
+
+**Status:** Implemented as `0.4.0`; physical package removal has not yet been
+performed. Automated implementation and verification use fake deployment
+backends and performed no live AppX/MSIX mutation.
+
+M4 adds four closed current-user package operations: Consumer Copilot, Phone
+Link, Clipchamp, and Solitaire. Rust owns each exact package name. Native
+`PackageManager` current-user inventory/removal/registration is separate from
+the physically validated DWORD engine. Framework, resource, bundle,
+non-removable, unhealthy, ambiguous, and multi-version states fail closed.
+Provisioning and other-user state remain observational.
+
+Every package transaction durably captures exact identity, health, dependency
+and current-user inventory before deployment. Direct inventory and the matching
+detector verify removal; any additional disappeared PackageFullName is Needs
+Attention. Restore is offered only for exact provisioned/staged identity plus
+complete dependencies. Otherwise the UI says Reinstall required and warns that
+local app data may be removed. See `docs/owner-mode-m4-appx-decision.md` and
+`docs/owner-mode-m4-appx-smoke-test.md`.
+
+## Completed milestone - Owner Mode M3: Current-user cleanup pack
 
 **Status:** Implemented and packaged as `0.3.0`; physical validation PASS on the
 Windows 11 x64 owner machine under ordinary current-user execution with no UAC.
-Automated implementation and verification performed no live Windows mutation.
 
 M3 productizes four existing current-user findings alongside the M1/M2 taskbar
 operations: welcome experience, tips and suggestions, notification suggestions,
@@ -68,8 +88,9 @@ engineering harness.
 - Inspection failure is never absence.
 - Normal package version servicing is not configuration drift.
 - Preview state is never represented as completed work.
-- No Apply control appears until an explicitly authorized, tested, reversible
-  operation reaches the normal product boundary. M3 authorizes exactly the six
-  operations listed above; Show Desktop and Taskbar Search remain excluded.
+- No Apply control appears until an explicitly authorized, tested operation
+  reaches the normal product boundary. M4 authorizes six setting operations and
+  four exact current-user package operations; Show Desktop, Taskbar Search,
+  provisioning removal, and all-user removal remain excluded.
 - Do not weaken gaming, anti-cheat, Xbox, Game Pass, or Windows security
   compatibility to increase removal coverage.

@@ -152,3 +152,14 @@ representations. The authoritative evidence is
 `docs/owner-mode-m3-physical-validation.md`; the retained protocol is
 `docs/owner-mode-m3-current-user-cleanup-smoke-test.md`. Automated tests and CI
 remain fake-backend only and perform no live mutation.
+
+Owner Mode M4 adds a separate fake deployment backend. Every accepted package
+operation is covered for exact identity resolution, absent/present/multiple
+versions, protected refusal, dependency capture, durable pre-state, current-user
+remove success, rejected unchanged, ambiguous result, detector disagreement,
+unexpected collateral disappearance, provisioning drift, relaunch history,
+restore classification, deterministic Restore, restore failure, same-family
+newer-version semantics, owner-scope binding, cross-process locking, and
+frontend duplicate-submit prevention. Request-shape and boundary tests prove the
+frontend cannot submit a package identity, wildcard, script, all-user option, or
+provisioning operation. No automated command invokes live AppX deployment.

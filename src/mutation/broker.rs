@@ -1493,7 +1493,7 @@ impl Broker {
         if !is_owner_operation(operation_id) {
             return base(
                 OwnerActionabilityStatus::Unsupported,
-                "This setting is not available in Owner Mode M3.".into(),
+                "This setting is not available in Owner Mode M4.".into(),
                 None,
                 Vec::new(),
             );
@@ -1616,7 +1616,7 @@ impl Broker {
         if !is_owner_operation(operation_id) {
             return Err(BrokerError::new(
                 "operation_not_productized",
-                "This operation is not available in Owner Mode M3.",
+                "This operation is not available in Owner Mode M4.",
             ));
         }
         validate_owner_context(operation_id, context)?;
@@ -3384,7 +3384,7 @@ fn validate_owner_context(
     if context.windows_build < 22_000 || !context.applicable {
         return Err(BrokerError::new(
             "unsupported_build",
-            "Owner Mode M3 supports Windows 11 only.",
+            "Owner Mode M4 supports Windows 11 only.",
         ));
     }
     let architecture = context.architecture.trim().to_ascii_lowercase();
@@ -3395,7 +3395,7 @@ fn validate_owner_context(
     if !is_x64 {
         return Err(BrokerError::new(
             "unsupported_architecture",
-            "Owner Mode M3 supports the x64 product build only.",
+            "Owner Mode M4 supports the x64 product build only.",
         ));
     }
     if !context.authority_acceptable {

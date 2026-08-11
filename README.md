@@ -2,15 +2,15 @@
 
 **Windows without the slop.**
 
-Deslopper `0.3.0` is a privacy-conscious, installable Windows
-configuration inspector with a reversible current-user cleanup pack plus owner-operated Task View and scoped Widgets controls. Owner
+Deslopper `0.4.0` is a privacy-conscious, installable Windows
+configuration inspector with reversible current-user settings plus exact current-user AppX/MSIX removal. Owner
 Mode observes 21 documented
 Windows components, explains uncertainty and authority, saves local inspection
 history, detects meaningful drift, records desired states, and creates
 non-executable previews.
 
-The normal build can apply and exactly undo six registered current-user changes:
-four Windows suggestion/content preferences and the Windows 11 Task View or Widgets taskbar buttons. Widgets
+The normal build can apply and exactly undo six registered current-user settings,
+and can remove four exact package identities from the current account. Package Restore is shown only when captured staged/provisioned state proves a deterministic local registration path. Widgets
 direct change is suppressed for a machine/account scope after a verified unchanged
 access denial. It has no generic
 mutation command, filesystem capability, shell endpoint, network client,
@@ -18,7 +18,7 @@ updater, elevation manifest, service, or privileged helper. Unknown does not mea
 permission-limited does not mean absent, and a preview is never presented as
 completed work.
 
-## Owner Mode M3 features
+## Owner Mode M4 features
 
 - Compact first-run explanation and cancellable read-only inspection.
 - Honest dashboard summaries without fake health scores or optimisation claims.
@@ -44,6 +44,17 @@ completed work.
 - Actionable component pages foreground the real Apply/Undo workflow and concise
   latest-change history. The legacy non-executable desired-state preview remains
   available only for inspection-only components.
+- Consumer Copilot (`Microsoft.Copilot`), Phone Link (`Microsoft.YourPhone`),
+  Clipchamp (`Clipchamp.Clipchamp`), and Solitaire
+  (`Microsoft.MicrosoftSolitaireCollection`) have closed current-user removal
+  operations. The frontend cannot provide a package identity or script.
+- Package transactions use native `Windows.Management.Deployment.PackageManager`,
+  capture complete target/dependency/current-user inventory before removal,
+  verify direct absence plus the matching detector, detect unexpected collateral
+  disappearance, and prove provisioning remained observational and unchanged.
+- Package removal may remove local app data. `REINSTALL_REQUIRED` never exposes
+  a fake Undo; deterministic `RESTORE_AVAILABLE` is transaction-bound and records
+  exact-version versus same-family newer-version results honestly.
 
 The M3 cleanup settings are fixed to `SubscribedContent-310093Enabled`,
 `SoftLandingEnabled`, `SubscribedContent-338389Enabled`, and
@@ -56,6 +67,11 @@ suggestions were deliberately skipped because the existing detector combines
 policy semantics and cannot yet prove exact detector/handler parity.
 
 ## Physical validation
+
+M4 package implementation has not performed a live package removal or
+registration. Physical validation must start with the read-only candidate
+inventory in `docs/owner-mode-m4-appx-smoke-test.md` and select one low-risk
+installed app only after restore classification and data-risk review.
 
 Owner Mode M2 Task View is physically validated PASS on a Windows 11 x64 owner
 machine under ordinary current-user execution without UAC or elevation. The
@@ -119,7 +135,7 @@ bun run tauri build --no-bundle
 bun run tauri build
 ```
 
-The normal NSIS installer contains Owner Mode M3, needs no CLI flag, repository
+The normal NSIS installer contains Owner Mode M4, needs no CLI flag, repository
 working directory, validation file, debug build, or administrator rights for
 these current-user operations, and uses Tauri's WebView2 downloaded-bootstrapper mode.
 Windows 11 normally supplies WebView2; the installer can obtain it when missing.

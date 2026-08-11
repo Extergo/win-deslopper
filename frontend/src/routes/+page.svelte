@@ -17,6 +17,10 @@
     type OwnerActionability,
     type OwnerMutationOperationId,
     type OwnerOperationResult,
+    type PackageActionability,
+    type PackageMutationTransaction,
+    type PackageOperationId,
+    type PackageOperationResult,
     type PlatformDashboard,
     type ProductComponent,
     type ProductInfo,
@@ -102,6 +106,18 @@
     set_notification_suggestions_enabled: 'Notification suggestions',
     set_settings_suggested_content_enabled: 'Suggested content in Settings'
   };
+  const packageOperations: PackageOperationId[] = [
+    'remove_consumer_copilot_current_user',
+    'remove_phone_link_current_user',
+    'remove_clipchamp_current_user',
+    'remove_solitaire_current_user'
+  ];
+  const packageOperationByComponent: Record<string, PackageOperationId> = {
+    consumer_copilot: 'remove_consumer_copilot_current_user',
+    phone_link: 'remove_phone_link_current_user',
+    clipchamp: 'remove_clipchamp_current_user',
+    solitaire: 'remove_solitaire_current_user'
+  };
 
   let loading = true;
   let errorMessage = '';
@@ -141,6 +157,12 @@
   let ownerPhase: 'idle' | 'checking' | 'applying' | 'verifying' = 'idle';
   let ownerResult: OwnerOperationResult | null = null;
   let ownerFeedback = '';
+  let packageActionabilities: Partial<Record<PackageOperationId, PackageActionability>> = {};
+  let packageHistory: PackageMutationTransaction[] = [];
+  let packageBusy = false;
+  let packagePhase: 'idle' | 'checking' | 'removing' | 'verifying' | 'restoring' = 'idle';
+  let packageResult: PackageOperationResult | null = null;
+  let packageFeedback = '';
 
   $: observations = platform?.snapshot?.observations ?? [];
   $: sections =
@@ -198,6 +220,30 @@
   );
   $: ownerTechnicalTransaction =
     ownerResult?.transaction ?? latestOwnerAttention ?? latestOwnerUndo ?? latestOwnerChange;
+  $: selectedPackageOperation = packageOperationByComponent[selectedComponentId] ?? null;
+  $: selectedPackageActionability = selectedPackageOperation
+    ? (packageActionabilities[selectedPackageOperation] ?? null)
+    : null;
+  $: latestPackageChange = packageHistory.find(
+    (transaction) => transaction.operationId === selectedPackageOperation
+  );
+  $: latestPackageRestore = packageHistory.find(
+    (transaction) =>
+      transaction.operationId === selectedPackageOperation &&
+      transaction.status === 'removed' &&
+      transaction.restoreCapability === 'restore_available'
+  );
+  $: latestPackageAttention = packageHistory.find(
+    (transaction) =>
+      transaction.operationId === selectedPackageOperation &&
+      [
+        'needs_attention',
+        'result_ambiguous',
+        'unexpected_collateral_change',
+        'restore_failed',
+        'recovery_required'
+      ].includes(transaction.status)
+  );
 
   onMount(() => {
     onboardingVisible = window.localStorage.getItem('deslopper-onboarding-complete') !== 'true';
@@ -248,20 +294,31 @@
     if (!platform?.snapshot || productInfo?.buildMode === 'explicit read-only') {
       ownerActionabilities = {};
       ownerHistory = [];
+      packageActionabilities = {};
+      packageHistory = [];
       return;
     }
     try {
-      const [actionabilities, history] = await Promise.all([
+      const [actionabilities, history, packageActions, packages] = await Promise.all([
         Promise.all(
           ownerOperations.map(
             async (operationId) =>
               [operationId, await backend.getOwnerActionability(operationId)] as const
           )
         ),
-        backend.getOwnerChangeHistory()
+        backend.getOwnerChangeHistory(),
+        Promise.all(
+          packageOperations.map(
+            async (operationId) =>
+              [operationId, await backend.getOwnerPackageActionability(operationId)] as const
+          )
+        ),
+        backend.getOwnerPackageHistory()
       ]);
       ownerActionabilities = Object.fromEntries(actionabilities);
       ownerHistory = history;
+      packageActionabilities = Object.fromEntries(packageActions);
+      packageHistory = packages;
     } catch (error) {
       ownerActionabilities = {};
       ownerFeedback = describeCommandError(error);
@@ -326,14 +383,75 @@
     preview = null;
     desiredValidation = null;
     desiredOptions =
-      !ownerOperationByComponent[componentId] && observationFor(componentId)
+      !ownerOperationByComponent[componentId] &&
+      !packageOperationByComponent[componentId] &&
+      observationFor(componentId)
         ? await backend.getAllowedDesiredStateOptions(componentId)
         : [];
     desiredStateKey = desiredOptions[0]?.key ?? '';
     desiredNote = desiredFor(componentId)?.note ?? '';
     selectedTimeline = platform?.snapshot ? await backend.getComponentTimeline(componentId) : [];
-    if (ownerOperationByComponent[componentId]) {
+    if (ownerOperationByComponent[componentId] || packageOperationByComponent[componentId]) {
       await refreshOwnerData();
+    }
+  }
+
+  async function removeSelectedPackage(): Promise<void> {
+    if (packageBusy || !platform?.snapshot || !selectedPackageOperation) return;
+    packageBusy = true;
+    packageResult = null;
+    packageFeedback = '';
+    packagePhase = 'checking';
+    let verifyingTimer: ReturnType<typeof setTimeout> | null = null;
+    try {
+      const actionability = await backend.getOwnerPackageActionability(selectedPackageOperation);
+      packageActionabilities = {
+        ...packageActionabilities,
+        [selectedPackageOperation]: actionability
+      };
+      if (actionability.status !== 'ready') {
+        packageFeedback = actionability.reason;
+        return;
+      }
+      packagePhase = 'removing';
+      await tick();
+      verifyingTimer = setTimeout(() => (packagePhase = 'verifying'), 250);
+      packageResult = await backend.removeOwnerPackage(
+        selectedPackageOperation,
+        platform.snapshot.id
+      );
+      packagePhase = 'verifying';
+      packageFeedback = packageResult.message;
+      await refreshSavedData();
+    } catch (error) {
+      packageFeedback = describeCommandError(error);
+      await refreshOwnerData();
+    } finally {
+      if (verifyingTimer) clearTimeout(verifyingTimer);
+      packageBusy = false;
+      packagePhase = 'idle';
+    }
+  }
+
+  async function restoreSelectedPackage(): Promise<void> {
+    if (packageBusy || !latestPackageRestore) return;
+    packageBusy = true;
+    packageResult = null;
+    packageFeedback = '';
+    packagePhase = 'checking';
+    try {
+      packagePhase = 'restoring';
+      await tick();
+      packageResult = await backend.restoreOwnerPackage(latestPackageRestore.transactionId);
+      packagePhase = 'verifying';
+      packageFeedback = packageResult.message;
+      await refreshSavedData();
+    } catch (error) {
+      packageFeedback = describeCommandError(error);
+      await refreshOwnerData();
+    } finally {
+      packageBusy = false;
+      packagePhase = 'idle';
     }
   }
 
@@ -672,8 +790,8 @@
               </div>
             </div>
             <div class="read-only-seal">
-              <span aria-hidden="true">✓</span><strong>Owner Mode M3</strong><small
-                >Current-user cleanup, Task View, and scoped Widgets controls. No UAC.</small
+              <span aria-hidden="true">✓</span><strong>Owner Mode M4</strong><small
+                >Verified current-user settings and exact AppX package removal. No UAC.</small
               >
             </div>
           </header>
@@ -787,8 +905,10 @@
                 <li>Export a privacy-reviewed diagnostic file only when you ask.</li>
               </ul>
               <div class="boundary">
-                <strong>Automatic restoration is not available in this build.</strong><span
-                  >Preview records create no approval nonce or mutation transaction.</span
+                <strong>Restore is offered only when captured package state proves it safe.</strong
+                ><span
+                  >Preference previews remain non-executable; package removal requires one explicit
+                  click.</span
                 >
               </div>
             </section>
@@ -1077,24 +1197,179 @@
                     {/if}
                   </section>
                 {/if}
+                {#if selectedPackageOperation}
+                  <section class="owner-action" aria-labelledby="package-control-title">
+                    <div class="section-heading">
+                      <div>
+                        <span class="eyebrow">Current-user package</span>
+                        <h3 id="package-control-title">Remove from this account</h3>
+                        <p>
+                          This removes only this Windows account's registration. It does not remove
+                          provisioning, affect other users, or completely remove the app from
+                          Windows.
+                        </p>
+                      </div>
+                      <span class="badge">
+                        {selectedPackageActionability?.restoreCapability.replaceAll('_', ' ') ??
+                          'Checking'}
+                      </span>
+                    </div>
+                    {#if selectedPackageActionability}
+                      <div
+                        class="validation"
+                        class:invalid={selectedPackageActionability.status !== 'ready'}
+                      >
+                        <strong>{selectedPackageActionability.status.replaceAll('_', ' ')}</strong>
+                        <p>{selectedPackageActionability.reason}</p>
+                        <small>
+                          Exact identity: {selectedPackageActionability.exactPackageName} · Current user
+                          only
+                        </small>
+                      </div>
+                      <div class="boundary">
+                        <strong>Removing this app may also remove local app data.</strong>
+                        <span>
+                          {selectedPackageActionability.restoreCapability === 'restore_available'
+                            ? 'Automatic Restore is available only while the captured staged identity remains safe.'
+                            : 'Automatic Restore is not available. Reinstalling may require Microsoft Store or Windows servicing.'}
+                        </span>
+                      </div>
+                      <p class="plain-status">
+                        {selectedPackageActionability.provisioned
+                          ? 'Still provisioned by Windows; it may be registered for new user accounts.'
+                          : 'No exact provisioned identity was observed. Provisioning is never changed by this action.'}
+                      </p>
+                    {:else}
+                      <div class="validation invalid">
+                        <strong>Fresh package check required</strong>
+                        <p>
+                          Run an inspection before removing this package from the current account.
+                        </p>
+                      </div>
+                    {/if}
+                    {#if latestPackageAttention}
+                      <div class="owner-result needs-attention" role="alert">
+                        <strong>Needs attention</strong>
+                        <p>
+                          {latestPackageAttention.recoveryRequirement ??
+                            latestPackageAttention.errorSummary ??
+                            'The latest package transaction requires review.'}
+                        </p>
+                      </div>
+                    {/if}
+                    <div class="button-row">
+                      {#if selectedPackageActionability?.status === 'ready'}
+                        <button
+                          class="primary"
+                          disabled={packageBusy}
+                          onclick={() => void removeSelectedPackage()}
+                          >Remove from this account</button
+                        >
+                      {/if}
+                      {#if latestPackageRestore}
+                        <button
+                          class="secondary"
+                          disabled={packageBusy}
+                          onclick={() => void restoreSelectedPackage()}>Restore</button
+                        >
+                      {/if}
+                    </div>
+                    {#if packageBusy}
+                      <div class="owner-progress" aria-live="polite">
+                        <strong>
+                          {packagePhase === 'checking'
+                            ? 'Checking package state...'
+                            : packagePhase === 'removing'
+                              ? 'Removing from this account...'
+                              : packagePhase === 'restoring'
+                                ? 'Restoring current-user registration...'
+                                : 'Verifying package inventory and detector...'}
+                        </strong>
+                        <span>Keep Deslopper open while Windows deployment completes.</span>
+                      </div>
+                    {:else if packageFeedback}
+                      <div
+                        class="owner-result"
+                        class:needs-attention={packageResult?.transaction.status.includes(
+                          'attention'
+                        ) ||
+                          packageResult?.transaction.status.includes('ambiguous') ||
+                          packageResult?.transaction.status.includes('failed')}
+                        aria-live="polite"
+                      >
+                        <strong>
+                          {packageResult?.transaction.status.replaceAll('_', ' ') ??
+                            'Package status'}
+                        </strong>
+                        <p>{packageFeedback}</p>
+                      </div>
+                    {/if}
+                    {#if latestPackageChange}
+                      <div class="owner-result" aria-label="Latest package change">
+                        <strong>Latest package change</strong>
+                        <p>
+                          {latestPackageChange.status.replaceAll('_', ' ')} ·
+                          {displayTime(
+                            latestPackageChange.completedAt ?? latestPackageChange.createdAt
+                          )}
+                        </p>
+                        <small>
+                          {latestPackageChange.preState?.target?.name ??
+                            selectedPackageActionability?.exactPackageName} ·
+                          {latestPackageChange.preState?.target?.version ?? 'version unavailable'} ·
+                          {latestPackageChange.restoreCapability.replaceAll('_', ' ')}
+                        </small>
+                      </div>
+                      <details class="technical">
+                        <summary>Technical package identity</summary>
+                        <article>
+                          <strong
+                            >{latestPackageChange.preState?.target?.packageFullName ??
+                              'Package absent'}</strong
+                          >
+                          <span>
+                            Family: {latestPackageChange.preState?.target?.packageFamilyName ??
+                              'Unavailable'}
+                          </span>
+                          <span>
+                            Architecture: {latestPackageChange.preState?.target?.architecture ??
+                              'Unavailable'} · Status: {latestPackageChange.preState?.target
+                              ?.status ?? 'Unavailable'}
+                          </span>
+                          <span>
+                            Dependencies: {latestPackageChange.preState?.target?.dependencies
+                              .map((item) => item.packageFullName)
+                              .join(', ') || 'None reported'}
+                          </span>
+                          <small>
+                            Unexpected disappeared packages: {latestPackageChange.disappearedPackageFullNames.join(
+                              ', '
+                            ) || 'None'}
+                          </small>
+                        </article>
+                      </details>
+                    {/if}
+                  </section>
+                {/if}
                 <section class="support-strip" aria-label="Product support levels">
                   <span><strong>Observe</strong> Supported</span><span
                     ><strong>Preview</strong>
-                    {selectedOwnerOperation
+                    {selectedOwnerOperation || selectedPackageOperation
                       ? 'Not shown for actionable components'
                       : desiredOptions.length
                         ? 'Available with complete evidence'
                         : 'Unavailable for current evidence'}</span
                   ><span
                     ><strong>Apply</strong>
-                    {selectedOwnerOperation
-                      ? selectedOwnerActionability?.status === 'ready'
+                    {selectedOwnerOperation || selectedPackageOperation
+                      ? selectedOwnerActionability?.status === 'ready' ||
+                        selectedPackageActionability?.status === 'ready'
                         ? 'Available'
                         : 'Unavailable for current evidence'
                       : 'Inspection only'}</span
                   >
                 </section>
-                {#if !selectedOwnerOperation}
+                {#if !selectedOwnerOperation && !selectedPackageOperation}
                   <section class="desired-editor">
                     <div class="section-heading">
                       <div>
@@ -1367,13 +1642,77 @@
           <header class="page-header">
             <div>
               <span class="eyebrow">Persisted locally</span>
-              <h1 id="history-title">Inspection history</h1>
-              <p>
-                Review duration, Windows build, completion state, and component-level differences.
-              </p>
+              <h1 id="history-title">History</h1>
+              <p>Review Owner Mode setting changes, package removals, and saved inspections.</p>
             </div>
             <span class="badge">{inspectionHistory.length} saved</span>
           </header>
+          <section class="surface" aria-labelledby="owner-history-title">
+            <div class="section-heading">
+              <div>
+                <span class="eyebrow">Owner Mode</span>
+                <h2 id="owner-history-title">Changes on this account</h2>
+                <p>
+                  Preference transactions and current-user package deployment share this history.
+                </p>
+              </div>
+              <span class="badge">{ownerHistory.length + packageHistory.length} changes</span>
+            </div>
+            <div class="history-list">
+              {#each ownerHistory as transaction (transaction.transactionId)}
+                <article>
+                  <div>
+                    <strong>{componentName(transaction.subjectId)}</strong>
+                    <span class="status-text">{transaction.status.replaceAll('_', ' ')}</span>
+                  </div>
+                  <p>
+                    Current-user setting ·
+                    {displayTime(
+                      transaction.completedAt ?? transaction.startedAt ?? transaction.createdAt
+                    )}
+                  </p>
+                  <small>
+                    {ownerRepresentationText(transaction.preState)} →
+                    {ownerRepresentationText(
+                      transaction.rollback.complete
+                        ? transaction.rollbackState
+                        : transaction.postState
+                    )} · Undo {transaction.rollback.available ? 'available' : 'not available'}
+                  </small>
+                </article>
+              {/each}
+              {#each packageHistory as transaction (transaction.transactionId)}
+                <article>
+                  <div>
+                    <strong>{componentName(transaction.componentId)}</strong>
+                    <span class="status-text">{transaction.status.replaceAll('_', ' ')}</span>
+                  </div>
+                  <p>
+                    {transaction.status === 'restored' ||
+                    transaction.status === 'restored_newer_version'
+                      ? 'Restored for this account'
+                      : transaction.status === 'already_absent'
+                        ? 'Already absent from this account'
+                        : transaction.status === 'removed'
+                          ? 'Removed from this account'
+                          : 'Current-user package operation'} ·
+                    {displayTime(transaction.completedAt ?? transaction.createdAt)}
+                  </p>
+                  <small>
+                    {transaction.preState?.target?.name ?? transaction.operationId} ·
+                    {transaction.preState?.target?.version ?? 'version unavailable'} ·
+                    {transaction.restoreCapability.replaceAll('_', ' ')}
+                  </small>
+                </article>
+              {/each}
+              {#if ownerHistory.length + packageHistory.length === 0}
+                <div class="empty">
+                  <strong>No Owner Mode changes yet</strong>
+                  <p>Verified setting changes and package removals will persist here.</p>
+                </div>
+              {/if}
+            </div>
+          </section>
           {#if inspectionHistory.length >= 2}<section class="compare surface">
               <div class="section-heading">
                 <div>
@@ -1541,7 +1880,8 @@
                 <li>Machine identity and the development-host denylist never enter diagnostics.</li>
                 <li>
                   Owner Mode has no filesystem, shell, network, or updater permission. Its Windows
-                  writes are limited to six fixed current-user M3 settings.
+                  writes are limited to six fixed current-user settings and four exact current-user
+                  package deployment operations.
                 </li>
               </ul>
             </section>
@@ -1564,8 +1904,8 @@
         <h1 id="onboarding-title">Understand Windows before deciding what you want.</h1>
         <p>
           Deslopper gives you a careful local record of supported settings, packages, policy,
-          uncertainty, and change over time, plus fixed current-user cleanup, Task View, and scoped
-          Widgets controls.
+          uncertainty, and change over time, plus fixed current-user settings and exact package
+          removal with honest restore classification.
         </p>
         <ul>
           {#each onboardingPrinciples as principle (principle)}<li>

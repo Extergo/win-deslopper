@@ -7,6 +7,7 @@ pub mod handlers;
 pub mod journal;
 #[cfg(feature = "mutation-alpha")]
 pub mod live_validation;
+pub mod package;
 pub mod plan;
 pub mod request;
 pub mod rollback;
@@ -19,6 +20,11 @@ pub use broker::{Broker, BrokerContext, BrokerError};
 pub use journal::MutationJournal;
 #[cfg(feature = "mutation-alpha")]
 pub use live_validation::{EvidenceExportRequest, LiveEvidenceBundle, build_live_validation_gate};
+pub use package::{
+    OwnerPackageRemoveRequest, OwnerPackageRestoreRequest, PackageActionability, PackageBroker,
+    PackageDetectorEvidence, PackageMutationContext, PackageMutationTransaction,
+    PackageOperationId, PackageOperationResult, WindowsPackageDeploymentBackend,
+};
 #[cfg(feature = "mutation-alpha")]
 pub use request::{AlphaGateStatus, ApprovalRequest, PlanRequest, RollbackRequest};
 pub use request::{MutationOperationId, OwnerApplyRequest, OwnerUndoRequest};

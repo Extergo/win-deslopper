@@ -1,8 +1,8 @@
 # Architecture
 
 The normal Deslopper build is Owner Mode. It combines the read-only
-21-component inspector with six closed, unelevated operations: current-user
-Taskbar Widgets and Task View visibility plus four suggestion/content preferences. The historical `mutation-alpha`
+21-component inspector with six closed current-user setting operations and four
+closed current-user package operations. The historical `mutation-alpha`
 feature remains an explicit engineering validation flavor; it is not the
 authorization path for the installed product.
 
@@ -14,15 +14,15 @@ authorization path for the installed product.
    component detail. Presentation never owns Windows paths, values, scripts,
    applicability, authority, or redaction rules. It is an untrusted transport
    client: Rust owns the registered product operation, exact representation,
-   transaction state, verification, and rollback.
+   transaction state, verification, and safe recovery/restore classification.
 2. **Application orchestration.** Rust owns inspection coordination, progress,
    desired-state validation, drift, feature-gated command transport, and fresh
    pre/post-operation inspection. Tauri handlers do not execute settings.
 3. **Domain models.** The 21-component read-only catalogue includes a distinct
    Task View detector; Taskbar Search remains a separate component.
-   Mutation uses separate closed operation/subject/target enums and an immutable
-   three-entry engineering-alpha registry plus a separate six-entry Owner Mode
-   product allowlist.
+   Setting mutation retains its closed operation/subject/target enums. Package
+   mutation has separate operation, captured-state, deployment, capability, and
+   transaction types; it is never represented as a DWORD.
 4. **Read-only Windows inspection.** The existing eight fixed PowerShell queries
    retain timeout, output, parser, cancellation, and evidence contracts. They
    run immediately before and after alpha apply where material.
@@ -43,17 +43,23 @@ authorization path for the installed product.
    Content policies. The generic internal DWORD helper accepts only a closed
    setting enum. No caller can
    provide a hive, path, name, type, or arbitrary value.
-8. **Persistence.** SQLite v5 stores read-only history, desired revisions,
+8. **Windows package deployment.** The native windows-rs projection exposes
+   `FindPackagesForUser` with the empty current-user SID, exact
+   `RemovePackageAsync`, and transaction-bound
+   `RegisterPackageByFullNameAsync`. Rust resolves all package identities from
+   four closed operations. No shell, all-user flag, provisioning API, Store
+   acquisition, WindowsApps path, or arbitrary package input exists.
+9. **Persistence.** SQLite v6 stores read-only history, desired revisions,
    reviewed/resolved drift, retention preferences, and internal feature-gated
    mutation journal tables. Owner transactions bind to a versioned SHA-256
    digest of machine identity plus current-user SID; raw values are not
    persisted. Local history clearing removes only Deslopper's
    read-only records and preserves internal audit tables. Persistence cannot
    dispatch operations.
-9. **Privileged host, plugins, backend, and updater.** Absent. The alpha has no
+10. **Privileged host, plugins, backend, and updater.** Absent. The alpha has no
    elevation, helper, service, network, authentication, telemetry, or remote
    operation boundary.
-10. **Engineering validation harness.** The historical application path is the
+11. **Engineering validation harness.** The historical application path is the
    guest runner. A fixed local manifest and denylist add scenario, machine,
    checkpoint, source, platform, and guest-database gates. A separate ignored
    target approval distinguishes VMs from physical laptops and rejects pending,
@@ -70,7 +76,7 @@ authorization path for the installed product.
    infrastructure is not registered in the normal product. Evidence
    facts come from the journal and export to a fixed ignored location. Optional
    Hyper-V tooling is allowlisted and cannot invoke broker operations.
-11. **Diagnostics boundary.** Rust constructs a closed, redacted JSON value
+12. **Diagnostics boundary.** Rust constructs a closed, redacted JSON value
     without machine identity, validation files, account data, or raw output.
     Svelte shows the included categories before using the WebView's user-driven
     save picker. No Tauri filesystem permission or network upload exists.
@@ -78,8 +84,9 @@ authorization path for the installed product.
 ## Dependency direction and release boundary
 
 Presentation sends typed IDs to Rust. Normal orchestration calls only closed
-owner APIs; the broker selects one of six fixed product handlers;
-the handler calls its fixed store method. Inspection never imports mutation. Persistence stores data
+owner APIs. The setting broker selects one of six fixed handlers; the package
+broker selects one of four exact identities and calls native current-user
+deployment. Inspection never imports mutation. Persistence stores data
 but cannot apply it. Normal builds compile the closed owner broker and register
 owner actionability/Apply/Undo/history commands. They do not register legacy
 live-validation approval or evidence commands. The explicit `mutation-alpha`

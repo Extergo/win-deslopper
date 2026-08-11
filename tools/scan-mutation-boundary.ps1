@@ -28,7 +28,12 @@ $prohibited = @(
     'Restart-Computer',
     'runas.exe',
     'Verb RunAs',
-    'cmd.exe'
+    'cmd.exe',
+    'RemoveForAllUsers',
+    'RemovePackageWithOptionsAsync',
+    'DeprovisionPackageForAllUsersAsync',
+    'takeown.exe',
+    'icacls.exe'
 )
 
 foreach ($match in ($files | Select-String -Pattern $prohibited -SimpleMatch)) {
@@ -104,7 +109,7 @@ if ($ownerStart -lt 0 -or $alphaStart -le $ownerStart) {
     $failures.Add('src\app.rs: distinct normal owner-mode composition is missing')
 } else {
     $ownerComposition = $appSource.Substring($ownerStart, $alphaStart - $ownerStart)
-    foreach ($command in 'get_owner_actionability', 'get_widgets_actionability', 'get_task_view_actionability', 'apply_owner_operation', 'undo_owner_operation', 'get_owner_change_history') {
+    foreach ($command in 'get_owner_actionability', 'get_widgets_actionability', 'get_task_view_actionability', 'apply_owner_operation', 'undo_owner_operation', 'get_owner_change_history', 'get_owner_package_actionability', 'remove_owner_package', 'restore_owner_package', 'get_owner_package_history') {
         if (-not $ownerComposition.Contains($command)) {
             $failures.Add("src\app.rs: normal owner-mode composition is missing '$command'")
         }
@@ -120,6 +125,33 @@ $frontendBackend = Get-Content -Raw -LiteralPath (Join-Path $repo 'frontend\src\
 foreach ($operation in 'set_taskbar_widgets_visibility', 'set_taskbar_task_view_visibility', 'set_welcome_experience_enabled', 'set_tips_suggestions_enabled', 'set_notification_suggestions_enabled', 'set_settings_suggested_content_enabled') {
     if (-not $frontendBackend.Contains("| '$operation'")) {
         $failures.Add("frontend\src\lib\backend.ts: closed Owner Mode operation '$operation' is missing")
+    }
+}
+$packageSourcePath = Join-Path $repo 'src\mutation\package.rs'
+$packageSource = Get-Content -Raw -LiteralPath $packageSourcePath
+foreach ($token in 'FindPackagesByUserSecurityId', 'RemovePackageAsync', 'RegisterPackageByFullNameAsync', 'Windows.Management.Deployment.PackageManager/', 'owner-appx.4', 'Microsoft.Copilot', 'Microsoft.YourPhone', 'Clipchamp.Clipchamp', 'Microsoft.MicrosoftSolitaireCollection') {
+    if (-not $packageSource.Contains($token)) {
+        $failures.Add("${packageSourcePath}: required bounded deployment token '$token' is missing")
+    }
+}
+if ($packageSource.Contains('.FindPackages()')) {
+    $failures.Add("${packageSourcePath}: parameterless cross-user package inventory is forbidden")
+}
+foreach ($operation in 'remove_consumer_copilot_current_user', 'remove_phone_link_current_user', 'remove_clipchamp_current_user', 'remove_solitaire_current_user') {
+    if (-not $frontendBackend.Contains("| '$operation'") -and -not $frontendBackend.Contains("= '$operation'")) {
+        $failures.Add("frontend\src\lib\backend.ts: closed package operation '$operation' is missing")
+    }
+}
+$removeRequestStart = $packageSource.IndexOf('pub struct OwnerPackageRemoveRequest')
+$restoreRequestStart = $packageSource.IndexOf('pub struct OwnerPackageRestoreRequest')
+if ($removeRequestStart -lt 0 -or $restoreRequestStart -le $removeRequestStart) {
+    $failures.Add("${packageSourcePath}: closed package removal request is missing")
+} else {
+    $removeRequest = $packageSource.Substring($removeRequestStart, $restoreRequestStart - $removeRequestStart)
+    foreach ($token in 'package_name', 'package_full_name', 'script', 'command', 'all_users', 'provisioned') {
+        if ($removeRequest.Contains($token)) {
+            $failures.Add("${packageSourcePath}: frontend removal request exposes forbidden field '$token'")
+        }
     }
 }
 $productPage = Get-Content -Raw -LiteralPath (Join-Path $repo 'frontend\src\routes\+page.svelte')
@@ -165,8 +197,9 @@ if ($failures.Count -gt 0) {
 
 Write-Host 'Mutation boundary scan passed.'
 Write-Host 'Normal product writes: six fixed HKCU values for Widgets, Task View, and four current-user cleanup operations only.'
+Write-Host 'Normal package deployment: four exact current-user PackageManager operations; no all-user or provisioning removal.'
 Write-Host 'Engineering harness only: the closed TaskbarSd handler remains compiled/testable but is not registered by normal launch.'
 Write-Host 'Allowed machine reads: fixed Widgets, Task View, taskbar-lock, and CloudContent policy checks only.'
 Write-Host 'Normal launch and Scan reach no write call; registry writes remain isolated behind explicit owner commands.'
-Write-Host 'Allowed process boundary: fixed read-only inspection PowerShell only.'
+Write-Host 'Allowed process boundary: fixed read-only inspection PowerShell only; package deployment is native WinRT.'
 Write-Host 'Allowed VM tooling: explicit approved-VM checkpoint/restore/payload copy in Invoke-DeslopperHyperVValidation.ps1 only; it cannot launch mutation.'

@@ -41,6 +41,8 @@ export interface PackageObservation {
   version: string | null;
   architecture: string | null;
   publisherId: string | null;
+  resourceId: string | null;
+  provisionedPackageFullName: string | null;
   currentUser: string;
   otherUsers: string;
   provisioning: string;
@@ -523,6 +525,110 @@ export interface OwnerOperationResult {
   note: string | null;
 }
 
+export type PackageOperationId =
+  | 'remove_consumer_copilot_current_user'
+  | 'remove_phone_link_current_user'
+  | 'remove_clipchamp_current_user'
+  | 'remove_solitaire_current_user';
+
+export type PackageRestoreCapability =
+  'restore_available' | 'reinstall_required' | 'remove_unavailable';
+
+export interface PackageActionability {
+  operationId: PackageOperationId;
+  componentId: string;
+  title: string;
+  exactPackageName: string;
+  status: 'ready' | 'already_absent' | 'remove_unavailable' | 'needs_scan';
+  restoreCapability: PackageRestoreCapability;
+  reason: string;
+  currentUserPresent: boolean;
+  provisioned: boolean;
+  mayRemoveAppData: boolean;
+}
+
+export interface CurrentUserPackageState {
+  name: string;
+  packageFullName: string;
+  packageFamilyName: string;
+  version: string;
+  architecture: string;
+  publisher: string;
+  publisherId: string;
+  resourceId: string | null;
+  installLocationPresent: boolean;
+  status: string;
+  framework: boolean;
+  resourcePackage: boolean;
+  bundle: boolean;
+  optional: boolean;
+  dependencies: Array<{
+    name: string;
+    packageFullName: string;
+    packageFamilyName: string;
+    version: string;
+    architecture: string;
+    framework: boolean;
+    resourcePackage: boolean;
+  }>;
+}
+
+export interface PackageCapturedState {
+  componentId: string;
+  operationId: PackageOperationId;
+  target: CurrentUserPackageState | null;
+  currentUserPackageFullNames: string[];
+  currentUserRegistrationPresent: boolean;
+  detectorRegistration: string;
+  otherUserRegistration: string;
+  provisioning: string;
+  provisionedPackageFullName: string | null;
+  deploymentHandler: string;
+  restoreCapability: PackageRestoreCapability;
+  capturedAt: string;
+}
+
+export interface PackageMutationTransaction {
+  transactionId: string;
+  machineId: string;
+  componentId: string;
+  operationId: PackageOperationId;
+  sourceInspectionId: string;
+  createdAt: string;
+  completedAt: string | null;
+  status: string;
+  applicationVersion: string;
+  handlerVersion: string;
+  windowsBuild: number;
+  edition: string;
+  preState: PackageCapturedState | null;
+  postState: PackageCapturedState | null;
+  restoreState: PackageCapturedState | null;
+  restoreCapability: PackageRestoreCapability;
+  disappearedPackageFullNames: string[];
+  appearedPackageFullNames: string[];
+  restoreDisappearedPackageFullNames: string[];
+  restoreAppearedPackageFullNames: string[];
+  detectorVerified: boolean;
+  provisioningUnchanged: boolean;
+  result: string;
+  errorCategory: string | null;
+  errorSummary: string | null;
+  recoveryRequirement: string | null;
+  steps: Array<{
+    sequence: number;
+    stepType: string;
+    at: string;
+    status: string;
+    evidence: string[];
+  }>;
+}
+
+export interface PackageOperationResult {
+  transaction: PackageMutationTransaction;
+  message: string;
+}
+
 export type AppAction =
   | { type: 'search_changed'; query: string }
   | { type: 'filter_changed'; filter: CatalogueFilter }
@@ -583,6 +689,13 @@ export interface BackendClient {
   ): Promise<OwnerOperationResult>;
   undoOwnerChange(transactionId: string): Promise<OwnerOperationResult>;
   getOwnerChangeHistory(): Promise<MutationTransaction[]>;
+  getOwnerPackageActionability(operationId: PackageOperationId): Promise<PackageActionability>;
+  removeOwnerPackage(
+    operationId: PackageOperationId,
+    sourceInspectionId: string
+  ): Promise<PackageOperationResult>;
+  restoreOwnerPackage(transactionId: string): Promise<PackageOperationResult>;
+  getOwnerPackageHistory(): Promise<PackageMutationTransaction[]>;
   getMutationAlphaStatus(): Promise<MutationAlphaStatus>;
   acknowledgeMutationAlphaWarning(acknowledged: boolean): Promise<MutationAlphaStatus>;
   getMutationOperationOptions(): Promise<MutationOperationOption[]>;
@@ -699,6 +812,20 @@ export function createBackendClient(
       })) as OwnerOperationResult,
     getOwnerChangeHistory: async () =>
       (await invokeCommand('get_owner_change_history')) as MutationTransaction[],
+    getOwnerPackageActionability: async (operationId) =>
+      (await invokeCommand('get_owner_package_actionability', {
+        operationId
+      })) as PackageActionability,
+    removeOwnerPackage: async (operationId, sourceInspectionId) =>
+      (await invokeCommand('remove_owner_package', {
+        request: { operationId, sourceInspectionId }
+      })) as PackageOperationResult,
+    restoreOwnerPackage: async (transactionId) =>
+      (await invokeCommand('restore_owner_package', {
+        request: { transactionId }
+      })) as PackageOperationResult,
+    getOwnerPackageHistory: async () =>
+      (await invokeCommand('get_owner_package_history')) as PackageMutationTransaction[],
     getMutationAlphaStatus: async () =>
       (await invokeCommand('get_mutation_alpha_status')) as MutationAlphaStatus,
     acknowledgeMutationAlphaWarning: async (acknowledged) =>

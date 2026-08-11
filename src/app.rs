@@ -28,6 +28,13 @@ use crate::mutation::{
 #[cfg(feature = "owner-mode")]
 use crate::mutation::{OwnerApplyRequest, OwnerUndoRequest};
 
+#[cfg(feature = "owner-mode")]
+use crate::mutation::{
+    OwnerPackageRemoveRequest, OwnerPackageRestoreRequest, PackageBroker, PackageDetectorEvidence,
+    PackageMutationContext, PackageMutationTransaction, PackageOperationId, PackageOperationResult,
+    WindowsPackageDeploymentBackend,
+};
+
 #[cfg(feature = "mutation-alpha")]
 use crate::mutation::{
     ApprovalRequest, EvidenceExportRequest, LiveEvidenceBundle, MutationJournal, PlanRequest,
@@ -49,6 +56,9 @@ pub struct InspectionCoordinator(Mutex<Option<ActiveInspection>>);
 
 #[cfg(feature = "owner-mode")]
 pub struct MutationSession(Arc<Broker>);
+
+#[cfg(feature = "owner-mode")]
+pub struct PackageMutationSession(Arc<PackageBroker>);
 
 static INSPECTION_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
@@ -1066,7 +1076,7 @@ pub fn get_product_info() -> ProductInfo {
         product_name: "Deslopper",
         version: env!("CARGO_PKG_VERSION"),
         release_label: if cfg!(feature = "owner-mode") {
-            "Owner Mode M3"
+            "Owner Mode M4"
         } else {
             "Read-Only Engineering Build"
         },
@@ -1310,9 +1320,9 @@ fn build_diagnostics_export(store: &Store, request: &DiagnosticsRequest) -> serd
         "product": {
             "name": "Deslopper",
             "version": env!("CARGO_PKG_VERSION"),
-            "release": if cfg!(feature = "owner-mode") { "Owner Mode M3" } else { "Read-Only Engineering Build" },
+            "release": if cfg!(feature = "owner-mode") { "Owner Mode M4" } else { "Read-Only Engineering Build" },
             "buildMode": if cfg!(feature = "mutation-alpha") { "engineering_mutation_alpha_harness" } else if cfg!(feature = "owner-mode") { "owner_mode" } else { "explicit_read_only" },
-            "mutationAvailability": if cfg!(feature = "mutation-alpha") { "engineering_validation_harness" } else if cfg!(feature = "owner-mode") { "six_closed_current_user_operations" } else { "unavailable_in_this_build" },
+            "mutationAvailability": if cfg!(feature = "mutation-alpha") { "engineering_validation_harness" } else if cfg!(feature = "owner-mode") { "six_closed_settings_plus_four_closed_current_user_packages" } else { "unavailable_in_this_build" },
         },
         "windows": latest.map(|snapshot| serde_json::json!({
             "productName": snapshot.platform.product_name,
@@ -1975,6 +1985,213 @@ pub fn get_owner_change_history(
 }
 
 #[cfg(feature = "owner-mode")]
+#[tauri::command]
+pub fn get_owner_package_actionability(
+    operation_id: PackageOperationId,
+    session: State<'_, PlatformSession>,
+    packages: State<'_, PackageMutationSession>,
+) -> Result<crate::mutation::PackageActionability, CommandError> {
+    let store = session
+        .0
+        .lock()
+        .map_err(|_| CommandError::state_unavailable())?;
+    let context = package_mutation_context(&store, operation_id)?;
+    Ok(packages.0.actionability(operation_id, &context))
+}
+
+#[cfg(feature = "owner-mode")]
+#[tauri::command]
+pub fn remove_owner_package(
+    request: OwnerPackageRemoveRequest,
+    session: State<'_, PlatformSession>,
+    packages: State<'_, PackageMutationSession>,
+) -> Result<PackageOperationResult, CommandError> {
+    {
+        let store = session
+            .0
+            .lock()
+            .map_err(|_| CommandError::state_unavailable())?;
+        if store.snapshots.last().map(|snapshot| snapshot.id.as_str())
+            != Some(request.source_inspection_id.as_str())
+        {
+            return Err(CommandError::invalid_action(
+                "A newer scan exists. Review the latest package state before removing.",
+            ));
+        }
+    }
+    let (fresh_snapshot, fresh_context) = owner_package_reinspection(request.operation_id)?;
+    persist_owner_snapshot(&session, fresh_snapshot)?;
+    let mut verification_snapshot = None;
+    let result = packages
+        .0
+        .remove(request.operation_id, &fresh_context, || {
+            let (snapshot, context) =
+                owner_package_reinspection(request.operation_id).map_err(|error| error.message)?;
+            verification_snapshot = Some(snapshot);
+            Ok(context)
+        })
+        .map_err(CommandError::invalid_action)?;
+    if let Some(snapshot) = verification_snapshot {
+        persist_owner_snapshot(&session, snapshot)?;
+    }
+    Ok(result)
+}
+
+#[cfg(feature = "owner-mode")]
+#[tauri::command]
+pub fn restore_owner_package(
+    request: OwnerPackageRestoreRequest,
+    session: State<'_, PlatformSession>,
+    packages: State<'_, PackageMutationSession>,
+) -> Result<PackageOperationResult, CommandError> {
+    let operation_id = {
+        let store = session
+            .0
+            .lock()
+            .map_err(|_| CommandError::state_unavailable())?;
+        let scope = store
+            .snapshots
+            .last()
+            .map(|snapshot| snapshot.machine_id.as_str())
+            .ok_or_else(|| {
+                CommandError::invalid_action("Run a fresh inspection before Restore.")
+            })?;
+        packages
+            .0
+            .history(scope)
+            .map_err(CommandError::invalid_action)?
+            .into_iter()
+            .find(|transaction| transaction.transaction_id == request.transaction_id)
+            .map(|transaction| transaction.operation_id)
+            .ok_or_else(|| CommandError::invalid_action("The package transaction was not found."))?
+    };
+    let (fresh_snapshot, fresh_context) = owner_package_reinspection(operation_id)?;
+    persist_owner_snapshot(&session, fresh_snapshot)?;
+    let mut verification_snapshot = None;
+    let result = packages
+        .0
+        .restore(&request.transaction_id, &fresh_context, || {
+            let (snapshot, context) =
+                owner_package_reinspection(operation_id).map_err(|error| error.message)?;
+            verification_snapshot = Some(snapshot);
+            Ok(context)
+        })
+        .map_err(CommandError::invalid_action)?;
+    if let Some(snapshot) = verification_snapshot {
+        persist_owner_snapshot(&session, snapshot)?;
+    }
+    Ok(result)
+}
+
+#[cfg(feature = "owner-mode")]
+#[tauri::command]
+pub fn get_owner_package_history(
+    session: State<'_, PlatformSession>,
+    packages: State<'_, PackageMutationSession>,
+) -> Result<Vec<PackageMutationTransaction>, CommandError> {
+    let store = session
+        .0
+        .lock()
+        .map_err(|_| CommandError::state_unavailable())?;
+    let Some(scope) = store
+        .snapshots
+        .last()
+        .map(|snapshot| snapshot.machine_id.as_str())
+    else {
+        return Ok(Vec::new());
+    };
+    packages
+        .0
+        .history(scope)
+        .map_err(CommandError::invalid_action)
+}
+
+#[cfg(feature = "owner-mode")]
+fn owner_package_reinspection(
+    operation_id: PackageOperationId,
+) -> Result<(Snapshot, PackageMutationContext), CommandError> {
+    let id = format!("owner-package-reinspection-{}", timestamp());
+    let token = CancellationToken::default();
+    let mut outcome = run_inspection(&WindowsPowerShellRunner, id.clone(), &token, |_| {});
+    complete_lifecycle(&mut outcome.lifecycle, false);
+    let machine_id = persistence::machine_identity(&outcome.platform);
+    let snapshot = Snapshot {
+        id,
+        timestamp: outcome.lifecycle.started_at.clone(),
+        platform: outcome.platform,
+        observations: outcome.observations,
+        lifecycle: Some(outcome.lifecycle),
+        query_failures: outcome.query_failures,
+        machine_id,
+    };
+    let store = Store {
+        schema_version: persistence::SCHEMA_VERSION,
+        snapshots: vec![snapshot.clone()],
+        ..Default::default()
+    };
+    let context = package_mutation_context(&store, operation_id)?;
+    Ok((snapshot, context))
+}
+
+#[cfg(feature = "owner-mode")]
+fn package_mutation_context(
+    store: &Store,
+    operation_id: PackageOperationId,
+) -> Result<PackageMutationContext, CommandError> {
+    let snapshot = store.snapshots.last().ok_or_else(|| {
+        CommandError::invalid_action("Run a fresh inspection before package removal.")
+    })?;
+    let observation = snapshot
+        .observations
+        .iter()
+        .find(|item| item.component_id == operation_id.component_id())
+        .ok_or_else(|| CommandError::invalid_action("The exact package detector did not run."))?;
+    let (current_user, other_users, provisioning) = match observation.current {
+        PlatformState::Package {
+            current_user,
+            all_users,
+            provisioned,
+            ..
+        } => (current_user, all_users, provisioned),
+        _ => {
+            return Err(CommandError::invalid_action(
+                "The component did not produce package registration state.",
+            ));
+        }
+    };
+    let matched = observation.packages.iter().find(|item| {
+        item.package_name
+            .eq_ignore_ascii_case(operation_id.package_name())
+    });
+    let detector = PackageDetectorEvidence {
+        component_id: operation_id.component_id(),
+        detector_status: format!("{:?}", observation.detector_status).to_ascii_lowercase(),
+        completeness: observation.package_completeness,
+        package_name: operation_id.package_name().into(),
+        package_full_name: matched.and_then(|item| item.package_full_name.clone()),
+        package_family_name: matched.and_then(|item| item.package_family_name.clone()),
+        current_user,
+        other_users,
+        provisioning,
+        provisioned_package_full_name: matched
+            .and_then(|item| item.provisioned_package_full_name.clone()),
+        non_removable: matched.is_some_and(|item| item.non_removable),
+        framework: matched.is_some_and(|item| item.framework),
+        resource_package: matched.is_some_and(|item| item.resource_package),
+        bundle: matched.is_some_and(|item| item.bundle),
+        install_location_present: matched.and_then(|item| item.install_location_present),
+    };
+    Ok(PackageMutationContext {
+        machine_id: snapshot.machine_id.clone(),
+        inspection_id: snapshot.id.clone(),
+        source_observation_id: format!("{}/{}", snapshot.id, operation_id.component_id().key()),
+        windows_build: snapshot.platform.build,
+        edition: snapshot.platform.edition.clone(),
+        detector: Some(detector),
+    })
+}
+
+#[cfg(feature = "owner-mode")]
 fn owner_reinspection(
     operation_id: crate::mutation::MutationOperationId,
 ) -> Result<(Snapshot, BrokerContext), CommandError> {
@@ -2020,6 +2237,9 @@ fn persist_owner_snapshot(
 pub fn run() -> tauri::Result<()> {
     let store = persistence::load();
     let broker = Arc::new(Broker::owner(Arc::new(WindowsSettingStore)));
+    let package_broker = Arc::new(PackageBroker::owner(Arc::new(
+        WindowsPackageDeploymentBackend,
+    )));
     if let Ok(context) = mutation_context(
         &store,
         Some(crate::mutation::MutationOperationId::WidgetsVisibility),
@@ -2027,11 +2247,20 @@ pub fn run() -> tauri::Result<()> {
     {
         let _ = broker.recover_interrupted(&context);
     }
+    if let Some(scope) = store
+        .snapshots
+        .last()
+        .map(|snapshot| snapshot.machine_id.as_str())
+        && crate::owner_scope::is_valid(scope)
+    {
+        let _ = package_broker.recover_interrupted(scope);
+    }
     let app = tauri::Builder::default()
         .manage(ManagedAppState::new())
         .manage(PlatformSession(Arc::new(Mutex::new(store))))
         .manage(InspectionCoordinator(Mutex::new(None)))
         .manage(MutationSession(broker))
+        .manage(PackageMutationSession(package_broker))
         .invoke_handler(tauri::generate_handler![
             get_app_view,
             dispatch_app_action,
@@ -2063,7 +2292,11 @@ pub fn run() -> tauri::Result<()> {
             get_owner_actionability,
             apply_owner_operation,
             undo_owner_operation,
-            get_owner_change_history
+            get_owner_change_history,
+            get_owner_package_actionability,
+            remove_owner_package,
+            restore_owner_package,
+            get_owner_package_history
         ])
         .build(tauri::generate_context!())?;
     app.run(|handle, event| {
@@ -2413,14 +2646,26 @@ pub fn run() -> tauri::Result<()> {
         command_line_opt_in,
         live_validation,
     ));
+    let package_broker = Arc::new(PackageBroker::owner(Arc::new(
+        WindowsPackageDeploymentBackend,
+    )));
     if let Ok(context) = mutation_context(&store, None) {
         let _ = broker.recover_interrupted(&context);
+    }
+    if let Some(scope) = store
+        .snapshots
+        .last()
+        .map(|snapshot| snapshot.machine_id.as_str())
+        && crate::owner_scope::is_valid(scope)
+    {
+        let _ = package_broker.recover_interrupted(scope);
     }
     let app = tauri::Builder::default()
         .manage(ManagedAppState::new())
         .manage(PlatformSession(Arc::new(Mutex::new(store))))
         .manage(InspectionCoordinator(Mutex::new(None)))
         .manage(MutationSession(broker))
+        .manage(PackageMutationSession(package_broker))
         .invoke_handler(tauri::generate_handler![
             get_app_view,
             dispatch_app_action,
@@ -2453,6 +2698,10 @@ pub fn run() -> tauri::Result<()> {
             apply_owner_operation,
             undo_owner_operation,
             get_owner_change_history,
+            get_owner_package_actionability,
+            remove_owner_package,
+            restore_owner_package,
+            get_owner_package_history,
             get_mutation_alpha_status,
             acknowledge_mutation_alpha_warning,
             get_mutation_operation_options,
@@ -2545,6 +2794,10 @@ mod tests {
             "apply_owner_operation",
             "undo_owner_operation",
             "get_owner_change_history",
+            "get_owner_package_actionability",
+            "remove_owner_package",
+            "restore_owner_package",
+            "get_owner_package_history",
         ] {
             assert!(owner.contains(required), "owner block omitted {required}");
         }

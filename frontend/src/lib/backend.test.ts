@@ -213,6 +213,34 @@ describe('backend client', () => {
     );
   });
 
+  it('submits only closed M4 package operation IDs and transaction IDs', async () => {
+    const invokeCommand = vi.fn<BackendInvoker>().mockResolvedValue({});
+    const client = createBackendClient(invokeCommand);
+
+    await client.getOwnerPackageActionability('remove_phone_link_current_user');
+    await client.removeOwnerPackage('remove_phone_link_current_user', 'inspection-1');
+    await client.restoreOwnerPackage('package-transaction-1');
+    await client.getOwnerPackageHistory();
+
+    expect(invokeCommand.mock.calls).toEqual([
+      ['get_owner_package_actionability', { operationId: 'remove_phone_link_current_user' }],
+      [
+        'remove_owner_package',
+        {
+          request: {
+            operationId: 'remove_phone_link_current_user',
+            sourceInspectionId: 'inspection-1'
+          }
+        }
+      ],
+      ['restore_owner_package', { request: { transactionId: 'package-transaction-1' } }],
+      ['get_owner_package_history']
+    ]);
+    expect(JSON.stringify(invokeCommand.mock.calls)).not.toMatch(
+      /packageFullName|packageFamilyName|packageName|script|powershell|allUsers|provisioned/i
+    );
+  });
+
   it('approval sends only plan identity, broker nonce, and acknowledgement', async () => {
     const invokeCommand = vi.fn<BackendInvoker>().mockResolvedValue({});
     const client = createBackendClient(invokeCommand);

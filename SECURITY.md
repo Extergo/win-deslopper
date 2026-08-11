@@ -17,8 +17,9 @@ crashes, rollback conflict, and misleading success.
 - Tauri grants the normal window only the event listen/unlisten lifecycle used
   for backend inspection progress. It grants no frontend event emission,
   shell, filesystem, network, updater, or external-URL plugin.
-- Normal builds register only closed Owner Mode M3 actionability, Apply,
-  Undo, and history commands. There is no elevation manifest, `runas`, helper,
+- Normal builds register only closed Owner Mode setting and package
+  actionability, Apply/Remove, transaction-bound Undo/Restore, and history
+  commands. There is no elevation manifest, `runas`, helper,
   service, backend, telemetry, plugin execution, arbitrary registry API, or
   mutation shell command.
 - Desired-state previews remain non-executable. One deliberate owner Apply
@@ -65,7 +66,30 @@ crashes, rollback conflict, and misleading success.
   unchanged, has no Undo, and is not a recovery alarm. A proven Widgets
   PermissionDenied result suppresses only Widgets direct change for that stable
   machine/account scope. Deslopper never elevates or changes registry ACLs.
-- Show Desktop, `TaskbarSd`, and Taskbar Search are outside Owner Mode M3.
+- Show Desktop, `TaskbarSd`, and Taskbar Search remain outside Owner Mode M4.
+
+### M4 package deployment boundary
+
+- Four operations own the exact names `Microsoft.Copilot`,
+  `Microsoft.YourPhone`, `Clipchamp.Clipchamp`, and
+  `Microsoft.MicrosoftSolitaireCollection`. The frontend submits only an enum;
+  it cannot submit Name, PackageFullName, family, wildcard, script, or command.
+- Native `Windows.Management.Deployment.PackageManager` inventories and removes
+  only the current user's exact PackageFullName. There is no all-user option,
+  provisioning removal, DISM, deployment PowerShell, Store acquisition,
+  elevation, HKLM write, service control, WindowsApps ACL change, or package
+  directory deletion.
+- Framework, resource, bundle, non-removable, unhealthy, detector-disagreed,
+  and multi-version states fail closed. Complete current-user inventory is
+  captured before and after; any additional disappearance is Needs Attention.
+- Provisioning and other-user registrations are read-only evidence. A changed
+  provisioning observation prevents a success claim.
+- Restore is shown only when exact staged/provisioned identity and complete
+  dependencies were captured. Reinstall-required transactions expose no fake
+  Undo. Same-family newer-version restoration is recorded distinctly from
+  exact restoration.
+- Package removal may remove local app data. Automated tests use only fake
+  deployment backends; no test/build/package command invokes live deployment.
 
 ## Separate internal mutation-alpha harness
 

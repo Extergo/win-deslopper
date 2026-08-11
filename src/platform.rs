@@ -194,6 +194,8 @@ pub struct PackageObservation {
     pub version: Option<String>,
     pub architecture: Option<String>,
     pub publisher_id: Option<String>,
+    pub resource_id: Option<String>,
+    pub provisioned_package_full_name: Option<String>,
     pub current_user: PackageRegistrationState,
     pub other_users: PackageRegistrationState,
     pub provisioning: PackageProvisioningState,

@@ -255,10 +255,10 @@ fn powershell_script(query_id: QueryId) -> &'static str {
             r#"$ErrorActionPreference='Stop';$os=Get-CimInstance Win32_OperatingSystem;$cs=Get-CimInstance Win32_ComputerSystem;$cv=Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion';$sid=[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value;$machineGuid=Get-ItemPropertyValue 'HKLM:\SOFTWARE\Microsoft\Cryptography' 'MachineGuid';[pscustomobject]@{ProductName=$cv.ProductName;Edition=$cv.EditionID;Build=[int]$cv.CurrentBuildNumber;DisplayVersion=$cv.DisplayVersion;UBR=$cv.UBR;Architecture=$os.OSArchitecture;DeviceName=$cs.Name;Manufacturer=$cs.Manufacturer;Model=$cs.Model;UserSid=$sid;MachineGuid=$machineGuid;DomainJoined=[bool]$cs.PartOfDomain;Windows11=([int]$cv.CurrentBuildNumber -ge 22000)}|ConvertTo-Json -Compress"#
         }
         QueryId::AppxCurrentUser => {
-            r#"$ErrorActionPreference='Stop';@(Get-AppxPackage|Select-Object Name,PackageFamilyName,PackageFullName,Version,Architecture,PublisherId,IsFramework,IsResourcePackage,PackageUserInformation,InstallLocation,NonRemovable,Dependencies,SignatureKind)|ConvertTo-Json -Depth 6 -Compress"#
+            r#"$ErrorActionPreference='Stop';@(Get-AppxPackage|Select-Object Name,PackageFamilyName,PackageFullName,Version,Architecture,PublisherId,ResourceId,IsFramework,IsResourcePackage,PackageUserInformation,InstallLocation,NonRemovable,Dependencies,SignatureKind)|ConvertTo-Json -Depth 6 -Compress"#
         }
         QueryId::AppxAllUsers => {
-            r#"$ErrorActionPreference='Stop';@(Get-AppxPackage -AllUsers|Select-Object Name,PackageFamilyName,PackageFullName,Version,Architecture,PublisherId,IsFramework,IsResourcePackage,PackageUserInformation,InstallLocation,NonRemovable,Dependencies,SignatureKind)|ConvertTo-Json -Depth 6 -Compress"#
+            r#"$ErrorActionPreference='Stop';@(Get-AppxPackage -AllUsers|Select-Object Name,PackageFamilyName,PackageFullName,Version,Architecture,PublisherId,ResourceId,IsFramework,IsResourcePackage,PackageUserInformation,InstallLocation,NonRemovable,Dependencies,SignatureKind)|ConvertTo-Json -Depth 6 -Compress"#
         }
         QueryId::AppxProvisioned => {
             r#"$ErrorActionPreference='Stop';@(Get-AppxProvisionedPackage -Online|Select-Object DisplayName,PackageName,Version,Architecture,PublisherId,ResourceId)|ConvertTo-Json -Depth 5 -Compress"#
@@ -992,6 +992,13 @@ fn package_detection(
                 .map(str::to_owned),
             publisher_id: item
                 .and_then(|value| value["PublisherId"].as_str())
+                .map(str::to_owned),
+            resource_id: item
+                .and_then(|value| value["ResourceId"].as_str())
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned),
+            provisioned_package_full_name: provisioned_item
+                .and_then(|value| value["PackageName"].as_str())
                 .map(str::to_owned),
             current_user: registration_from_query(
                 query_state(context, QueryId::AppxCurrentUser),
