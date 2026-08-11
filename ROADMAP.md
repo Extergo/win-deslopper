@@ -5,12 +5,13 @@ This roadmap records sequencing, not authorization. `AGENTS.md`, `SECURITY.md`,
 
 ## Current milestone - Owner Mode M2: Task View
 
-**Status:** Implemented; release packaging and manual Windows smoke test pending.
+**Status:** Implemented, packaged, and physically validated PASS on Windows 11
+x64 with ordinary current-user execution and no elevation.
 
-M2 productizes Taskbar Task View visibility alongside the M1 Widgets operation. Apply
-is one click and must preflight, capture, journal, write, directly verify, verify
-through the matching detector, and recover safely. Undo is one click when the
-current state still equals Deslopper's applied state.
+M2 productizes Taskbar Task View visibility alongside the M1 Widgets operation.
+Apply is one click and must preflight, capture, journal, write, directly verify,
+verify through the matching detector, and recover safely. Undo is one click
+when the current state still equals Deslopper's applied state.
 
 The normal build remains unelevated, local, Windows 11 x64/current-user scoped,
 and has no generic mutation surface. The physical M1 result established that
@@ -18,6 +19,12 @@ Widgets writes are denied unchanged on the tested machine/account, so that
 scope is surfaced as Direct change unavailable without elevation. Task View's
 same-state probe succeeded and now has a matching detector. Show Desktop and
 `TaskbarSd` remain non-productized and untouched.
+
+The first M2 physical sequence verified Task View detection from DWORD 0,
+Apply to DWORD 1, direct and detector verification, visible Explorer refresh,
+persistence after complete process exit, durable Undo after relaunch, exact
+restoration to DWORD 0, and independent final verification. See
+`docs/owner-mode-m2-physical-validation.md`.
 
 ## Read-only validation and hardening
 

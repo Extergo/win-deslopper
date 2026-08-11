@@ -13,9 +13,11 @@ Widgets visibility and Task View visibility.
   unavailable** for Widgets, with no Undo. Do not elevate, edit ACLs, or suppress
   Widgets globally.
 - Task View `ShowTaskViewButton` was DWORD 0. An unelevated same-state write
-  succeeded. M2 therefore productizes Task View using the same fresh-inspection,
-  exact-prestate, journal, direct-verification, detector-verification, and safe
-  Undo contract.
+  succeeded. The subsequent M2 physical run passed the complete live sequence:
+  fresh hidden detection, Apply to DWORD 1, direct and detector verification,
+  visible Explorer refresh without restart, full process exit, persistence,
+  relaunch with durable Undo, exact restoration to DWORD 0, and independent
+  final verification.
 - `TaskbarSd` was absent and was not tested. Do not touch or productize it.
 
 ## Safety contract
@@ -30,5 +32,7 @@ Widgets visibility and Task View visibility.
 - Historical `owner-widgets.1` transactions remain readable; new intents use
   `owner-taskbar.2`.
 
-The remaining physical sequence is a maintainer action described in
-`docs/owner-mode-task-view-smoke-test.md`. Do not run it as part of coding or CI.
+The completed physical evidence is in
+`docs/owner-mode-m2-physical-validation.md`; the reproducible protocol remains
+in `docs/owner-mode-task-view-smoke-test.md`. Do not rerun it as part of coding
+or CI.

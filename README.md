@@ -41,6 +41,16 @@ completed work.
   failures. They expose no Undo; a proven Widgets permission denial suppresses
   only that machine/account capability without elevation or ACL changes.
 
+## Physical validation
+
+Owner Mode M2 Task View is physically validated PASS on a Windows 11 x64 owner
+machine under ordinary current-user execution without UAC or elevation. The
+released `0.2.0` build completed detection, one live Apply from DWORD 0 to 1,
+direct and detector verification, process exit, durable relaunch, Undo, exact
+restoration to DWORD 0, and independent registry verification. See
+`docs/owner-mode-m2-physical-validation.md` for the release identity and full
+evidence record.
+
 See `docs/read-only-product-alpha.md` for the complete product and privacy
 contract.
 

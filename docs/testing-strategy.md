@@ -125,7 +125,9 @@ transaction, nonce, approval, or live manifest.
 `tools/scan-mutation-boundary.ps1` rejects generic registry/process surfaces and
 prohibited Windows operations, proves the default production feature is Owner
 Mode, checks the normal command registration, and verifies that raw registry
-tokens and non-product operations do not enter the normal page. Live Owner Mode
-smoke testing follows `docs/owner-mode-widgets-smoke-test.md`; CI never performs
-mutation. The separate engineering harness continues to follow
-`docs/vm-mutation-protocol.md`.
+tokens and non-product operations do not enter the normal page. The first
+physical Owner Mode M2 Task View sequence passed live Apply, direct and detector
+verification, process-exit persistence, relaunch, durable Undo, exact
+restoration, and independent final verification; its evidence is recorded in
+`docs/owner-mode-m2-physical-validation.md`. CI never performs mutation. The
+separate engineering harness continues to follow `docs/vm-mutation-protocol.md`.

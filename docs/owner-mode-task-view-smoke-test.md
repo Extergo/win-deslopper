@@ -1,5 +1,12 @@
 # Owner Mode M2 Task View physical smoke test
 
+**Completed:** PASS on 2026-08-11 for Deslopper `0.2.0` at commit
+`d4cd3390633be20f8ce13cd26f41af739340f298`.
+
+The completed evidence is recorded in
+`docs/owner-mode-m2-physical-validation.md`. The procedure below remains the
+reproducible protocol; it must not be rerun automatically or by CI.
+
 This is a deliberate post-build maintainer procedure. It is not an automated
 test and must not be run during implementation or CI.
 
