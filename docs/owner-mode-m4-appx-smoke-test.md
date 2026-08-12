@@ -6,7 +6,7 @@ not be automated. Implementation and CI must never execute package deployment.
 
 ## Stop conditions
 
-Stop without removing anything if Deslopper is not the intended `0.4.0` build,
+Stop without removing anything if Deslopper is not the intended `0.4.1` or later M4 build,
 the process is elevated, the Windows account/machine is wrong, package evidence
 is incomplete, exact identities disagree, multiple versions match, Windows
 reports protected/framework/resource/bundle state, important local app data may
@@ -128,4 +128,3 @@ unchanged provisioning, process exit/relaunch persistence, and (when offered)
 Restore verification all pass. Otherwise record the exact failure category and
 leave the transaction Needs Attention; do not elevate or weaken Windows
 protections.
-

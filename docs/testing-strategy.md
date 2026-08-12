@@ -163,3 +163,14 @@ newer-version semantics, owner-scope binding, cross-process locking, and
 frontend duplicate-submit prevention. Request-shape and boundary tests prove the
 frontend cannot submit a package identity, wildcard, script, all-user option, or
 provisioning operation. No automated command invokes live AppX deployment.
+
+The M4.1 lock regression suite additionally proves that one package mutation
+reaches the fake deployment backend without self-contention, a live registry or
+package mutation blocks a second package mutation, and ownership is released
+after completed, restored, rejected, ambiguous/failed, and startup-reconciled
+transactions. A real completed/restored `owner-cleanup.3` transaction is written
+to the shared test database before a package operation, reproducing the
+historical lock-file condition without any live Windows mutation. Windows-only
+lock tests prove an existing unopened rendezvous file is stale-safe while two
+simultaneous exclusive handles remain impossible; a child test executable also
+proves exclusion and subsequent release across an actual process boundary.

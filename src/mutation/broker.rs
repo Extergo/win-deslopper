@@ -1,10 +1,10 @@
-use std::{
-    fs::{File, OpenOptions},
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicU64, Ordering},
-    },
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicU64, Ordering},
 };
+
+#[cfg(feature = "mutation-alpha")]
+use std::fs::OpenOptions;
 
 #[cfg(feature = "mutation-alpha")]
 use std::sync::atomic::AtomicBool;
@@ -21,6 +21,7 @@ use super::{
     is_owner_handler_version,
     journal::MutationJournal,
     plan::{CapturedState, MutationPlan, hash_serializable, hash_text},
+    process_lock::OwnerMutationProcessLock,
     request::{MutationOperationId, MutationTarget},
     rollback::conflicts_with_applied_state,
     transaction::{MutationStep, MutationTransaction, RollbackRecord, TransactionStatus},
@@ -1637,7 +1638,7 @@ impl Broker {
                 "Another Windows change is in progress.",
             )
         })?;
-        let _cross_process = MutationProcessLock::acquire(self.journal.lock_path())
+        let _cross_process = OwnerMutationProcessLock::acquire(self.journal.lock_path())
             .map_err(|message| BrokerError::new("cross_process_lock_unavailable", message))?;
         let definition = operation_definition(operation_id);
         handler(operation_id)
@@ -2000,7 +2001,7 @@ impl Broker {
                 "Another Windows change is in progress.",
             )
         })?;
-        let _cross_process = MutationProcessLock::acquire(self.journal.lock_path())
+        let _cross_process = OwnerMutationProcessLock::acquire(self.journal.lock_path())
             .map_err(|message| BrokerError::new("cross_process_lock_unavailable", message))?;
         let mut transaction = self
             .journal
@@ -2468,7 +2469,7 @@ impl Broker {
         self.require_authorized(request.operation_id, request.target)?;
         self.require_target_eligibility(context)?;
         let approval_class = self.approval_class()?;
-        let _cross_process = MutationProcessLock::acquire(self.journal.lock_path())
+        let _cross_process = OwnerMutationProcessLock::acquire(self.journal.lock_path())
             .map_err(|message| BrokerError::new("cross_process_lock_unavailable", message))?;
         let usage = self
             .journal
@@ -2597,7 +2598,7 @@ impl Broker {
                 "Another mutation transaction is active.",
             )
         })?;
-        let _cross_process = MutationProcessLock::acquire(self.journal.lock_path())
+        let _cross_process = OwnerMutationProcessLock::acquire(self.journal.lock_path())
             .map_err(|message| BrokerError::new("cross_process_lock_unavailable", message))?;
         let plan = self
             .journal
@@ -2832,7 +2833,7 @@ impl Broker {
                 "Another mutation transaction is active.",
             )
         })?;
-        let _cross_process = MutationProcessLock::acquire(self.journal.lock_path())
+        let _cross_process = OwnerMutationProcessLock::acquire(self.journal.lock_path())
             .map_err(|message| BrokerError::new("cross_process_lock_unavailable", message))?;
         let mut transaction = self
             .journal
@@ -4036,50 +4037,6 @@ fn journal_error(message: String) -> BrokerError {
 
 fn serialization_error(error: serde_json::Error) -> BrokerError {
     BrokerError::new("serialization_error", error.to_string())
-}
-
-struct MutationProcessLock {
-    _file: File,
-    #[cfg(not(windows))]
-    path: std::path::PathBuf,
-}
-
-impl MutationProcessLock {
-    fn acquire(path: std::path::PathBuf) -> Result<Self, String> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-        }
-        #[cfg(windows)]
-        {
-            use std::os::windows::fs::OpenOptionsExt;
-            let file = OpenOptions::new()
-                .create(true)
-                .truncate(false)
-                .read(true)
-                .write(true)
-                .share_mode(0)
-                .open(&path)
-                .map_err(|_| "Another Deslopper process owns the mutation lock.".to_owned())?;
-            Ok(Self { _file: file })
-        }
-        #[cfg(not(windows))]
-        {
-            let file = OpenOptions::new()
-                .create_new(true)
-                .read(true)
-                .write(true)
-                .open(&path)
-                .map_err(|_| "Another Deslopper process owns the mutation lock.".to_owned())?;
-            Ok(Self { _file: file, path })
-        }
-    }
-}
-
-#[cfg(not(windows))]
-impl Drop for MutationProcessLock {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.path);
-    }
 }
 
 #[cfg(all(test, feature = "mutation-alpha"))]

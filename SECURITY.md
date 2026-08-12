@@ -109,8 +109,10 @@ Plans are machine/build/edition/evidence bound, expiring, SHA-256 checked,
 nonce-approved, and one-use. Apply re-inspects, captures exact pre-state,
 finishes the atomic write, verifies the target, re-inspects material context,
 journals each transition, and offers separately approved exact rollback.
-Cross-process locking prevents concurrent app instances. Interrupted operations
-become recovery-required and are never silently replayed.
+One shared exclusive Windows handle prevents concurrent setting/package
+mutation across brokers and app instances. The stable rendezvous file may
+persist, but only an open handle is ownership. Interrupted operations become
+recovery-required and are never silently replayed.
 
 Live-validation policy schema version 2 explicitly allowlists disposable target
 types. Physical live validation additionally requires scoped approval schema

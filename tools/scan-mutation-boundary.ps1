@@ -6,6 +6,8 @@ $files = Get-ChildItem -Path (Join-Path $repo 'src'), (Join-Path $repo 'frontend
 $toolFiles = Get-ChildItem -Path (Join-Path $repo 'tools') -File -Filter '*.ps1' |
     Where-Object { $_.Name -ne 'scan-mutation-boundary.ps1' }
 $failures = [System.Collections.Generic.List[string]]::new()
+$sharedOwnerLockPath = Join-Path $repo 'src\mutation\process_lock.rs'
+$sharedOwnerLockTestLine = (Select-String -LiteralPath $sharedOwnerLockPath -Pattern '#[cfg(test)]' -SimpleMatch).LineNumber
 
 $prohibited = @(
     'Remove-AppxPackage',
@@ -41,7 +43,9 @@ foreach ($match in ($files | Select-String -Pattern $prohibited -SimpleMatch)) {
 }
 
 foreach ($match in ($files | Select-String -Pattern 'Command::new' -SimpleMatch)) {
-    if ($match.Path -notlike '*\src\inspection.rs') {
+    $isSharedLockProcessTest = $match.Path -eq $sharedOwnerLockPath -and
+        $sharedOwnerLockTestLine -and $match.LineNumber -gt $sharedOwnerLockTestLine
+    if ($match.Path -notlike '*\src\inspection.rs' -and -not $isSharedLockProcessTest) {
         $failures.Add("$($match.Path):$($match.LineNumber): process creation outside read-only inspection")
     }
 }
@@ -129,6 +133,9 @@ foreach ($operation in 'set_taskbar_widgets_visibility', 'set_taskbar_task_view_
 }
 $packageSourcePath = Join-Path $repo 'src\mutation\package.rs'
 $packageSource = Get-Content -Raw -LiteralPath $packageSourcePath
+$brokerSource = Get-Content -Raw -LiteralPath (Join-Path $repo 'src\mutation\broker.rs')
+$ownerLockSourcePath = Join-Path $repo 'src\mutation\process_lock.rs'
+$ownerLockSource = Get-Content -Raw -LiteralPath $ownerLockSourcePath
 foreach ($token in 'FindPackagesByUserSecurityId', 'RemovePackageAsync', 'RegisterPackageByFullNameAsync', 'Windows.Management.Deployment.PackageManager/', 'owner-appx.4', 'Microsoft.Copilot', 'Microsoft.YourPhone', 'Clipchamp.Clipchamp', 'Microsoft.MicrosoftSolitaireCollection') {
     if (-not $packageSource.Contains($token)) {
         $failures.Add("${packageSourcePath}: required bounded deployment token '$token' is missing")
@@ -136,6 +143,19 @@ foreach ($token in 'FindPackagesByUserSecurityId', 'RemovePackageAsync', 'Regist
 }
 if ($packageSource.Contains('.FindPackages()')) {
     $failures.Add("${packageSourcePath}: parameterless cross-user package inventory is forbidden")
+}
+if (-not $packageSource.Contains('process_lock::OwnerMutationProcessLock') -or -not $brokerSource.Contains('process_lock::OwnerMutationProcessLock')) {
+    $failures.Add('Owner setting and package brokers must use the same cross-process lock type')
+}
+foreach ($token in 'share_mode(0)', 'Another Deslopper change is still in progress.') {
+    if (-not $ownerLockSource.Contains($token)) {
+        $failures.Add("${ownerLockSourcePath}: required shared-lock token '$token' is missing")
+    }
+}
+foreach ($token in 'PackageProcessLock', 'create_new(true)') {
+    if ($packageSource.Contains($token)) {
+        $failures.Add("${packageSourcePath}: stale package-specific lock behavior '$token' returned")
+    }
 }
 foreach ($operation in 'remove_consumer_copilot_current_user', 'remove_phone_link_current_user', 'remove_clipchamp_current_user', 'remove_solitaire_current_user') {
     if (-not $frontendBackend.Contains("| '$operation'") -and -not $frontendBackend.Contains("= '$operation'")) {

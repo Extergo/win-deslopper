@@ -5,9 +5,12 @@ This roadmap records sequencing, not authorization. `AGENTS.md`, `SECURITY.md`,
 
 ## Current milestone - Owner Mode M4: Current-user AppX debloat
 
-**Status:** Implemented as `0.4.0`; physical package removal has not yet been
-performed. Automated implementation and verification use fake deployment
-backends and performed no live AppX/MSIX mutation.
+**Status:** Implemented as `0.4.1`; physical package removal remains blocked
+pending a new owner-run validation. The first `0.4.0` Phone Link attempt reached
+no deployment call because M4 mistook M1-M3's persistent lock rendezvous file
+for live ownership. `0.4.1` unifies both resource families on the validated
+exclusive-handle lock. Automated implementation and verification use fake
+deployment backends and performed no live AppX/MSIX mutation.
 
 M4 adds four closed current-user package operations: Consumer Copilot, Phone
 Link, Clipchamp, and Solitaire. Rust owns each exact package name. Native

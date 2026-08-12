@@ -1,8 +1,12 @@
 # Owner Mode M4 AppX decision
 
 **Decision:** accept four closed current-user package operations for Deslopper
-`0.4.0`, with runtime refusal whenever exact identity, package health, or
+`0.4.0` (current patch release `0.4.1`), with runtime refusal whenever exact identity, package health, or
 removability cannot be proved.
+
+`0.4.1` also corrects the package-specific stale lock-file interpretation found
+during the first blocked physical attempt. See
+`docs/owner-mode-m4-lock-fix.md`. Deployment and package semantics are unchanged.
 
 ## Candidate audit
 

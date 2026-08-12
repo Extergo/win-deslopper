@@ -2,7 +2,7 @@
 
 **Windows without the slop.**
 
-Deslopper `0.4.0` is a privacy-conscious, installable Windows
+Deslopper `0.4.1` is a privacy-conscious, installable Windows
 configuration inspector with reversible current-user settings plus exact current-user AppX/MSIX removal. Owner
 Mode observes 21 documented
 Windows components, explains uncertainty and authority, saves local inspection
@@ -19,6 +19,11 @@ permission-limited does not mean absent, and a preview is never presented as
 completed work.
 
 ## Owner Mode M4 features
+
+`0.4.1` fixes the M4 package-lock incompatibility found during the first
+physical attempt. Setting and package mutations now use one shared exclusive
+Windows handle lock. A persistent lock rendezvous file is not treated as live
+ownership; a genuinely open owner still blocks every mutation family.
 
 - Compact first-run explanation and cancellable read-only inspection.
 - Honest dashboard summaries without fake health scores or optimisation claims.

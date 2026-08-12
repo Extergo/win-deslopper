@@ -1,6 +1,6 @@
 # Owner Mode M4 handoff
 
-Deslopper `0.4.0` retains the physically validated M1-M3 setting engine and adds
+Deslopper `0.4.1` retains the physically validated M1-M3 setting engine and adds
 four first-class current-user package operations. The normal release observes 21
 components and exposes six closed setting operations: Widgets,
 Task View, welcome experience, tips and suggestions, notification suggestions,
@@ -14,6 +14,13 @@ Restore available. Provisioning and other users remain observational. Any
 collateral disappearance is Needs Attention. Implementation/testing performed
 no live AppX mutation. Before physical work, follow
 `docs/owner-mode-m4-appx-smoke-test.md` and inventory every candidate read-only.
+
+The first `0.4.0` Phone Link physical attempt performed no package mutation. It
+was blocked before the backend because the package lock used `create_new` on the
+same persistent rendezvous file used by the M1-M3 Windows exclusive-handle
+lock. `0.4.1` fixes this by sharing one lock implementation. Physical package
+validation must be restarted by the owner; do not infer a PackageManager PASS
+from the blocked attempt or resume it automatically.
 
 The four cleanup handlers use fixed DWORD values under
 `HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager`.

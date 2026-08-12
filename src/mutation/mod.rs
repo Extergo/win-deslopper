@@ -9,6 +9,7 @@ pub mod journal;
 pub mod live_validation;
 pub mod package;
 pub mod plan;
+mod process_lock;
 pub mod request;
 pub mod rollback;
 pub mod transaction;

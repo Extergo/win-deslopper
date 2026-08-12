@@ -6,7 +6,6 @@
 
 use std::{
     collections::BTreeSet,
-    fs::{File, OpenOptions},
     sync::{
         Arc, Mutex,
         atomic::{AtomicU64, Ordering},
@@ -20,7 +19,7 @@ use crate::platform::{
     ComponentId, PackageCompleteness, PackageProvisioningState, PackageRegistrationState,
 };
 
-use super::plan::hash_serializable;
+use super::{plan::hash_serializable, process_lock::OwnerMutationProcessLock};
 
 pub const PACKAGE_HANDLER_VERSION: &str = "owner-appx.4";
 static PACKAGE_SEQUENCE: AtomicU64 = AtomicU64::new(1);
@@ -766,7 +765,7 @@ impl PackageBroker {
             .execution_lock
             .try_lock()
             .map_err(|_| "Another owner operation is active.".to_string())?;
-        let _cross_process = PackageProcessLock::acquire(self.journal.lock_path())?;
+        let _cross_process = OwnerMutationProcessLock::acquire(self.journal.lock_path())?;
         if !crate::owner_scope::is_valid(&context.machine_id) {
             return Err("The current owner machine/account scope is unavailable.".into());
         }
@@ -905,7 +904,7 @@ impl PackageBroker {
             .execution_lock
             .try_lock()
             .map_err(|_| "Another owner operation is active.".to_string())?;
-        let _cross_process = PackageProcessLock::acquire(self.journal.lock_path())?;
+        let _cross_process = OwnerMutationProcessLock::acquire(self.journal.lock_path())?;
         let mut transaction = self
             .journal
             .load(transaction_id)?
@@ -1502,34 +1501,13 @@ fn compare_versions(left: &str, right: &str) -> std::cmp::Ordering {
     parse(left).cmp(&parse(right))
 }
 
-struct PackageProcessLock {
-    path: std::path::PathBuf,
-    _file: File,
-}
-
-impl PackageProcessLock {
-    fn acquire(path: std::path::PathBuf) -> Result<Self, String> {
-        let file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&path)
-            .map_err(|_| {
-                "Another Deslopper mutation transaction owns the process lock.".to_string()
-            })?;
-        Ok(Self { path, _file: file })
-    }
-}
-
-impl Drop for PackageProcessLock {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.path);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicBool, AtomicUsize};
+    use std::sync::{
+        Barrier,
+        atomic::{AtomicBool, AtomicUsize},
+    };
 
     struct FakeBackend {
         inventory: Mutex<Vec<CurrentUserPackage>>,
@@ -1537,6 +1515,7 @@ mod tests {
         reject_restore: AtomicBool,
         ambiguous_after_remove: AtomicBool,
         collateral: Mutex<Option<CurrentUserPackage>>,
+        remove_gate: Mutex<Option<(Arc<Barrier>, Arc<Barrier>)>>,
         removes: AtomicUsize,
     }
 
@@ -1548,8 +1527,13 @@ mod tests {
                 reject_restore: AtomicBool::new(false),
                 ambiguous_after_remove: AtomicBool::new(false),
                 collateral: Mutex::new(None),
+                remove_gate: Mutex::new(None),
                 removes: AtomicUsize::new(0),
             }
+        }
+
+        fn block_next_remove(&self, entered: Arc<Barrier>, release: Arc<Barrier>) {
+            *self.remove_gate.lock().unwrap() = Some((entered, release));
         }
     }
 
@@ -1564,6 +1548,10 @@ mod tests {
         ) -> Result<(), PackageBackendError> {
             validate_deployment_identity(operation, full)?;
             self.removes.fetch_add(1, Ordering::SeqCst);
+            if let Some((entered, release)) = self.remove_gate.lock().unwrap().take() {
+                entered.wait();
+                release.wait();
+            }
             if self.reject_remove.load(Ordering::SeqCst) {
                 return Err(PackageBackendError::new(
                     PackageBackendErrorKind::DeploymentRejected,
@@ -1601,6 +1589,151 @@ mod tests {
                 .unwrap()
                 .push(package(operation, "1.0.0.0"));
             Ok(())
+        }
+    }
+
+    #[cfg(not(feature = "mutation-alpha"))]
+    struct RegistryBackend {
+        state: Mutex<super::super::plan::CapturedRepresentation>,
+        write_gate: Option<(Arc<Barrier>, Arc<Barrier>)>,
+    }
+
+    #[cfg(not(feature = "mutation-alpha"))]
+    impl RegistryBackend {
+        fn new(
+            state: super::super::plan::CapturedRepresentation,
+            write_gate: Option<(Arc<Barrier>, Arc<Barrier>)>,
+        ) -> Self {
+            Self {
+                state: Mutex::new(state),
+                write_gate,
+            }
+        }
+
+        fn read(
+            &self,
+        ) -> Result<super::super::plan::CapturedRepresentation, super::super::handlers::HandlerError>
+        {
+            Ok(self.state.lock().unwrap().clone())
+        }
+
+        fn write(
+            &self,
+            state: &super::super::plan::CapturedRepresentation,
+        ) -> Result<(), super::super::handlers::HandlerError> {
+            if let Some((entered, release)) = &self.write_gate {
+                entered.wait();
+                release.wait();
+            }
+            *self.state.lock().unwrap() = state.clone();
+            Ok(())
+        }
+    }
+
+    #[cfg(not(feature = "mutation-alpha"))]
+    impl super::super::handlers::MutationBackend for RegistryBackend {
+        fn read_widgets(
+            &self,
+        ) -> Result<super::super::plan::CapturedRepresentation, super::super::handlers::HandlerError>
+        {
+            self.read()
+        }
+
+        fn widgets_externally_managed(&self) -> Result<bool, super::super::handlers::HandlerError> {
+            Ok(false)
+        }
+
+        fn write_widgets(
+            &self,
+            state: &super::super::plan::CapturedRepresentation,
+        ) -> Result<(), super::super::handlers::HandlerError> {
+            self.write(state)
+        }
+
+        fn read_task_view(
+            &self,
+        ) -> Result<super::super::plan::CapturedRepresentation, super::super::handlers::HandlerError>
+        {
+            self.read()
+        }
+
+        fn task_view_externally_managed(
+            &self,
+        ) -> Result<bool, super::super::handlers::HandlerError> {
+            Ok(false)
+        }
+
+        fn write_task_view(
+            &self,
+            state: &super::super::plan::CapturedRepresentation,
+        ) -> Result<(), super::super::handlers::HandlerError> {
+            self.write(state)
+        }
+
+        fn read_show_desktop(
+            &self,
+        ) -> Result<super::super::plan::CapturedRepresentation, super::super::handlers::HandlerError>
+        {
+            self.read()
+        }
+
+        fn show_desktop_externally_managed(
+            &self,
+        ) -> Result<bool, super::super::handlers::HandlerError> {
+            Ok(false)
+        }
+
+        fn write_show_desktop(
+            &self,
+            state: &super::super::plan::CapturedRepresentation,
+        ) -> Result<(), super::super::handlers::HandlerError> {
+            self.write(state)
+        }
+
+        fn read_cleanup(
+            &self,
+            _: super::super::handlers::CleanupSetting,
+        ) -> Result<super::super::plan::CapturedRepresentation, super::super::handlers::HandlerError>
+        {
+            self.read()
+        }
+
+        fn cleanup_externally_managed(
+            &self,
+            _: super::super::handlers::CleanupSetting,
+        ) -> Result<bool, super::super::handlers::HandlerError> {
+            Ok(false)
+        }
+
+        fn write_cleanup(
+            &self,
+            _: super::super::handlers::CleanupSetting,
+            state: &super::super::plan::CapturedRepresentation,
+        ) -> Result<(), super::super::handlers::HandlerError> {
+            self.write(state)
+        }
+    }
+
+    #[cfg(not(feature = "mutation-alpha"))]
+    fn registry_context(enabled: bool) -> super::super::broker::BrokerContext {
+        super::super::broker::BrokerContext {
+            machine_id: owner_scope(),
+            inspection_id: "registry-inspection".into(),
+            inspection_timestamp: crate::inspection::timestamp(),
+            source_observation_id: "registry-inspection/welcome_experience".into(),
+            windows_build: 26_100,
+            edition: "Professional".into(),
+            architecture: "64-bit".into(),
+            authority: "user".into(),
+            authority_acceptable: true,
+            confidence: "confirmed_representation".into(),
+            confidence_sufficient: true,
+            applicability: "applicable".into(),
+            applicable: true,
+            evidence_fingerprint: super::super::plan::hash_text("m4.1-lock-regression"),
+            desired_state_revision_id: None,
+            detector_current_enabled: Some(enabled),
+            detector_status: "successful".into(),
         }
     }
 
@@ -1744,7 +1877,7 @@ mod tests {
     }
 
     #[test]
-    fn successful_remove_is_durable_verified_and_detects_no_provisioning_change() {
+    fn single_remove_does_not_self_lock_and_reaches_fake_backend_durably() {
         for operation in PackageOperationId::ALL {
             let path = temp_db(operation.key());
             let dependency_operation =
@@ -1767,7 +1900,7 @@ mod tests {
                 });
             }
             let backend = Arc::new(FakeBackend::new(vec![target, dependency]));
-            let broker = PackageBroker::at(backend, path.clone());
+            let broker = PackageBroker::at(backend.clone(), path.clone());
             let result = broker
                 .remove(operation, &context(operation, true, false), || {
                     Ok(context(operation, false, false))
@@ -1777,6 +1910,7 @@ mod tests {
             assert!(result.transaction.detector_verified);
             assert!(result.transaction.provisioning_unchanged);
             assert!(result.transaction.disappeared_package_full_names.is_empty());
+            assert_eq!(backend.removes.load(Ordering::SeqCst), 1);
             assert_eq!(broker.history(&owner_scope()).unwrap().len(), 1);
             cleanup(&path);
         }
@@ -1997,7 +2131,7 @@ mod tests {
             failed.transaction.status,
             PackageTransactionStatus::RestoreFailed
         );
-        let _held = PackageProcessLock::acquire(broker.journal.lock_path()).unwrap();
+        let _held = OwnerMutationProcessLock::acquire(broker.journal.lock_path()).unwrap();
         assert!(
             broker
                 .remove(operation, &context(operation, false, true), || Ok(context(
@@ -2005,6 +2139,288 @@ mod tests {
                 )))
                 .is_err()
         );
+        cleanup(&path);
+    }
+
+    #[test]
+    fn separate_concurrent_package_mutation_is_blocked_then_released() {
+        let first_operation = PackageOperationId::RemovePhoneLinkCurrentUser;
+        let second_operation = PackageOperationId::RemoveSolitaireCurrentUser;
+        let path = temp_db("concurrent-package");
+        let backend = Arc::new(FakeBackend::new(vec![
+            package(first_operation, "1.0.0.0"),
+            package(second_operation, "1.0.0.0"),
+        ]));
+        let entered = Arc::new(Barrier::new(2));
+        let release = Arc::new(Barrier::new(2));
+        backend.block_next_remove(entered.clone(), release.clone());
+        let first = PackageBroker::at(backend.clone(), path.clone());
+        let second = PackageBroker::at(backend.clone(), path.clone());
+        let running = std::thread::spawn(move || {
+            first.remove(
+                first_operation,
+                &context(first_operation, true, false),
+                || Ok(context(first_operation, false, false)),
+            )
+        });
+        entered.wait();
+        let blocked = second
+            .remove(
+                second_operation,
+                &context(second_operation, true, false),
+                || Ok(context(second_operation, false, false)),
+            )
+            .unwrap_err();
+        assert_eq!(blocked, "Another Deslopper change is still in progress.");
+        assert_eq!(backend.removes.load(Ordering::SeqCst), 1);
+        release.wait();
+        assert_eq!(
+            running.join().unwrap().unwrap().transaction.status,
+            PackageTransactionStatus::Removed
+        );
+
+        let after_release = second
+            .remove(
+                second_operation,
+                &context(second_operation, true, false),
+                || Ok(context(second_operation, false, false)),
+            )
+            .unwrap();
+        assert_eq!(
+            after_release.transaction.status,
+            PackageTransactionStatus::Removed
+        );
+        assert_eq!(backend.removes.load(Ordering::SeqCst), 2);
+        cleanup(&path);
+    }
+
+    #[test]
+    fn rejected_failed_restored_and_interrupted_transactions_release_ownership() {
+        let first = PackageOperationId::RemovePhoneLinkCurrentUser;
+        let second = PackageOperationId::RemoveSolitaireCurrentUser;
+
+        let rejected_path = temp_db("release-rejected");
+        let rejected_backend = Arc::new(FakeBackend::new(vec![package(first, "1.0.0.0")]));
+        rejected_backend.reject_remove.store(true, Ordering::SeqCst);
+        let rejected_broker = PackageBroker::at(rejected_backend.clone(), rejected_path.clone());
+        let rejected = rejected_broker
+            .remove(first, &context(first, true, false), || {
+                Ok(context(first, true, false))
+            })
+            .unwrap();
+        assert_eq!(
+            rejected.transaction.status,
+            PackageTransactionStatus::RejectedUnchanged
+        );
+        rejected_backend
+            .reject_remove
+            .store(false, Ordering::SeqCst);
+        assert_eq!(
+            rejected_broker
+                .remove(first, &context(first, true, false), || {
+                    Ok(context(first, false, false))
+                })
+                .unwrap()
+                .transaction
+                .status,
+            PackageTransactionStatus::Removed
+        );
+        cleanup(&rejected_path);
+
+        let failed_path = temp_db("release-failed");
+        let failed_backend = Arc::new(FakeBackend::new(vec![
+            package(first, "1.0.0.0"),
+            package(second, "1.0.0.0"),
+        ]));
+        failed_backend
+            .ambiguous_after_remove
+            .store(true, Ordering::SeqCst);
+        let failed_broker = PackageBroker::at(failed_backend.clone(), failed_path.clone());
+        let failed = failed_broker
+            .remove(first, &context(first, true, false), || {
+                Ok(context(first, false, false))
+            })
+            .unwrap();
+        assert_eq!(
+            failed.transaction.status,
+            PackageTransactionStatus::ResultAmbiguous
+        );
+        failed_backend
+            .ambiguous_after_remove
+            .store(false, Ordering::SeqCst);
+        assert_eq!(
+            failed_broker
+                .remove(second, &context(second, true, false), || {
+                    Ok(context(second, false, false))
+                })
+                .unwrap()
+                .transaction
+                .status,
+            PackageTransactionStatus::Removed
+        );
+        cleanup(&failed_path);
+
+        let restored_path = temp_db("release-restored");
+        let restored_backend = Arc::new(FakeBackend::new(vec![
+            package(first, "1.0.0.0"),
+            package(second, "1.0.0.0"),
+        ]));
+        let restored_broker = PackageBroker::at(restored_backend, restored_path.clone());
+        let removed = restored_broker
+            .remove(first, &context(first, true, true), || {
+                Ok(context(first, false, true))
+            })
+            .unwrap();
+        assert_eq!(
+            restored_broker
+                .restore(
+                    &removed.transaction.transaction_id,
+                    &context(first, false, true),
+                    || Ok(context(first, true, true)),
+                )
+                .unwrap()
+                .transaction
+                .status,
+            PackageTransactionStatus::Restored
+        );
+        assert_eq!(
+            restored_broker
+                .remove(second, &context(second, true, false), || {
+                    Ok(context(second, false, false))
+                })
+                .unwrap()
+                .transaction
+                .status,
+            PackageTransactionStatus::Removed
+        );
+        cleanup(&restored_path);
+
+        let interrupted_path = temp_db("release-interrupted");
+        let interrupted_backend = Arc::new(FakeBackend::new(vec![package(first, "1.0.0.0")]));
+        let interrupted_broker =
+            PackageBroker::at(interrupted_backend.clone(), interrupted_path.clone());
+        let mut interrupted = new_transaction(
+            first,
+            &context(first, true, false),
+            &crate::inspection::timestamp(),
+        )
+        .unwrap();
+        interrupted.status = PackageTransactionStatus::Removing;
+        interrupted_broker.journal.save(&interrupted).unwrap();
+        drop(interrupted_broker);
+        let reopened = PackageBroker::at(interrupted_backend, interrupted_path.clone());
+        let recovered = reopened.recover_interrupted(&owner_scope()).unwrap();
+        assert_eq!(recovered.len(), 1);
+        assert_eq!(
+            recovered[0].status,
+            PackageTransactionStatus::RecoveryRequired
+        );
+        assert_eq!(
+            reopened
+                .remove(first, &context(first, true, false), || {
+                    Ok(context(first, false, false))
+                })
+                .unwrap()
+                .transaction
+                .status,
+            PackageTransactionStatus::Removed
+        );
+        cleanup(&interrupted_path);
+    }
+
+    #[cfg(not(feature = "mutation-alpha"))]
+    #[test]
+    fn live_registry_mutation_blocks_package_then_completed_owner_releases() {
+        let path = temp_db("registry-concurrent");
+        let entered = Arc::new(Barrier::new(2));
+        let release = Arc::new(Barrier::new(2));
+        let registry_backend = Arc::new(RegistryBackend::new(
+            super::super::plan::CapturedRepresentation::Dword(1),
+            Some((entered.clone(), release.clone())),
+        ));
+        let registry = super::super::broker::Broker::with_owner_journal(
+            registry_backend,
+            super::super::journal::MutationJournal::at(path.clone()),
+        );
+        let running = std::thread::spawn(move || {
+            registry.apply_owner_operation(
+                super::super::request::MutationOperationId::WelcomeExperienceEnabled,
+                super::super::request::MutationTarget::Disabled,
+                &registry_context(true),
+                || Ok(registry_context(false)),
+            )
+        });
+        entered.wait();
+
+        let operation = PackageOperationId::RemoveConsumerCopilotCurrentUser;
+        let package_backend = Arc::new(FakeBackend::new(vec![package(operation, "1.0.0.0")]));
+        let packages = PackageBroker::at(package_backend.clone(), path.clone());
+        let blocked = packages
+            .remove(operation, &context(operation, true, false), || {
+                Ok(context(operation, false, false))
+            })
+            .unwrap_err();
+        assert_eq!(blocked, "Another Deslopper change is still in progress.");
+        assert_eq!(package_backend.removes.load(Ordering::SeqCst), 0);
+
+        release.wait();
+        running.join().unwrap().unwrap();
+        let after_completion = packages
+            .remove(operation, &context(operation, true, false), || {
+                Ok(context(operation, false, false))
+            })
+            .unwrap();
+        assert_eq!(
+            after_completion.transaction.status,
+            PackageTransactionStatus::Removed
+        );
+        assert_eq!(package_backend.removes.load(Ordering::SeqCst), 1);
+        cleanup(&path);
+    }
+
+    #[cfg(not(feature = "mutation-alpha"))]
+    #[test]
+    fn restored_m3_history_and_persistent_lock_file_do_not_block_package() {
+        let path = temp_db("registry-history");
+        let registry_backend = Arc::new(RegistryBackend::new(
+            super::super::plan::CapturedRepresentation::Dword(1),
+            None,
+        ));
+        let registry = super::super::broker::Broker::with_owner_journal(
+            registry_backend,
+            super::super::journal::MutationJournal::at(path.clone()),
+        );
+        let applied = registry
+            .apply_owner_operation(
+                super::super::request::MutationOperationId::WelcomeExperienceEnabled,
+                super::super::request::MutationTarget::Disabled,
+                &registry_context(true),
+                || Ok(registry_context(false)),
+            )
+            .unwrap();
+        assert_eq!(
+            applied.transaction.handler_version,
+            super::super::OWNER_HANDLER_VERSION
+        );
+        registry
+            .undo_owner_operation(
+                &applied.transaction.transaction_id,
+                &registry_context(false),
+                || Ok(registry_context(true)),
+            )
+            .unwrap();
+        drop(registry);
+
+        let operation = PackageOperationId::RemoveConsumerCopilotCurrentUser;
+        let package_backend = Arc::new(FakeBackend::new(vec![package(operation, "1.0.0.0")]));
+        let packages = PackageBroker::at(package_backend.clone(), path.clone());
+        let result = packages
+            .remove(operation, &context(operation, true, false), || {
+                Ok(context(operation, false, false))
+            })
+            .unwrap();
+        assert_eq!(result.transaction.status, PackageTransactionStatus::Removed);
+        assert_eq!(package_backend.removes.load(Ordering::SeqCst), 1);
         cleanup(&path);
     }
 }

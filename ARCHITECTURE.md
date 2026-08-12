@@ -33,7 +33,9 @@ authorization path for the installed product.
 6. **Mutation broker.** `src/mutation` owns actionability, validation, locking,
    exact capture, dispatch, actual post-attempt capture, verification,
    automatic safe rollback, journal, one-click Undo, recovery, and test-only
-   fault injection. There is no generic registry setter or command runner. Only
+   fault injection. Setting and package brokers share one exclusive-handle
+   cross-process lock; durable history is not lock ownership. There is no
+   generic registry setter or command runner. Only
    Widgets, Task View, welcome experience, tips and suggestions, notification
    suggestions, and suggested content in Settings are in the Owner Mode M3
    product registry. Show Desktop remains internal and `TaskbarSd` is not productized.
