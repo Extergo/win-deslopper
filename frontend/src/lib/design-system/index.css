@@ -1,0 +1,10 @@
+/* Entry point for the Deslopper design-system component library. Import this once
+   (e.g. from a route that mounts these components) and wrap the mounted subtree in
+   an element with class="ds-root" — see README.md. */
+@import './tokens/fonts.css';
+@import './tokens/colors.css';
+@import './tokens/typography.css';
+@import './tokens/spacing.css';
+@import './tokens/elevation.css';
+@import './tokens/base.css';
+@import './components.css';

@@ -1,0 +1,59 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+.ds-root {
+  font: var(--text-body);
+  color: var(--color-text);
+  background: var(--color-background);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+.ds-root button,
+.ds-root input,
+.ds-root select,
+.ds-root textarea {
+  font: inherit;
+}
+
+.ds-root button {
+  color: inherit;
+}
+
+.ds-root button:focus-visible,
+.ds-root input:focus-visible,
+.ds-root select:focus-visible,
+.ds-root textarea:focus-visible,
+.ds-root [tabindex]:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.ds-root a {
+  color: var(--color-primary-text);
+  text-decoration-color: color-mix(in srgb, var(--color-primary) 50%, transparent);
+  text-underline-offset: 2px;
+}
+
+.ds-root a:hover {
+  color: var(--color-primary-hover);
+}
+
+.ds-root ::selection {
+  color: var(--color-on-primary);
+  background: var(--color-primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ds-root *,
+  .ds-root *::before,
+  .ds-root *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

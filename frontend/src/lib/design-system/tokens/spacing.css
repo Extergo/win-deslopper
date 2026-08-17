@@ -1,0 +1,22 @@
+/* 4 / 8 / 12 / 16 / 24 / 32 / 48 — the shipped app's scale, unchanged. */
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  --radius-small: 8px;
+  --radius-control: 14px;
+  --radius-card: 20px;
+  --radius-panel: 28px;
+  --radius-pill: 999px;
+
+  --sidebar-width: 244px;
+  --sidebar-width-compact: 82px;
+  --workspace-pad: clamp(20px, 3vw, 42px);
+  --target-min: 42px;
+  --target-primary: 48px;
+}

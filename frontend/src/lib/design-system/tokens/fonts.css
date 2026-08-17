@@ -1,0 +1,15 @@
+/* Archivo: tight industrial grotesque for titles, nav labels, metrics, micro-labels.
+   IBM Plex Sans: instrument-grade UI text — engineered, plain, unfashionable.
+   IBM Plex Mono: registry values, DWORDs, package identities, transaction ids.
+
+   The source design system loads these three families from a Google Fonts CDN
+   @import. `docs/ui-design-system.md` forbids remote CDN loading for production
+   assets, so that @import is intentionally omitted here. Until real webfont
+   files are bundled locally, these fall back to the listed system fonts. */
+:root {
+  --font-display: Archivo, 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
+  --font-ui:
+    'IBM Plex Sans', 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system,
+    BlinkMacSystemFont, sans-serif;
+  --font-mono: 'IBM Plex Mono', 'Cascadia Mono', Consolas, ui-monospace, monospace;
+}

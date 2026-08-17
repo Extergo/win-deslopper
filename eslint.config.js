@@ -6,7 +6,13 @@ import tseslint from 'typescript-eslint';
 
 export default [
   {
-    ignores: ['frontend/.svelte-kit/**', 'frontend/build/**', 'node_modules/**', 'target/**']
+    ignores: [
+      'frontend/.svelte-kit/**',
+      'frontend/build/**',
+      'node_modules/**',
+      'target/**',
+      '.claude/**'
+    ]
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
