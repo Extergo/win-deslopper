@@ -1,0 +1,134 @@
+/* Base palette. Daidai (橙) orange is the single brand accent; neutrals are cool near-black. */
+:root {
+  --daidai-100: #ffe7cf;
+  --daidai-200: #ffc98f;
+  --daidai-300: #ffa347;
+  --daidai-400: #ff8c1a;
+  --daidai-500: #ee7800;
+  --daidai-600: #c25e00;
+  --daidai-700: #8a4200;
+
+  /* Neutrals follow Material's tonal approach: derived from the accent hue at very low chroma,
+     so dark surfaces read as warm near-neutral rather than pure black. */
+  --ink-000: #100f12;
+  --ink-050: #17161a;
+  --ink-100: #201e23;
+  --ink-200: #29262c;
+  --ink-300: #322f36;
+  --ink-400: #403c44;
+  --ink-500: #565159;
+  --ink-600: #7a757e;
+  --ink-700: #a39ea6;
+  --ink-800: #d8d3da;
+  --ink-900: #f3eff5;
+
+  --paper-050: #f6f7fb;
+  --paper-100: #ffffff;
+  --paper-200: #eef0f7;
+  --paper-300: #e3e5ee;
+  --paper-400: #d7d9e2;
+  --paper-500: #a9abb6;
+
+  --green-400: #3ddc84;
+  --green-500: #1f9d55;
+  --green-700: #14663a;
+  --amber-400: #ffb02e;
+  --amber-600: #a3701a;
+  --amber-700: #735814;
+  --red-400: #ff6b6b;
+  --red-600: #b44a52;
+  --red-700: #8c2f35;
+}
+
+/* Dark is the default surface (Synapse-style chrome). */
+:root,
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --color-background: var(--ink-050);
+  --color-surface: var(--ink-100);
+  --color-surface-tonal: var(--ink-200);
+  --color-surface-elevated: var(--ink-300);
+  --color-surface-sunken: var(--ink-000);
+
+  /* Material-style container hierarchy — depth by tone, not by shadow. */
+  --color-surface-container-low: var(--ink-100);
+  --color-surface-container: var(--ink-200);
+  --color-surface-container-high: var(--ink-300);
+
+  --color-primary: var(--daidai-500);
+  --color-primary-hover: var(--daidai-400);
+  --color-primary-pressed: var(--daidai-600);
+  --color-primary-container: #3a2410;
+  --color-primary-container-hover: #482c11;
+  --color-on-primary: #241300;
+  --color-primary-text: var(--daidai-300);
+
+  --color-text: var(--ink-900);
+  --color-text-secondary: var(--ink-700);
+  --color-text-disabled: var(--ink-600);
+
+  --color-outline: var(--ink-400);
+  --color-outline-strong: var(--ink-500);
+
+  --color-success: var(--green-400);
+  --color-success-container: #12291d;
+  --color-warning: var(--amber-400);
+  --color-warning-container: #30240d;
+  --color-danger: var(--red-400);
+  --color-danger-container: #2f1a1b;
+
+  --color-disabled: var(--ink-600);
+  --color-scrim: rgb(16 15 18 / 72%);
+  --color-focus-ring: var(--daidai-400);
+  --color-shadow: rgb(0 0 0 / 38%);
+  --color-shadow-strong: rgb(0 0 0 / 55%);
+  --color-glow: rgb(238 120 0 / 22%);
+
+  --color-track: var(--ink-300);
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+
+  --color-background: var(--paper-050);
+  --color-surface: var(--paper-100);
+  --color-surface-tonal: var(--paper-200);
+  --color-surface-elevated: var(--paper-100);
+  --color-surface-sunken: var(--paper-300);
+
+  --color-surface-container-low: var(--paper-100);
+  --color-surface-container: var(--paper-200);
+  --color-surface-container-high: var(--paper-300);
+
+  --color-primary: var(--daidai-600);
+  --color-primary-hover: var(--daidai-700);
+  --color-primary-pressed: var(--daidai-700);
+  --color-primary-container: var(--daidai-100);
+  --color-primary-container-hover: var(--daidai-200);
+  --color-on-primary: #ffffff;
+  --color-primary-text: var(--daidai-700);
+
+  --color-text: #1b1c20;
+  --color-text-secondary: #55565f;
+  --color-text-disabled: var(--paper-500);
+
+  --color-outline: var(--paper-400);
+  --color-outline-strong: #747780;
+
+  --color-success: var(--green-700);
+  --color-success-container: #d5f5dc;
+  --color-warning: var(--amber-700);
+  --color-warning-container: #ffdea3;
+  --color-danger: var(--red-700);
+  --color-danger-container: #fff5f5;
+
+  --color-disabled: var(--paper-500);
+  --color-scrim: rgb(18 20 27 / 58%);
+  --color-focus-ring: var(--daidai-600);
+  --color-shadow: rgb(42 48 61 / 10%);
+  --color-shadow-strong: rgb(42 48 61 / 17%);
+  --color-glow: rgb(194 94 0 / 14%);
+
+  --color-track: var(--paper-300);
+}

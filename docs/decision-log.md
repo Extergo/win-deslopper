@@ -180,6 +180,31 @@ Each decision below is accepted for the current architecture. Replacements must 
 - **Consequences:** Owner Mode `0.4.0` has six fixed current-user setting operations and four exact current-user package operations. The UI warns that app data may be removed, distinguishes Restore available from Reinstall required, and records exact versus newer-family restoration. Automated verification uses fake deployment backends; M4 has no physical package result yet.
 - **Rejected:** Fake DWORD package state, wildcard/generic package input, deployment PowerShell, all-user or provisioned removal, Store downloads, elevation, WindowsApps ACL/ownership changes, manual package deletion, services/HKLM changes, fake Undo, and claiming only one package changed without inventory proof.
 
+## D-022 - Dark daidai-orange component library added, not adopted in the shipped view
+
+- **Status:** Accepted for `frontend/src/lib/design-system/` only; not adopted in `+page.svelte`
+- **Date:** 2026-08-16
+- **Context:** The maintainer commissioned a Claude Design project ("Deslopper Design System") with a
+  deliberately different brief than `D-002`: a dark Razer-Synapse-style chrome with daidai (橙) orange
+  accents and Archivo/IBM Plex typography, in place of `D-002`'s light-first Material with an indigo
+  accent. `D-002` requires a new decision before any other visual language may be used. The maintainer
+  then directed porting that design system into real, shippable Svelte components.
+- **Decision:** Add `frontend/src/lib/design-system/` as a self-contained Svelte 5 (legacy `export let`
+  props, matching this repo's existing component style) translation of the 26 components, tokens, and
+  component CSS from the source Claude Design project, scoped under a `.ds-root` wrapper class so its
+  base reset cannot leak into the shipped app's global styles. The library ships without the source
+  project's Google Fonts CDN `@import` (forbidden by `docs/ui-design-system.md`), falling back to
+  system fonts. `frontend/src/routes/+page.svelte` and `$lib/theme.css` are untouched — the normal
+  product still ships `D-002`'s light-first Material visual language by default.
+- **Consequences:** A second, competing visual language now exists in the repo as an importable library
+  (`$lib/design-system`), verified to type-check and lint via the existing frontend gates, but reachable
+  from no route. Adopting it as the shipped default, offering it as a user-selectable theme, or deleting
+  it are all still open — none of those decisions is made here. `.claude/skills/deslopper-design/`
+  documents the source project and flags the same visual-language conflict.
+- **Rejected:** Wiring the new components into `+page.svelte` in the same change (a much larger,
+  separate integration decision), bundling third-party font binaries without a licensing/size review,
+  and silently reinterpreting `D-002` as superseded.
+
 ## D-021 - M4.1 unifies Owner Mode cross-process lock ownership
 
 - **Date:** 2026-08-12
