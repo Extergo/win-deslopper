@@ -1220,7 +1220,8 @@ fn valid_operation_scopes(scopes: &[ApprovedOperationScope]) -> bool {
     let mut operations = HashSet::new();
     scopes.iter().all(|scope| {
         let mut states = HashSet::new();
-        operations.insert(scope.operation_id)
+        MutationOperationId::ALL.contains(&scope.operation_id)
+            && operations.insert(scope.operation_id)
             && !scope.allowed_target_states.is_empty()
             && scope
                 .allowed_target_states
@@ -1786,6 +1787,7 @@ mod tests {
             manufacturer: Some("Microsoft Corporation".into()),
             model: Some("Virtual Machine".into()),
             user_sid: None,
+            owner_scope_id: None,
             elevated: false,
             domain_joined: Some(false),
             entra_joined: Some(false),

@@ -13,7 +13,7 @@ use std::{
     path::PathBuf,
 };
 
-pub const SCHEMA_VERSION: u32 = 5;
+pub const SCHEMA_VERSION: u32 = 6;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -352,6 +352,9 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     if existing_version < 5 {
         migrate_v5(conn)?;
     }
+    if existing_version < 6 {
+        migrate_v6(conn)?;
+    }
     let now = crate::inspection::timestamp();
     conn.execute(
         "INSERT OR REPLACE INTO database_metadata(key,value) VALUES('schema_version',?1)",
@@ -370,6 +373,50 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         [env!("CARGO_PKG_VERSION")],
     )?;
     Ok(())
+}
+
+fn migrate_v6(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch("BEGIN IMMEDIATE;")?;
+    let result = (|| {
+        add_column(conn, "package_observations", "resource_id TEXT")?;
+        add_column(
+            conn,
+            "package_observations",
+            "provisioned_package_full_name TEXT",
+        )?;
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS package_mutation_transactions(
+               id TEXT PRIMARY KEY,
+               machine_id TEXT NOT NULL,
+               component_id TEXT NOT NULL,
+               operation_id TEXT NOT NULL,
+               source_inspection_id TEXT NOT NULL,
+               created_at TEXT NOT NULL,
+               completed_at TEXT,
+               status TEXT NOT NULL,
+               transaction_json TEXT NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS package_mutation_state_captures(
+               transaction_id TEXT NOT NULL,
+               capture_type TEXT NOT NULL CHECK(capture_type IN ('pre_state','post_state','restore_state')),
+               state_json TEXT NOT NULL,
+               captured_at TEXT NOT NULL,
+               integrity_hash TEXT NOT NULL,
+               PRIMARY KEY(transaction_id,capture_type),
+               FOREIGN KEY(transaction_id) REFERENCES package_mutation_transactions(id)
+             );
+             CREATE INDEX IF NOT EXISTS idx_package_mutation_history
+               ON package_mutation_transactions(created_at DESC);",
+        )?;
+        Ok(())
+    })();
+    match result {
+        Ok(()) => conn.execute_batch("COMMIT;"),
+        Err(error) => {
+            let _ = conn.execute_batch("ROLLBACK;");
+            Err(error)
+        }
+    }
 }
 
 fn migrate_v5(conn: &Connection) -> rusqlite::Result<()> {
@@ -757,6 +804,7 @@ fn persist(tx: &Transaction<'_>, store: &Store) -> rusqlite::Result<()> {
         let mut redacted_platform = snapshot.platform.clone();
         redacted_platform.device_name = None;
         redacted_platform.user_sid = None;
+        redacted_platform.owner_scope_id = None;
         let phase = lifecycle
             .map(|value| format!("{:?}", value.phase))
             .unwrap_or_else(|| "CompletedWithPartialFailures".into());
@@ -817,7 +865,7 @@ fn persist(tx: &Transaction<'_>, store: &Store) -> rusqlite::Result<()> {
                 [observation_id],
             )?;
             for package in &observation.packages {
-                tx.execute("INSERT INTO package_observations(observation_id,inspection_id,component_id,package_family_name,package_full_name,package_name,version,architecture,publisher,current_user_registered,other_user_registered,all_users_present,provisioned,framework,resource_package,dependency,non_removable,detection_completeness,bundle,install_location_present,dependencies_json,permission_status,observed_at,current_user_state,other_user_state,provisioning_state) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,0,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25)",params![observation_id,snapshot.id,package.component_id.key(),package.package_family_name,package.package_full_name,package.package_name,package.version,package.architecture,package.publisher_id,(package.current_user==crate::platform::PackageRegistrationState::Present) as i64,(package.other_users==crate::platform::PackageRegistrationState::Present) as i64,(package.other_users==crate::platform::PackageRegistrationState::Present) as i64,(package.provisioning==crate::platform::PackageProvisioningState::Provisioned) as i64,package.framework as i64,package.resource_package as i64,package.non_removable as i64,format!("{:?}",package.source_query_completeness),package.bundle as i64,package.install_location_present.map(i64::from),json(&package.dependencies)?,package.permission_status,package.observed_at,format!("{:?}",package.current_user),format!("{:?}",package.other_users),format!("{:?}",package.provisioning)])?;
+                tx.execute("INSERT INTO package_observations(observation_id,inspection_id,component_id,package_family_name,package_full_name,package_name,version,architecture,publisher,resource_id,provisioned_package_full_name,current_user_registered,other_user_registered,all_users_present,provisioned,framework,resource_package,dependency,non_removable,detection_completeness,bundle,install_location_present,dependencies_json,permission_status,observed_at,current_user_state,other_user_state,provisioning_state) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,0,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27)",params![observation_id,snapshot.id,package.component_id.key(),package.package_family_name,package.package_full_name,package.package_name,package.version,package.architecture,package.publisher_id,package.resource_id,package.provisioned_package_full_name,(package.current_user==crate::platform::PackageRegistrationState::Present) as i64,(package.other_users==crate::platform::PackageRegistrationState::Present) as i64,(package.other_users==crate::platform::PackageRegistrationState::Present) as i64,(package.provisioning==crate::platform::PackageProvisioningState::Provisioned) as i64,package.framework as i64,package.resource_package as i64,package.non_removable as i64,format!("{:?}",package.source_query_completeness),package.bundle as i64,package.install_location_present.map(i64::from),json(&package.dependencies)?,package.permission_status,package.observed_at,format!("{:?}",package.current_user),format!("{:?}",package.other_users),format!("{:?}",package.provisioning)])?;
             }
         }
     }
@@ -1108,7 +1156,7 @@ fn load_packages(
     observation_id: i64,
     component_id: ComponentId,
 ) -> rusqlite::Result<Vec<crate::platform::PackageObservation>> {
-    let mut statement = conn.prepare("SELECT package_family_name,package_full_name,package_name,version,architecture,publisher,current_user_state,other_user_state,provisioning_state,framework,resource_package,bundle,non_removable,install_location_present,dependencies_json,detection_completeness,permission_status,observed_at FROM package_observations WHERE observation_id=?1 ORDER BY package_name,package_full_name")?;
+    let mut statement = conn.prepare("SELECT package_family_name,package_full_name,package_name,version,architecture,publisher,resource_id,provisioned_package_full_name,current_user_state,other_user_state,provisioning_state,framework,resource_package,bundle,non_removable,install_location_present,dependencies_json,detection_completeness,permission_status,observed_at FROM package_observations WHERE observation_id=?1 ORDER BY package_name,package_full_name")?;
     let rows = statement.query_map([observation_id], |row| {
         Ok((
             row.get::<_, Option<String>>(0)?,
@@ -1117,18 +1165,20 @@ fn load_packages(
             row.get::<_, Option<String>>(3)?,
             row.get::<_, Option<String>>(4)?,
             row.get::<_, Option<String>>(5)?,
-            row.get::<_, String>(6)?,
-            row.get::<_, String>(7)?,
+            row.get::<_, Option<String>>(6)?,
+            row.get::<_, Option<String>>(7)?,
             row.get::<_, String>(8)?,
-            row.get::<_, i64>(9)?,
-            row.get::<_, i64>(10)?,
+            row.get::<_, String>(9)?,
+            row.get::<_, String>(10)?,
             row.get::<_, i64>(11)?,
             row.get::<_, i64>(12)?,
-            row.get::<_, Option<i64>>(13)?,
-            row.get::<_, String>(14)?,
-            row.get::<_, String>(15)?,
+            row.get::<_, i64>(13)?,
+            row.get::<_, i64>(14)?,
+            row.get::<_, Option<i64>>(15)?,
             row.get::<_, String>(16)?,
-            row.get::<_, Option<String>>(17)?,
+            row.get::<_, String>(17)?,
+            row.get::<_, String>(18)?,
+            row.get::<_, Option<String>>(19)?,
         ))
     })?;
     let mut packages = Vec::new();
@@ -1140,6 +1190,8 @@ fn load_packages(
             version,
             architecture,
             publisher,
+            resource_id,
+            provisioned_package_full_name,
             current,
             other,
             provisioning,
@@ -1161,6 +1213,8 @@ fn load_packages(
             version,
             architecture,
             publisher_id: publisher,
+            resource_id,
+            provisioned_package_full_name,
             current_user: registration_from_str(&current),
             other_users: registration_from_str(&other),
             provisioning: provisioning_from_str(&provisioning),
@@ -1276,6 +1330,14 @@ fn hash(value: &str) -> String {
     format!("{:016x}", h.finish())
 }
 fn machine_id(info: &PlatformInfo) -> String {
+    #[cfg(feature = "owner-mode")]
+    if let Some(scope) = info
+        .owner_scope_id
+        .as_deref()
+        .filter(|scope| crate::owner_scope::is_valid(scope))
+    {
+        return scope.to_owned();
+    }
     hash(&format!(
         "{}:{}:{}",
         info.device_name.as_deref().unwrap_or("unknown"),
@@ -1343,6 +1405,10 @@ mod tests {
             version: Some("1.0.0.0".into()),
             architecture: Some("X64".into()),
             publisher_id: Some("8wekyb3d8bbwe".into()),
+            resource_id: Some("neutral".into()),
+            provisioned_package_full_name: Some(
+                "Microsoft.Copilot_1.0.0.0_x64__8wekyb3d8bbwe".into(),
+            ),
             current_user: PackageRegistrationState::Present,
             other_users: PackageRegistrationState::PermissionLimited,
             provisioning: PackageProvisioningState::NotProvisioned,
@@ -1429,6 +1495,8 @@ mod tests {
             "mutation_state_captures",
             "mutation_rollbacks",
             "product_preferences",
+            "package_mutation_transactions",
+            "package_mutation_state_captures",
         ] {
             let found: Option<String> = conn
                 .query_row(
@@ -1631,6 +1699,7 @@ mod tests {
         let target = temp_path("clear-history", "db");
         let conn = open_at(&target).unwrap();
         conn.execute("INSERT INTO mutation_plans(id,machine_id,source_inspection_id,source_observation_id,component_id,operation_id,generated_at,expires_at,plan_hash,approval_nonce_hash,plan_json) VALUES('plan','machine','inspection','observation','component','operation','1','2','hash','nonce','{}')",[]).unwrap();
+        conn.execute("INSERT INTO package_mutation_transactions(id,machine_id,component_id,operation_id,source_inspection_id,created_at,status,transaction_json) VALUES('package-transaction','machine','phone_link','remove_phone_link_current_user','inspection','1','removed','{}')",[]).unwrap();
         drop(conn);
         let mut store = fixture_store();
         replace_read_only_data_at(&store, &target).unwrap();
@@ -1647,8 +1716,16 @@ mod tests {
         let mutation_plans: i64 = conn
             .query_row("SELECT COUNT(*) FROM mutation_plans", [], |row| row.get(0))
             .unwrap();
+        let package_transactions: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM package_mutation_transactions",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
         assert_eq!(inspections, 0);
         assert_eq!(mutation_plans, 1);
+        assert_eq!(package_transactions, 1);
         drop(conn);
         let _ = fs::remove_file(target);
     }
@@ -1725,6 +1802,17 @@ mod tests {
         assert_eq!(state, "PermissionLimited");
         let loaded = load_store(&conn).unwrap();
         assert_eq!(loaded.snapshots[0].observations[0].packages.len(), 1);
+        assert_eq!(
+            loaded.snapshots[0].observations[0].packages[0]
+                .resource_id
+                .as_deref(),
+            Some("neutral")
+        );
+        assert!(
+            loaded.snapshots[0].observations[0].packages[0]
+                .provisioned_package_full_name
+                .is_some()
+        );
         assert_eq!(loaded.snapshots[0].timestamp, "1000");
         assert_eq!(
             loaded.snapshots[0]

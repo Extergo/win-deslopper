@@ -1,46 +1,81 @@
-# Read-Only Product Alpha handoff
+# Owner Mode M4 handoff
 
-The active product milestone is Deslopper `0.1.0-alpha.1`, a normal-feature,
-read-only Windows application. The branch starts from readiness commit
-`aad404e690175857a69085554e3223c078ded2e6`.
+Deslopper `0.4.1` retains the physically validated M1-M3 setting engine and adds
+four first-class current-user package operations. The normal release observes 21
+components and exposes six closed setting operations: Widgets,
+Task View, welcome experience, tips and suggestions, notification suggestions,
+and suggested content in Settings; plus exact current-user removal for Consumer
+Copilot, Phone Link, Clipchamp, and Solitaire.
 
-Read `AGENTS.md`, `.deslopper/policy.toml`, `README.md`, `ARCHITECTURE.md`,
-`SECURITY.md`, `docs/read-only-product-alpha.md`, `docs/inspection-pipeline.md`,
-and `docs/testing-strategy.md` before acting.
+M4 package state and history are separate from DWORD captures. Native
+`PackageManager` performs exact current-user inventory/removal and deterministic
+registration only when staged/provisioned identity and dependencies prove
+Restore available. Provisioning and other users remain observational. Any
+collateral disappearance is Needs Attention. Implementation/testing performed
+no live AppX mutation. Before physical work, follow
+`docs/owner-mode-m4-appx-smoke-test.md` and inventory every candidate read-only.
 
-## Safety status
+The first `0.4.0` Phone Link physical attempt performed no package mutation. It
+was blocked before the backend because the package lock used `create_new` on the
+same persistent rendezvous file used by the M1-M3 Windows exclusive-handle
+lock. `0.4.1` fixes this by sharing one lock implementation. Physical package
+validation must be restarted by the owner; do not infer a PackageManager PASS
+from the blocked attempt or resume it automatically.
 
-- The normal build registers only read-only inspection, local persistence,
-  desired-state preview, snapshot comparison, diagnostics, and local-data
-  commands.
-- The main window capability remains exactly event listen/unlisten.
-- Diagnostics are generated in Rust, exclude machine identity and validation
-  files, and are saved only after user review through a system file picker.
-- Product previews are explicitly non-executable and create no mutation
-  transaction or approval nonce.
-- The original development host remains permanently denied by an ignored,
-  local-only fingerprint file.
-- Mutation alpha remains separately compiled and synthetic-tested only. Zero
-  live-validated handlers exist.
+The four cleanup handlers use fixed DWORD values under
+`HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager`.
+DWORD `1` is enabled and `0` is disabled. Missing and non-binary values are
+unknown/unsupported. Matching configured values under
+`HKLM\Software\Policies\Microsoft\Windows\CloudContent` are authoritative and
+make the operation managed; Deslopper does not override policy. Lock-screen
+suggestions remain inspection-only because `RotatingLockScreenOverlayEnabled`
+and the broader `ConfigureWindowsSpotlight` policy do not establish exact parity.
 
-## Withdrawn physical target
+## Physical evidence that controls the product
 
-The former physical laptop completed read-only validation but was withdrawn
-because the hardware was sold. It was never approved for mutation, never
-received the development-host identity, never used mutation flags, and never
-performed a registry write. This was a target-availability decision, not a
-mutation failure. A future disposable target or VM needs a new preparation and
-approval record from scratch.
+- Widgets `TaskbarDa` was DWORD 0. Deslopper and an independent unelevated
+  write both received access denied and the exact value remained unchanged.
+  This is a rejected-unchanged result, not partial mutation and not a generic
+  writer failure. The stable machine/account scope must show **Direct change
+  unavailable** for Widgets, with no Undo. Do not elevate, edit ACLs, or suppress
+  Widgets globally.
+- Task View `ShowTaskViewButton` was DWORD 0. An unelevated same-state write
+  succeeded. The subsequent M2 physical run passed the complete live sequence:
+  fresh hidden detection, Apply to DWORD 1, direct and detector verification,
+  visible Explorer refresh without restart, full process exit, persistence,
+  relaunch with durable Undo, exact restoration to DWORD 0, and independent
+  final verification.
+- M3 Tips and suggestions `SoftLandingEnabled` was DWORD 1. An independent
+  non-elevated same-state write succeeded. Deslopper applied DWORD 0; the
+  installed process fully exited; relaunch preserved durable Undo; and
+  independent final verification confirmed exact restoration to DWORD 1.
+- M3 Notification suggestions `SubscribedContent-338389Enabled` followed the
+  same successful sequence from DWORD 1 to 0 and back to exact DWORD 1 after
+  complete process exit, relaunch, and Undo.
+- Welcome experience `SubscribedContent-310093Enabled` and Suggested content in
+  Settings `SubscribedContent-338393Enabled` were absent before and after the
+  test. They were not created or mutated. This is the intended unsupported-
+  missing contract, not a failed operation.
+- `TaskbarSd` was absent and was not tested. Do not touch or productize it.
 
-## Next safe work
+## Safety contract
 
-Continue Product Alpha quality and real-world read-only compatibility work:
+- Normal commands are only closed owner actionability, closed owner Apply,
+  transaction-bound Undo, and scoped history.
+- No registry path, value name, raw value, script, or command comes from the UI.
+- The app remains unelevated, Windows 11 x64/current-user scoped, local-only,
+  and without shell, filesystem, network, updater, service, or helper access.
+- Automated tests use fake backends. Implementation and CI perform no live
+  registry mutation.
+- Historical `owner-widgets.1` and `owner-taskbar.2` transactions remain
+  readable; new intents use `owner-cleanup.3`.
 
-1. Expand read-only fixtures across Home, Pro, Enterprise, 24H2, 25H2, managed,
-   and standard-user environments.
-2. Review keyboard navigation, screen readers, and 125%/150%/200% Windows
-   scaling on additional machines.
-3. Exercise install/uninstall and database recovery with disposable local data.
-4. Keep permission-limited AppX scopes and unsupported preview surfaces honest.
-5. Do not begin live mutation without a new approved disposable target and a
-   separately authorized milestone.
+The completed physical evidence is in
+`docs/owner-mode-m2-physical-validation.md`; the reproducible protocol remains
+in `docs/owner-mode-task-view-smoke-test.md`. Do not rerun it as part of coding
+or CI.
+
+M3 physical validation is recorded as PASS in
+`docs/owner-mode-m3-physical-validation.md`. The original practical checklist
+remains in `docs/owner-mode-m3-current-user-cleanup-smoke-test.md`; never turn it
+into an automated or approval-file workflow.

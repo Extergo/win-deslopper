@@ -10,6 +10,7 @@ pub struct MutationJournal {
     database_path: Option<std::path::PathBuf>,
 }
 
+#[cfg(feature = "mutation-alpha")]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ApprovalUsage {
     pub plans: u32,
@@ -96,6 +97,7 @@ impl MutationJournal {
         }
     }
 
+    #[cfg(feature = "mutation-alpha")]
     pub fn approval_usage(&self, approval_class: &str) -> Result<ApprovalUsage, String> {
         let conn = self.connection()?;
         let mut plan_statement = conn

@@ -5,7 +5,7 @@ frontend/dependencies, confused-deputy elevation, unsafe compatibility
 assumptions, identifying evidence, stale/replayed plans, concurrent operations,
 crashes, rollback conflict, and misleading success.
 
-## Normal build
+## Normal owner build
 
 - The main UI runs without administrator privileges.
 - Inspection uses fixed read-only PowerShell only; frontend input cannot supply
@@ -17,11 +17,14 @@ crashes, rollback conflict, and misleading success.
 - Tauri grants the normal window only the event listen/unlisten lifecycle used
   for backend inspection progress. It grants no frontend event emission,
   shell, filesystem, network, updater, or external-URL plugin.
-- Normal builds have no mutation module or mutation command registration, no
-  elevation manifest, `runas`, helper, service, backend, telemetry, or plugin
-  execution.
-- Desired-state previews are explicitly non-executable and create no approval
-  nonce or mutation transaction.
+- Normal builds register only closed Owner Mode setting and package
+  actionability, Apply/Remove, transaction-bound Undo/Restore, and history
+  commands. There is no elevation manifest, `runas`, helper,
+  service, backend, telemetry, plugin execution, arbitrary registry API, or
+  mutation shell command.
+- Desired-state previews remain non-executable. One deliberate owner Apply
+  click creates an internal durable transaction intent; no phrase, approval
+  file, validation target, CLI flag, or user-visible nonce is involved.
 - Diagnostics are built from an allowlisted schema and exclude machine
   identity, hostname, account identifiers, development-host protection,
   approval manifests, raw profile paths, OneDrive identities, credentials,
@@ -31,9 +34,66 @@ crashes, rollback conflict, and misleading success.
   read-only database records. They do not alter Windows or erase internal
   mutation audit tables.
 
-## Internal mutation alpha
+### Owner operation boundary
 
-The alpha requires the compile feature, debug/internal build, exact alpha and
+- The six M3 product operations are Widgets and Task View visibility plus
+  welcome experience, tips and suggestions, notification suggestions, and
+  suggested content in Settings. Rust maps them to fixed HKCU DWORD 0/1 values;
+  no registry coordinates or integer come from the frontend.
+- The four cleanup operations use exact Content Delivery Manager values and
+  matching read-only Cloud Content policy checks. Missing/non-binary preference
+  representations are unsupported, and any configured matching policy causes
+  refusal. Lock-screen suggestions remain inspection-only because their broad
+  Spotlight policy does not prove exact parity.
+- The app runs unelevated and affects only the current Windows account. It
+  refuses unsupported/non-Windows-11 contexts, unknown representations, and
+  fixed external policy ownership.
+- The broker locks execution, persists exact pre-state before writing, captures
+  actual state after every attempted write where readable, verifies direct
+  representation plus the matching detector, and records exact rollback data.
+- A verification failure automatically restores exact pre-state only when the
+  attempted target is directly observed and can safely be attributed to the
+  attempt. Ambiguous or policy-owned state becomes recovery-required and never
+  advertises unusable Undo.
+- Undo requires an intact transaction, the same versioned machine-plus-user
+  scope, acceptable authority, and current state equal to the recorded applied
+  state. A conflict is refused; normal UI has no force override.
+- Startup never replays a mutation. Interrupted transactions are reconciled
+  against actual state and otherwise surfaced as needing attention.
+- Automated tests and build commands use fake backends and never touch the live
+  registry.
+- A rejected write whose exact pre-state remains present is classified as
+  unchanged, has no Undo, and is not a recovery alarm. A proven Widgets
+  PermissionDenied result suppresses only Widgets direct change for that stable
+  machine/account scope. Deslopper never elevates or changes registry ACLs.
+- Show Desktop, `TaskbarSd`, and Taskbar Search remain outside Owner Mode M4.
+
+### M4 package deployment boundary
+
+- Four operations own the exact names `Microsoft.Copilot`,
+  `Microsoft.YourPhone`, `Clipchamp.Clipchamp`, and
+  `Microsoft.MicrosoftSolitaireCollection`. The frontend submits only an enum;
+  it cannot submit Name, PackageFullName, family, wildcard, script, or command.
+- Native `Windows.Management.Deployment.PackageManager` inventories and removes
+  only the current user's exact PackageFullName. There is no all-user option,
+  provisioning removal, DISM, deployment PowerShell, Store acquisition,
+  elevation, HKLM write, service control, WindowsApps ACL change, or package
+  directory deletion.
+- Framework, resource, bundle, non-removable, unhealthy, detector-disagreed,
+  and multi-version states fail closed. Complete current-user inventory is
+  captured before and after; any additional disappearance is Needs Attention.
+- Provisioning and other-user registrations are read-only evidence. A changed
+  provisioning observation prevents a success claim.
+- Restore is shown only when exact staged/provisioned identity and complete
+  dependencies were captured. Reinstall-required transactions expose no fake
+  Undo. Same-family newer-version restoration is recorded distinctly from
+  exact restoration.
+- Package removal may remove local app data. Automated tests use only fake
+  deployment backends; no test/build/package command invokes live deployment.
+
+## Separate internal mutation-alpha harness
+
+The optional engineering harness requires the compile feature, debug/internal build, exact alpha and
 live-validation CLI opt-ins, fixed local scenario manifest, expected machine
 and checkpoint identities, guest-owned database, development-host denylist,
 in-app acknowledgement, fresh inspection, and valid plan. It exposes three
@@ -49,8 +109,10 @@ Plans are machine/build/edition/evidence bound, expiring, SHA-256 checked,
 nonce-approved, and one-use. Apply re-inspects, captures exact pre-state,
 finishes the atomic write, verifies the target, re-inspects material context,
 journals each transition, and offers separately approved exact rollback.
-Cross-process locking prevents concurrent app instances. Interrupted operations
-become recovery-required and are never silently replayed.
+One shared exclusive Windows handle prevents concurrent setting/package
+mutation across brokers and app instances. The stable rendezvous file may
+persist, but only an open handle is ownership. Interrupted operations become
+recovery-required and are never silently replayed.
 
 Live-validation policy schema version 2 explicitly allowlists disposable target
 types. Physical live validation additionally requires scoped approval schema
@@ -85,7 +147,7 @@ The threat boundary does not include a compromised same-user account with
 arbitrary code execution. Live evidence contains typed manual assertions and
 must be reviewed; it is not cryptographically attested visual proof.
 
-The internal frontend entry point is selected only by Rust-provided build
+The engineering frontend entry point is selected only by Rust-provided build
 metadata. It does not call mutation status in a normal build, and normal command
 registration remains the hard boundary. The panel cannot infer handler scope:
 it renders only returned operation/target options, rejects unsafe or expired
@@ -93,6 +155,8 @@ one-operation plans as defense in depth, requires an exact backend-provided
 phrase, redacts plan and nonce display, and sends only the existing closed
 requests. Undo supplies only a durable transaction ID. Machine identities,
 approval hashes, and raw nonces are not rendered in history.
+
+The harness gates neither authorize nor block the normal owner runtime.
 
 ## Reporting
 

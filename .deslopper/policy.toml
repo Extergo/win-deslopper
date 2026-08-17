@@ -1,9 +1,25 @@
 project = "Deslopper"
-milestone = "read-only-product-alpha"
+milestone = "owner-mode-m3-current-user-cleanup"
 
 allow_real_windows_inspection = true
 allow_fixed_read_only_windows_queries = true
-allow_windows_mutation = false
+allow_windows_mutation = true
+allow_owner_mode = true
+owner_mode_operation_ids = [
+    "set_taskbar_widgets_visibility",
+    "set_taskbar_task_view_visibility",
+    "set_welcome_experience_enabled",
+    "set_tips_suggestions_enabled",
+    "set_notification_suggestions_enabled",
+    "set_settings_suggested_content_enabled",
+]
+owner_mode_requires_single_ui_apply = true
+owner_mode_requires_exact_prestate = true
+owner_mode_requires_durable_transaction = true
+owner_mode_requires_direct_verification = true
+owner_mode_requires_detector_verification = true
+owner_mode_requires_conflict_safe_rollback = true
+owner_mode_requires_stable_machine_user_scope = true
 allow_internal_mutation_alpha = true
 mutation_alpha_requires_debug_build = true
 mutation_alpha_requires_compile_feature = true

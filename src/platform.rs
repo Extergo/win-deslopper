@@ -21,6 +21,7 @@ pub enum ComponentId {
     SearchWebResults,
     SearchHighlights,
     TaskbarWidgets,
+    TaskbarTaskView,
     TaskbarSearch,
     PersonalTeamsChat,
     Clipchamp,
@@ -193,6 +194,8 @@ pub struct PackageObservation {
     pub version: Option<String>,
     pub architecture: Option<String>,
     pub publisher_id: Option<String>,
+    pub resource_id: Option<String>,
+    pub provisioned_package_full_name: Option<String>,
     pub current_user: PackageRegistrationState,
     pub other_users: PackageRegistrationState,
     pub provisioning: PackageProvisioningState,
@@ -292,6 +295,8 @@ pub struct PlatformInfo {
     pub model: Option<String>,
     #[serde(alias = "user_sid")]
     pub user_sid: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner_scope_id: Option<String>,
     pub elevated: bool,
     #[serde(alias = "domain_joined")]
     pub domain_joined: Option<bool>,
@@ -400,6 +405,7 @@ impl ComponentId {
             Self::SearchWebResults => "search_web_results",
             Self::SearchHighlights => "search_highlights",
             Self::TaskbarWidgets => "taskbar_widgets",
+            Self::TaskbarTaskView => "taskbar_task_view",
             Self::TaskbarSearch => "taskbar_search",
             Self::PersonalTeamsChat => "personal_teams_chat",
             Self::Clipchamp => "clipchamp",
@@ -600,6 +606,16 @@ pub fn v1_catalogue() -> Vec<ComponentDefinition> {
             "https://learn.microsoft.com/windows/configuration/taskbar/policy-settings"
         ),
         v1!(
+            TaskbarTaskView,
+            "Taskbar Task View button",
+            "Taskbar",
+            Safe,
+            "Controls the Task View taskbar entry point.",
+            "Set the current-user Task View preference after policy checks.",
+            "Restore the exact captured preference.",
+            "https://learn.microsoft.com/windows/configuration/taskbar/policy-settings"
+        ),
+        v1!(
             TaskbarSearch,
             "Taskbar Search button/box",
             "Taskbar",
@@ -757,9 +773,9 @@ mod tests {
     }
 
     #[test]
-    fn roadmap_contains_exactly_twenty_v1_components() {
+    fn roadmap_contains_exactly_twenty_one_components() {
         let catalogue = v1_catalogue();
-        assert_eq!(catalogue.len(), 20);
+        assert_eq!(catalogue.len(), 21);
         assert!(
             catalogue
                 .iter()

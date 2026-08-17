@@ -160,6 +160,13 @@ pub fn component_rule(id: ComponentId) -> ApplicabilityRule {
             "Current-user Explorer taskbar preference",
             "https://learn.microsoft.com/windows/configuration/taskbar/policy-settings",
         ),
+        TaskbarTaskView => rule(
+            id,
+            22000,
+            true,
+            "Current-user Explorer Task View preference",
+            "https://learn.microsoft.com/windows/configuration/taskbar/policy-settings",
+        ),
         TaskbarSearch => rule(
             id,
             19041,

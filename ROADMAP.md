@@ -3,20 +3,67 @@
 This roadmap records sequencing, not authorization. `AGENTS.md`, `SECURITY.md`,
 `ARCHITECTURE.md`, and `.deslopper/policy.toml` remain authoritative.
 
-## Current milestone - Read-Only Product Alpha
+## Current milestone - Owner Mode M4: Current-user AppX debloat
 
-**Status:** Implemented on `read-only-product-alpha`; validation and packaging
-gates must pass before the milestone tag is created.
+**Status:** Implemented as `0.4.1`; physical package removal remains blocked
+pending a new owner-run validation. The first `0.4.0` Phone Link attempt reached
+no deployment call because M4 mistook M1-M3's persistent lock rendezvous file
+for live ownership. `0.4.1` unifies both resource families on the validated
+exclusive-handle lock. Automated implementation and verification use fake
+deployment backends and performed no live AppX/MSIX mutation.
 
-The Product Alpha turns the 20-component read-only engine into a useful Windows
-application: compact onboarding, an honest system summary, component browsing,
-desired-state validation, non-executable previews, reviewed/resolved drift,
-snapshot comparison, retained history, privacy-safe diagnostics, local settings,
-and a normal feature-off installer.
+M4 adds four closed current-user package operations: Consumer Copilot, Phone
+Link, Clipchamp, and Solitaire. Rust owns each exact package name. Native
+`PackageManager` current-user inventory/removal/registration is separate from
+the physically validated DWORD engine. Framework, resource, bundle,
+non-removable, unhealthy, ambiguous, and multi-version states fail closed.
+Provisioning and other-user state remain observational.
 
-The normal build remains unelevated and has no usable mutation surface. It does
-not claim optimisation, removal, repair, production readiness, or universal
-Windows support.
+Every package transaction durably captures exact identity, health, dependency
+and current-user inventory before deployment. Direct inventory and the matching
+detector verify removal; any additional disappeared PackageFullName is Needs
+Attention. Restore is offered only for exact provisioned/staged identity plus
+complete dependencies. Otherwise the UI says Reinstall required and warns that
+local app data may be removed. See `docs/owner-mode-m4-appx-decision.md` and
+`docs/owner-mode-m4-appx-smoke-test.md`.
+
+## Completed milestone - Owner Mode M3: Current-user cleanup pack
+
+**Status:** Implemented and packaged as `0.3.0`; physical validation PASS on the
+Windows 11 x64 owner machine under ordinary current-user execution with no UAC.
+
+M3 productizes four existing current-user findings alongside the M1/M2 taskbar
+operations: welcome experience, tips and suggestions, notification suggestions,
+and suggested content in Settings. Each owns one fixed Content Delivery Manager
+DWORD plus its matching read-only Cloud Content policy check. Missing and
+non-binary representations remain unsupported; policy-owned states are refused.
+Lock-screen suggestions remain inspection-only because their current preference
+and broader Spotlight policy do not prove exact setting parity.
+
+The M3 physical sequence changed and exactly restored Tips and suggestions
+(`SoftLandingEnabled` 1 -> 0 -> relaunch Undo -> 1) and Notification suggestions
+(`SubscribedContent-338389Enabled` 1 -> 0 -> relaunch Undo -> 1). Welcome
+experience and Suggested content in Settings were absent and correctly remained
+absent rather than being invented for testing. See
+`docs/owner-mode-m3-physical-validation.md`.
+
+M2 productized Taskbar Task View visibility alongside the M1 Widgets operation.
+Apply is one click and must preflight, capture, journal, write, directly verify,
+verify through the matching detector, and recover safely. Undo is one click
+when the current state still equals Deslopper's applied state.
+
+The normal build remains unelevated, local, Windows 11 x64/current-user scoped,
+and has no generic mutation surface. The physical M1 result established that
+Widgets writes are denied unchanged on the tested machine/account, so that
+scope is surfaced as Direct change unavailable without elevation. Task View's
+same-state probe succeeded and now has a matching detector. Show Desktop and
+`TaskbarSd` remain non-productized and untouched.
+
+The first M2 physical sequence verified Task View detection from DWORD 0,
+Apply to DWORD 1, direct and detector verification, visible Explorer refresh,
+persistence after complete process exit, durable Undo after relaunch, exact
+restoration to DWORD 0, and independent final verification. See
+`docs/owner-mode-m2-physical-validation.md`.
 
 ## Read-only validation and hardening
 
@@ -31,19 +78,22 @@ Windows support.
 
 ## Internal mutation research remains separate
 
-The compile-gated broker still contains exactly three closed taskbar operations.
-All evidence is synthetic and zero handlers are live validated. The former
-physical target was withdrawn because it was sold before approval or mutation;
-no mutation failure occurred. Any future work requires a new disposable target,
-complete recovery evidence, explicit approval, and a separately authorized
-milestone. The original development host is permanently prohibited.
+The explicit engineering harness still contains exactly three closed taskbar operations.
+Historical harness evidence remains synthetic. A later Owner Mode physical test
+recorded an unchanged Widgets access denial and a successful unelevated Task
+View same-state write; those product facts do not graduate harness maturity or
+authorize Show Desktop. Any broader work requires a separately authorized
+milestone. The original development host remains permanently prohibited by the
+engineering harness.
 
 ## Sequencing rules
 
 - Inspection failure is never absence.
 - Normal package version servicing is not configuration drift.
 - Preview state is never represented as completed work.
-- No automatic restoration or Apply control appears until an explicitly
-  authorized, tested, reversible operation reaches the normal product boundary.
+- No Apply control appears until an explicitly authorized, tested operation
+  reaches the normal product boundary. M4 authorizes six setting operations and
+  four exact current-user package operations; Show Desktop, Taskbar Search,
+  provisioning removal, and all-user removal remain excluded.
 - Do not weaken gaming, anti-cheat, Xbox, Game Pass, or Windows security
   compatibility to increase removal coverage.

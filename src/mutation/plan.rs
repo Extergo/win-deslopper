@@ -74,6 +74,7 @@ impl MutationPlan {
         hash_serializable(&unsigned).is_ok_and(|actual| actual == expected)
     }
 
+    #[cfg(feature = "mutation-alpha")]
     pub fn is_expired(&self, now_millis: u128) -> bool {
         self.expires_at
             .parse::<u128>()

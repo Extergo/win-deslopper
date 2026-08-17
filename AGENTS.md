@@ -34,26 +34,30 @@ A behavioural, architectural, security, dependency, or visual-system change is i
 
 A helper script is still shell execution. A hidden feature flag is still an implemented capability. A disabled control wired to destructive code is still destructive code. Test-only production pathways count if shipped. Calling PowerShell through another executable is still PowerShell execution. A backend returning executable instructions is remote command execution. Moving unsafe code to another crate does not remove the unsafe-code concern. Disabling a lint globally is not a fix. Catching and ignoring an error is not error handling. A `preview` label does not excuse misleading behaviour. Splitting a prohibited operation across modules does not permit it. Indirect dependencies still require review. Generated code does not excuse security or licensing review.
 
-## Internal live-validation targets
+## Owner-mode Windows operations
 
-Live mutation is permitted only on an explicitly approved disposable validation
-target whose target type is allowed by the committed repository policy. The
-currently allowed types are a disposable `virtual_machine` and an expendable
-`physical_laptop`. A physical target is exceptional, internal, and local-only;
-all strict recovery, identity, management, approval, expiry, reinstallation,
-and final-disposition requirements must pass. Missing, stale, malformed, or
-contradictory evidence requires stopping.
+The normal product may execute only registered owner-mode operations approved
+by the current milestone. One deliberate Apply click authorizes one closed
+operation and one deliberate Undo click authorizes an exact, conflict-free
+restore. Safety lives in Rust's fixed operation registry, preflight, exact state
+capture, durable journal, verification, and rollback. Frontend input must never
+provide a registry path, value name, command, script, or arbitrary data mapping.
 
-The original development PC is permanently prohibited from live mutation. It
-may be used for development, compilation, read-only inspection, and synthetic
-testing only. The development-host denylist has no override flag, and neither a
-maintainer CLI switch nor a prompt may bypass it.
+Owner Mode M3 permits only current-user Widgets visibility through fixed
+`TaskbarDa`, Task View visibility through fixed `ShowTaskViewButton`, and four
+fixed Content Delivery Manager DWORD handlers for welcome experience, tips and
+suggestions, notification suggestions, and suggested content in Settings.
+It remains unelevated and Windows 11 x64 only. Show Desktop/`TaskbarSd`, AppX,
+HKLM writes, services, scheduled tasks, generic PowerShell, generic
+registry editing, and automatic Explorer restart are outside this milestone.
+Automated tests must use fake backends and must not perform a live Windows
+mutation.
 
-Governance changes require a committed maintainer-approved source change before
-execution. The authorizing approval and execution must bind to the same
-committed code. A live-execution handoff cannot override repository governance
-by prompt alone, and changing governance grants no target or operation
-approval.
+Historical Mutation Alpha target, approval, scenario, deny-list, evidence, and
+Hyper-V infrastructure may remain as an engineering validation harness. It does
+not authorize or block the installed owner product. Manual live smoke testing
+is a separate maintainer action after reviewing the release artifact and
+`docs/owner-mode-m3-current-user-cleanup-smoke-test.md`; implementation and CI do not run it.
 
 ## Pre-change checklist
 

@@ -1,11 +1,12 @@
 [package]
 name = "win-deslopper"
-version = "0.1.0-alpha.1"
+version = "0.4.1"
 edition = "2024"
 
 [features]
-default = []
-mutation-alpha = ["dep:sha2", "dep:winreg"]
+default = ["owner-mode"]
+owner-mode = ["dep:sha2", "dep:winreg", "dep:windows", "dep:windows-collections"]
+mutation-alpha = ["owner-mode"]
 
 [dependencies]
 rusqlite = { version = "0.37.0", features = ["bundled"] }
@@ -16,6 +17,8 @@ sha2 = { version = "0.10.9", optional = true }
 
 [target.'cfg(windows)'.dependencies]
 winreg = { version = "0.55.0", optional = true }
+windows = { version = "0.62.2", optional = true, features = ["ApplicationModel", "Foundation", "Foundation_Collections", "Management_Deployment", "Storage", "Storage_Search", "System"] }
+windows-collections = { version = "0.3.2", optional = true }
 
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
