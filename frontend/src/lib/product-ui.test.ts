@@ -66,9 +66,11 @@ function observation(status = 'successful'): DetectionObservation {
   };
 }
 
-describe('Product Alpha presentation rules', () => {
-  it('explains the read-only and honest unknown boundary during onboarding', () => {
-    expect(onboardingPrinciples.join(' ')).toMatch(/read-only/i);
+describe('Owner Mode presentation rules', () => {
+  it('explains the explicit owner action and honest unknown boundary during onboarding', () => {
+    expect(onboardingPrinciples.join(' ')).toMatch(
+      /registered current-user settings.*explicit click/i
+    );
     expect(onboardingPrinciples.join(' ')).toMatch(/Unknown does not mean broken/i);
     expect(onboardingPrinciples.join(' ')).toMatch(/redacted/i);
   });

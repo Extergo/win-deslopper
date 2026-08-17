@@ -1,5 +1,14 @@
 # Read-Only Product Alpha
 
+> Historical product record. Owner Mode M1 supersedes this normal-product
+> composition. The read-only inspection, privacy, desired-state, drift, and
+> history behavior described below remains, but the default release now adds
+> one closed current-user Widgets Apply/Verify/Undo operation. The old Mutation
+> Alpha UI remains only in an explicit engineering feature build.
+> Everything below describes the retired composition as it existed at the end
+> of the read-only milestone; present-tense wording is historical, not current
+> release guidance.
+
 ## Product boundary
 
 Deslopper Product Alpha is a local, unelevated Windows inspection application.

@@ -1,4 +1,4 @@
-use super::{HandlerError, HandlerErrorKind, MutationBackend};
+use super::{CleanupSetting, HandlerError, HandlerErrorKind, MutationBackend};
 use crate::mutation::plan::CapturedRepresentation;
 
 pub struct WindowsSettingStore;
@@ -12,9 +12,14 @@ mod implementation {
         enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ, KEY_WRITE},
     };
 
-    use super::{CapturedRepresentation, HandlerError, HandlerErrorKind, MutationBackend};
+    use super::{
+        CapturedRepresentation, CleanupSetting, HandlerError, HandlerErrorKind, MutationBackend,
+    };
 
     const ADVANCED_PATH: &str = r"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced";
+    const CONTENT_DELIVERY_PATH: &str =
+        r"Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager";
+    const CLOUD_CONTENT_POLICY_PATH: &str = r"Software\Policies\Microsoft\Windows\CloudContent";
     const WIDGETS_VALUE: &str = "TaskbarDa";
     const TASK_VIEW_VALUE: &str = "ShowTaskViewButton";
     const SHOW_DESKTOP_VALUE: &str = "TaskbarSd";
@@ -26,40 +31,52 @@ mod implementation {
     const TASK_VIEW_POLICY_VALUE: &str = "HideTaskViewButton";
     const TASKBAR_SETTINGS_POLICY_VALUE: &str = "NoSetTaskbar";
 
-    fn read_fixed(value_name: &'static str) -> Result<CapturedRepresentation, HandlerError> {
+    fn read_fixed_at(
+        path: &'static str,
+        value_name: &'static str,
+    ) -> Result<CapturedRepresentation, HandlerError> {
         let current_user = RegKey::predef(HKEY_CURRENT_USER);
         let key = current_user
-            .open_subkey_with_flags(ADVANCED_PATH, KEY_READ)
-            .map_err(|error| map_read_error(error, "open the fixed taskbar key"))?;
+            .open_subkey_with_flags(path, KEY_READ)
+            .map_err(|error| map_read_error(error, "open the fixed current-user key"))?;
         match key.get_value::<u32, _>(value_name) {
             Ok(value) => Ok(CapturedRepresentation::Dword(value)),
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
                 Ok(CapturedRepresentation::Missing)
             }
-            Err(error) => Err(map_read_error(error, "read the fixed taskbar DWORD")),
+            Err(error) => Err(map_read_error(error, "read the fixed current-user DWORD")),
         }
     }
 
-    fn write_fixed(
+    fn write_fixed_at(
+        path: &'static str,
         value_name: &'static str,
         state: &CapturedRepresentation,
     ) -> Result<(), HandlerError> {
         let current_user = RegKey::predef(HKEY_CURRENT_USER);
         let key = current_user
-            .open_subkey_with_flags(ADVANCED_PATH, KEY_READ | KEY_WRITE)
-            .map_err(|error| map_error(error, "open the existing fixed taskbar key for writing"))?;
+            .open_subkey_with_flags(path, KEY_READ | KEY_WRITE)
+            .map_err(|error| {
+                map_error(
+                    error,
+                    "open the existing fixed current-user key for writing",
+                )
+            })?;
         match state {
             CapturedRepresentation::Dword(value @ 0..=1) => key
                 .set_value(value_name, value)
-                .map_err(|error| map_error(error, "write the fixed taskbar DWORD")),
+                .map_err(|error| map_error(error, "write the fixed current-user DWORD")),
             CapturedRepresentation::Missing => match key.delete_value(value_name) {
                 Ok(()) => Ok(()),
                 Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-                Err(error) => Err(map_error(error, "restore the fixed taskbar value absence")),
+                Err(error) => Err(map_error(
+                    error,
+                    "restore the fixed current-user value absence",
+                )),
             },
             CapturedRepresentation::Dword(_) => Err(HandlerError::new(
                 HandlerErrorKind::InvalidRepresentation,
-                "The handler refused an out-of-range taskbar DWORD.",
+                "The handler refused an out-of-range fixed DWORD.",
             )),
         }
     }
@@ -78,10 +95,10 @@ mod implementation {
             Ok(value @ 0..=1) => Ok(Some(value)),
             Ok(_) => Err(HandlerError::new(
                 HandlerErrorKind::InvalidRepresentation,
-                "A fixed taskbar policy contained an unsupported DWORD.",
+                "A fixed policy contained an unsupported DWORD.",
             )),
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
-            Err(error) => Err(map_read_error(error, "read a fixed taskbar policy DWORD")),
+            Err(error) => Err(map_read_error(error, "read a fixed policy DWORD")),
         }
     }
 
@@ -114,10 +131,10 @@ mod implementation {
 
     fn map_error(error: io::Error, action: &str) -> HandlerError {
         HandlerError::new(
-            if error.kind() == io::ErrorKind::NotFound {
-                HandlerErrorKind::MissingRepresentation
-            } else {
-                HandlerErrorKind::WriteFailed
+            match error.kind() {
+                io::ErrorKind::NotFound => HandlerErrorKind::MissingRepresentation,
+                io::ErrorKind::PermissionDenied => HandlerErrorKind::PermissionDenied,
+                _ => HandlerErrorKind::WriteFailed,
             },
             format!(
                 "Could not {action}; Windows error category: {:?}.",
@@ -128,10 +145,10 @@ mod implementation {
 
     fn map_read_error(error: io::Error, action: &str) -> HandlerError {
         HandlerError::new(
-            if error.kind() == io::ErrorKind::NotFound {
-                HandlerErrorKind::MissingRepresentation
-            } else {
-                HandlerErrorKind::ReadFailed
+            match error.kind() {
+                io::ErrorKind::NotFound => HandlerErrorKind::MissingRepresentation,
+                io::ErrorKind::InvalidData => HandlerErrorKind::InvalidRepresentation,
+                _ => HandlerErrorKind::ReadFailed,
             },
             format!(
                 "Could not {action}; Windows error category: {:?}.",
@@ -142,7 +159,7 @@ mod implementation {
 
     impl MutationBackend for super::WindowsSettingStore {
         fn read_widgets(&self) -> Result<CapturedRepresentation, HandlerError> {
-            read_fixed(WIDGETS_VALUE)
+            read_fixed_at(ADVANCED_PATH, WIDGETS_VALUE)
         }
 
         fn widgets_externally_managed(&self) -> Result<bool, HandlerError> {
@@ -155,11 +172,11 @@ mod implementation {
         }
 
         fn write_widgets(&self, state: &CapturedRepresentation) -> Result<(), HandlerError> {
-            write_fixed(WIDGETS_VALUE, state)
+            write_fixed_at(ADVANCED_PATH, WIDGETS_VALUE, state)
         }
 
         fn read_task_view(&self) -> Result<CapturedRepresentation, HandlerError> {
-            read_fixed(TASK_VIEW_VALUE)
+            read_fixed_at(ADVANCED_PATH, TASK_VIEW_VALUE)
         }
 
         fn task_view_externally_managed(&self) -> Result<bool, HandlerError> {
@@ -170,11 +187,11 @@ mod implementation {
         }
 
         fn write_task_view(&self, state: &CapturedRepresentation) -> Result<(), HandlerError> {
-            write_fixed(TASK_VIEW_VALUE, state)
+            write_fixed_at(ADVANCED_PATH, TASK_VIEW_VALUE, state)
         }
 
         fn read_show_desktop(&self) -> Result<CapturedRepresentation, HandlerError> {
-            read_fixed(SHOW_DESKTOP_VALUE)
+            read_fixed_at(ADVANCED_PATH, SHOW_DESKTOP_VALUE)
         }
 
         fn show_desktop_externally_managed(&self) -> Result<bool, HandlerError> {
@@ -182,7 +199,35 @@ mod implementation {
         }
 
         fn write_show_desktop(&self, state: &CapturedRepresentation) -> Result<(), HandlerError> {
-            write_fixed(SHOW_DESKTOP_VALUE, state)
+            write_fixed_at(ADVANCED_PATH, SHOW_DESKTOP_VALUE, state)
+        }
+
+        fn read_cleanup(
+            &self,
+            setting: CleanupSetting,
+        ) -> Result<CapturedRepresentation, HandlerError> {
+            read_fixed_at(CONTENT_DELIVERY_PATH, setting.preference_value())
+        }
+
+        fn cleanup_externally_managed(
+            &self,
+            setting: CleanupSetting,
+        ) -> Result<bool, HandlerError> {
+            let local_machine = RegKey::predef(HKEY_LOCAL_MACHINE);
+            Ok(read_optional_dword(
+                &local_machine,
+                CLOUD_CONTENT_POLICY_PATH,
+                setting.policy_value(),
+            )?
+            .is_some())
+        }
+
+        fn write_cleanup(
+            &self,
+            setting: CleanupSetting,
+            state: &CapturedRepresentation,
+        ) -> Result<(), HandlerError> {
+            write_fixed_at(CONTENT_DELIVERY_PATH, setting.preference_value(), state)
         }
     }
 }
@@ -216,12 +261,25 @@ impl MutationBackend for WindowsSettingStore {
     fn write_show_desktop(&self, _: &CapturedRepresentation) -> Result<(), HandlerError> {
         Err(unsupported())
     }
+    fn read_cleanup(&self, _: CleanupSetting) -> Result<CapturedRepresentation, HandlerError> {
+        Err(unsupported())
+    }
+    fn cleanup_externally_managed(&self, _: CleanupSetting) -> Result<bool, HandlerError> {
+        Err(unsupported())
+    }
+    fn write_cleanup(
+        &self,
+        _: CleanupSetting,
+        _: &CapturedRepresentation,
+    ) -> Result<(), HandlerError> {
+        Err(unsupported())
+    }
 }
 
 #[cfg(not(windows))]
 fn unsupported() -> HandlerError {
     HandlerError::new(
         HandlerErrorKind::UnsupportedPlatform,
-        "Mutation alpha handlers are available only on Windows.",
+        "Windows setting handlers are available only on Windows.",
     )
 }

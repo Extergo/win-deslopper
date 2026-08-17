@@ -3,13 +3,33 @@ import { describe, expect, it } from 'vitest';
 import mutationPanel from './MutationAlphaPanel.svelte?raw';
 import productPage from '../routes/+page.svelte?raw';
 
-describe('normal Product Alpha presentation boundary', () => {
-  it('contains no direct mutation calls and gates the internal entry point on build metadata', () => {
-    expect(productPage).not.toMatch(/getMutation|executeMutation|rollbackMutation|mutationAlpha/);
-    expect(productPage).toMatch(/productInfo\.buildMode === 'internal mutation-alpha compile'/);
+describe('normal Owner Mode presentation boundary', () => {
+  it('exposes closed Owner Mode M4 setting and package actions while keeping alpha gated', () => {
+    expect(productPage).toMatch(/applyOwnerChange\(target\)/);
+    expect(productPage).toMatch(/undoOwnerChange\(\)/);
+    expect(productPage).toMatch(/productInfo\.buildMode === 'engineering mutation-alpha harness'/);
     expect(productPage).toMatch(/Experimental Apply & Undo/);
-    expect(productPage).toMatch(/Read-Only Product Alpha/);
-    expect(productPage).toMatch(/Automatic restoration is not available/);
+    expect(productPage).toMatch(/Owner Mode M4/);
+    expect(productPage).toMatch(/Undo last \{selectedOwnerLabel\} change/);
+    expect(productPage.match(/if \(ownerBusy/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(productPage).toMatch(/disabled=\{ownerBusy/);
+    expect(productPage).toMatch(/set_taskbar_task_view_visibility/);
+    expect(productPage).toMatch(/set_welcome_experience_enabled/);
+    expect(productPage).toMatch(/set_tips_suggestions_enabled/);
+    expect(productPage).toMatch(/set_notification_suggestions_enabled/);
+    expect(productPage).toMatch(/set_settings_suggested_content_enabled/);
+    expect(productPage).not.toMatch(/set_taskbar_show_desktop_enabled/);
+    expect(productPage).toMatch(/remove_consumer_copilot_current_user/);
+    expect(productPage).toMatch(/remove_phone_link_current_user/);
+    expect(productPage).toMatch(/remove_clipchamp_current_user/);
+    expect(productPage).toMatch(/remove_solitaire_current_user/);
+    expect(productPage).toMatch(/if \(packageBusy/);
+    expect(productPage).toMatch(/disabled=\{packageBusy\}/);
+    expect(productPage).toMatch(/Remove from this account/);
+    expect(productPage).not.toMatch(/packageName:\s*selected|removeAppxPackage/i);
+    expect(productPage).not.toMatch(
+      /CurrentVersion\\Explorer\\Advanced|TaskbarDa|ShowTaskViewButton|SubscribedContent|SoftLanding/
+    );
     expect(mutationPanel).toMatch(/Internal Mutation Alpha/);
     expect(mutationPanel).toMatch(/This development machine is permanently blocked/);
     const historyMarkup = mutationPanel.split('Mutation transaction history')[1] ?? '';

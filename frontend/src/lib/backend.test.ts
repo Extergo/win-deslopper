@@ -47,7 +47,7 @@ describe('backend client', () => {
       inspectionId: 'inspection-1',
       phase: 'running_detectors',
       completedWork: 3,
-      totalWork: 20,
+      totalWork: 21,
       currentComponent: 'phone_link',
       detectorResultStatus: null,
       warningCount: 0,
@@ -176,6 +176,69 @@ describe('backend client', () => {
       }
     });
     expect(JSON.stringify(invokeCommand.mock.calls[0])).not.toContain('registry');
+  });
+
+  it('exposes the closed Owner Mode M3 workflows without arbitrary parameters', async () => {
+    const invokeCommand = vi.fn<BackendInvoker>().mockResolvedValue({});
+    const client = createBackendClient(invokeCommand);
+
+    await client.getOwnerActionability('set_taskbar_widgets_visibility');
+    await client.getOwnerActionability('set_settings_suggested_content_enabled');
+    await client.applyOwnerOperation(
+      'set_notification_suggestions_enabled',
+      'disabled',
+      'inspection-1'
+    );
+    await client.undoOwnerChange('transaction-1');
+    await client.getOwnerChangeHistory();
+
+    expect(invokeCommand.mock.calls).toEqual([
+      ['get_owner_actionability', { operationId: 'set_taskbar_widgets_visibility' }],
+      ['get_owner_actionability', { operationId: 'set_settings_suggested_content_enabled' }],
+      [
+        'apply_owner_operation',
+        {
+          request: {
+            operationId: 'set_notification_suggestions_enabled',
+            target: 'disabled',
+            sourceInspectionId: 'inspection-1'
+          }
+        }
+      ],
+      ['undo_owner_operation', { request: { transactionId: 'transaction-1' } }],
+      ['get_owner_change_history']
+    ]);
+    expect(JSON.stringify(invokeCommand.mock.calls)).not.toMatch(
+      /registry|taskbarDa|showTaskViewButton|subscribedContent|softLanding|currentVersion|show_desktop/i
+    );
+  });
+
+  it('submits only closed M4 package operation IDs and transaction IDs', async () => {
+    const invokeCommand = vi.fn<BackendInvoker>().mockResolvedValue({});
+    const client = createBackendClient(invokeCommand);
+
+    await client.getOwnerPackageActionability('remove_phone_link_current_user');
+    await client.removeOwnerPackage('remove_phone_link_current_user', 'inspection-1');
+    await client.restoreOwnerPackage('package-transaction-1');
+    await client.getOwnerPackageHistory();
+
+    expect(invokeCommand.mock.calls).toEqual([
+      ['get_owner_package_actionability', { operationId: 'remove_phone_link_current_user' }],
+      [
+        'remove_owner_package',
+        {
+          request: {
+            operationId: 'remove_phone_link_current_user',
+            sourceInspectionId: 'inspection-1'
+          }
+        }
+      ],
+      ['restore_owner_package', { request: { transactionId: 'package-transaction-1' } }],
+      ['get_owner_package_history']
+    ]);
+    expect(JSON.stringify(invokeCommand.mock.calls)).not.toMatch(
+      /packageFullName|packageFamilyName|packageName|script|powershell|allUsers|provisioned/i
+    );
   });
 
   it('approval sends only plan identity, broker nonce, and acknowledgement', async () => {

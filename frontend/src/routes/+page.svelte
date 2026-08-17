@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
 
   import {
     createBackendClient,
@@ -12,6 +12,15 @@
     type DriftEvent,
     type InspectionHistoryItem,
     type InspectionProgress,
+    type MutationTarget,
+    type MutationTransaction,
+    type OwnerActionability,
+    type OwnerMutationOperationId,
+    type OwnerOperationResult,
+    type PackageActionability,
+    type PackageMutationTransaction,
+    type PackageOperationId,
+    type PackageOperationResult,
     type PlatformDashboard,
     type ProductComponent,
     type ProductInfo,
@@ -45,7 +54,7 @@
     description: string;
   }> = [
     { id: 'overview', label: 'Overview', glyph: 'O', description: 'Current system summary' },
-    { id: 'components', label: 'Components', glyph: 'C', description: '20 observed surfaces' },
+    { id: 'components', label: 'Components', glyph: 'C', description: '21 observed surfaces' },
     {
       id: 'desired',
       label: 'Desired states',
@@ -73,6 +82,42 @@
     { id: 'policy', label: 'Policy-backed' },
     { id: 'preference', label: 'User preference' }
   ];
+  const ownerOperations: OwnerMutationOperationId[] = [
+    'set_taskbar_widgets_visibility',
+    'set_taskbar_task_view_visibility',
+    'set_welcome_experience_enabled',
+    'set_tips_suggestions_enabled',
+    'set_notification_suggestions_enabled',
+    'set_settings_suggested_content_enabled'
+  ];
+  const ownerOperationByComponent: Record<string, OwnerMutationOperationId> = {
+    taskbar_widgets: 'set_taskbar_widgets_visibility',
+    taskbar_task_view: 'set_taskbar_task_view_visibility',
+    welcome_experience: 'set_welcome_experience_enabled',
+    tips_suggestions: 'set_tips_suggestions_enabled',
+    notification_suggestions: 'set_notification_suggestions_enabled',
+    settings_suggested_content: 'set_settings_suggested_content_enabled'
+  };
+  const ownerLabelByOperation: Record<OwnerMutationOperationId, string> = {
+    set_taskbar_widgets_visibility: 'Widgets',
+    set_taskbar_task_view_visibility: 'Task View',
+    set_welcome_experience_enabled: 'Windows welcome experience',
+    set_tips_suggestions_enabled: 'Tips and suggestions',
+    set_notification_suggestions_enabled: 'Notification suggestions',
+    set_settings_suggested_content_enabled: 'Suggested content in Settings'
+  };
+  const packageOperations: PackageOperationId[] = [
+    'remove_consumer_copilot_current_user',
+    'remove_phone_link_current_user',
+    'remove_clipchamp_current_user',
+    'remove_solitaire_current_user'
+  ];
+  const packageOperationByComponent: Record<string, PackageOperationId> = {
+    consumer_copilot: 'remove_consumer_copilot_current_user',
+    phone_link: 'remove_phone_link_current_user',
+    clipchamp: 'remove_clipchamp_current_user',
+    solitaire: 'remove_solitaire_current_user'
+  };
 
   let loading = true;
   let errorMessage = '';
@@ -106,10 +151,22 @@
   let diagnosticsIncludeErrors = true;
   let diagnosticsStatus = '';
   let clearingHistory = false;
+  let ownerActionabilities: Partial<Record<OwnerMutationOperationId, OwnerActionability>> = {};
+  let ownerHistory: MutationTransaction[] = [];
+  let ownerBusy = false;
+  let ownerPhase: 'idle' | 'checking' | 'applying' | 'verifying' = 'idle';
+  let ownerResult: OwnerOperationResult | null = null;
+  let ownerFeedback = '';
+  let packageActionabilities: Partial<Record<PackageOperationId, PackageActionability>> = {};
+  let packageHistory: PackageMutationTransaction[] = [];
+  let packageBusy = false;
+  let packagePhase: 'idle' | 'checking' | 'removing' | 'verifying' | 'restoring' = 'idle';
+  let packageResult: PackageOperationResult | null = null;
+  let packageFeedback = '';
 
   $: observations = platform?.snapshot?.observations ?? [];
   $: sections =
-    productInfo?.buildMode === 'internal mutation-alpha compile'
+    productInfo?.buildMode === 'engineering mutation-alpha harness'
       ? [
           ...productSections,
           {
@@ -140,6 +197,53 @@
     if (driftStatusFilter === 'unreviewed' && event.reviewed) return false;
     return driftComponentFilter === 'all' || event.component_id === driftComponentFilter;
   });
+  $: selectedOwnerOperation = ownerOperationByComponent[selectedComponentId] ?? null;
+  $: selectedOwnerLabel = selectedOwnerOperation
+    ? ownerLabelByOperation[selectedOwnerOperation]
+    : 'Windows setting';
+  $: selectedOwnerActionability = selectedOwnerOperation
+    ? (ownerActionabilities[selectedOwnerOperation] ?? null)
+    : null;
+  $: latestOwnerUndo = ownerHistory.find(
+    (transaction) =>
+      transaction.operationId === selectedOwnerOperation &&
+      transaction.status === 'rollback_available' &&
+      transaction.rollback.available
+  );
+  $: latestOwnerAttention = ownerHistory.find(
+    (transaction) =>
+      transaction.operationId === selectedOwnerOperation &&
+      ['recovery_required', 'rollback_verification_failed'].includes(transaction.status)
+  );
+  $: latestOwnerChange = ownerHistory.find(
+    (transaction) => transaction.operationId === selectedOwnerOperation
+  );
+  $: ownerTechnicalTransaction =
+    ownerResult?.transaction ?? latestOwnerAttention ?? latestOwnerUndo ?? latestOwnerChange;
+  $: selectedPackageOperation = packageOperationByComponent[selectedComponentId] ?? null;
+  $: selectedPackageActionability = selectedPackageOperation
+    ? (packageActionabilities[selectedPackageOperation] ?? null)
+    : null;
+  $: latestPackageChange = packageHistory.find(
+    (transaction) => transaction.operationId === selectedPackageOperation
+  );
+  $: latestPackageRestore = packageHistory.find(
+    (transaction) =>
+      transaction.operationId === selectedPackageOperation &&
+      transaction.status === 'removed' &&
+      transaction.restoreCapability === 'restore_available'
+  );
+  $: latestPackageAttention = packageHistory.find(
+    (transaction) =>
+      transaction.operationId === selectedPackageOperation &&
+      [
+        'needs_attention',
+        'result_ambiguous',
+        'unexpected_collateral_change',
+        'restore_failed',
+        'recovery_required'
+      ].includes(transaction.status)
+  );
 
   onMount(() => {
     onboardingVisible = window.localStorage.getItem('deslopper-onboarding-complete') !== 'true';
@@ -168,6 +272,7 @@
       ]);
       if (platform.snapshot) onboardingVisible = false;
       initialiseComparison();
+      await refreshOwnerData();
     } catch (error) {
       errorMessage = describeCommandError(error);
     } finally {
@@ -182,6 +287,42 @@
       backend.getDriftHistory()
     ]);
     initialiseComparison();
+    await refreshOwnerData();
+  }
+
+  async function refreshOwnerData(): Promise<void> {
+    if (!platform?.snapshot || productInfo?.buildMode === 'explicit read-only') {
+      ownerActionabilities = {};
+      ownerHistory = [];
+      packageActionabilities = {};
+      packageHistory = [];
+      return;
+    }
+    try {
+      const [actionabilities, history, packageActions, packages] = await Promise.all([
+        Promise.all(
+          ownerOperations.map(
+            async (operationId) =>
+              [operationId, await backend.getOwnerActionability(operationId)] as const
+          )
+        ),
+        backend.getOwnerChangeHistory(),
+        Promise.all(
+          packageOperations.map(
+            async (operationId) =>
+              [operationId, await backend.getOwnerPackageActionability(operationId)] as const
+          )
+        ),
+        backend.getOwnerPackageHistory()
+      ]);
+      ownerActionabilities = Object.fromEntries(actionabilities);
+      ownerHistory = history;
+      packageActionabilities = Object.fromEntries(packageActions);
+      packageHistory = packages;
+    } catch (error) {
+      ownerActionabilities = {};
+      ownerFeedback = describeCommandError(error);
+    }
   }
 
   function initialiseComparison(): void {
@@ -241,12 +382,150 @@
     selectedComponentId = componentId;
     preview = null;
     desiredValidation = null;
-    desiredOptions = observationFor(componentId)
-      ? await backend.getAllowedDesiredStateOptions(componentId)
-      : [];
+    desiredOptions =
+      !ownerOperationByComponent[componentId] &&
+      !packageOperationByComponent[componentId] &&
+      observationFor(componentId)
+        ? await backend.getAllowedDesiredStateOptions(componentId)
+        : [];
     desiredStateKey = desiredOptions[0]?.key ?? '';
     desiredNote = desiredFor(componentId)?.note ?? '';
     selectedTimeline = platform?.snapshot ? await backend.getComponentTimeline(componentId) : [];
+    if (ownerOperationByComponent[componentId] || packageOperationByComponent[componentId]) {
+      await refreshOwnerData();
+    }
+  }
+
+  async function removeSelectedPackage(): Promise<void> {
+    if (packageBusy || !platform?.snapshot || !selectedPackageOperation) return;
+    packageBusy = true;
+    packageResult = null;
+    packageFeedback = '';
+    packagePhase = 'checking';
+    let verifyingTimer: ReturnType<typeof setTimeout> | null = null;
+    try {
+      const actionability = await backend.getOwnerPackageActionability(selectedPackageOperation);
+      packageActionabilities = {
+        ...packageActionabilities,
+        [selectedPackageOperation]: actionability
+      };
+      if (actionability.status !== 'ready') {
+        packageFeedback = actionability.reason;
+        return;
+      }
+      packagePhase = 'removing';
+      await tick();
+      verifyingTimer = setTimeout(() => (packagePhase = 'verifying'), 250);
+      packageResult = await backend.removeOwnerPackage(
+        selectedPackageOperation,
+        platform.snapshot.id
+      );
+      packagePhase = 'verifying';
+      packageFeedback = packageResult.message;
+      await refreshSavedData();
+    } catch (error) {
+      packageFeedback = describeCommandError(error);
+      await refreshOwnerData();
+    } finally {
+      if (verifyingTimer) clearTimeout(verifyingTimer);
+      packageBusy = false;
+      packagePhase = 'idle';
+    }
+  }
+
+  async function restoreSelectedPackage(): Promise<void> {
+    if (packageBusy || !latestPackageRestore) return;
+    packageBusy = true;
+    packageResult = null;
+    packageFeedback = '';
+    packagePhase = 'checking';
+    try {
+      packagePhase = 'restoring';
+      await tick();
+      packageResult = await backend.restoreOwnerPackage(latestPackageRestore.transactionId);
+      packagePhase = 'verifying';
+      packageFeedback = packageResult.message;
+      await refreshSavedData();
+    } catch (error) {
+      packageFeedback = describeCommandError(error);
+      await refreshOwnerData();
+    } finally {
+      packageBusy = false;
+      packagePhase = 'idle';
+    }
+  }
+
+  async function getSelectedOwnerActionability(): Promise<OwnerActionability> {
+    if (!selectedOwnerOperation) throw new Error('No Owner Mode operation is selected.');
+    return backend.getOwnerActionability(selectedOwnerOperation);
+  }
+
+  async function applyOwnerChange(target: MutationTarget): Promise<void> {
+    if (ownerBusy || !platform?.snapshot || !selectedOwnerOperation) return;
+    ownerBusy = true;
+    ownerResult = null;
+    ownerFeedback = '';
+    ownerPhase = 'checking';
+    let verifyingTimer: ReturnType<typeof setTimeout> | null = null;
+    try {
+      const actionability = await getSelectedOwnerActionability();
+      ownerActionabilities = {
+        ...ownerActionabilities,
+        [actionability.operationId]: actionability
+      };
+      if (actionability.status !== 'ready' || !actionability.availableTargets.includes(target)) {
+        ownerFeedback = actionability.reason;
+        return;
+      }
+      ownerPhase = 'applying';
+      await tick();
+      verifyingTimer = setTimeout(() => (ownerPhase = 'verifying'), 250);
+      const result = await backend.applyOwnerOperation(
+        selectedOwnerOperation,
+        target,
+        platform.snapshot.id
+      );
+      ownerPhase = 'verifying';
+      await tick();
+      ownerResult = result;
+      ownerFeedback = result.message;
+      await refreshSavedData();
+    } catch (error) {
+      ownerFeedback = describeCommandError(error);
+      await refreshOwnerData();
+    } finally {
+      if (verifyingTimer) clearTimeout(verifyingTimer);
+      ownerBusy = false;
+      ownerPhase = 'idle';
+    }
+  }
+
+  async function undoOwnerChange(): Promise<void> {
+    if (ownerBusy || !latestOwnerUndo) return;
+    ownerBusy = true;
+    ownerResult = null;
+    ownerFeedback = '';
+    ownerPhase = 'checking';
+    let verifyingTimer: ReturnType<typeof setTimeout> | null = null;
+    try {
+      await getSelectedOwnerActionability();
+      ownerPhase = 'applying';
+      await tick();
+      verifyingTimer = setTimeout(() => (ownerPhase = 'verifying'), 250);
+      const result = await backend.undoOwnerChange(latestOwnerUndo.transactionId);
+      ownerPhase = 'verifying';
+      await tick();
+      ownerResult = result;
+      ownerFeedback = result.message;
+      await refreshSavedData();
+    } catch (error) {
+      ownerFeedback = describeCommandError(error);
+      await refreshOwnerData();
+    } finally {
+      if (verifyingTimer) clearTimeout(verifyingTimer);
+      ownerBusy = false;
+      ownerPhase = 'idle';
+    }
   }
 
   function desiredRequest(): DesiredStateRequest {
@@ -383,6 +662,28 @@
     return Number.isFinite(numeric) ? new Date(numeric).toLocaleString() : value;
   }
 
+  function ownerActionLabel(operationId: OwnerMutationOperationId, target: MutationTarget): string {
+    if (
+      operationId === 'set_taskbar_widgets_visibility' ||
+      operationId === 'set_taskbar_task_view_visibility'
+    ) {
+      return `${target === 'disabled' ? 'Hide' : 'Show'} ${ownerLabelByOperation[operationId]} button`;
+    }
+    return `${target === 'disabled' ? 'Turn off' : 'Turn on'} ${ownerLabelByOperation[operationId]}`;
+  }
+
+  function ownerRepresentationText(
+    state: MutationTransaction['preState'] | MutationTransaction['postState']
+  ): string {
+    if (!state) return 'not recorded';
+    const representation = state.representation;
+    if (representation && typeof representation === 'object' && 'dword' in representation) {
+      return `DWORD ${String(representation.dword)}`;
+    }
+    if (representation === 'missing') return 'value absent';
+    return JSON.stringify(representation);
+  }
+
   function componentName(id: string): string {
     return catalogue.find((item) => item.componentId === id)?.name ?? id.replaceAll('_', ' ');
   }
@@ -397,10 +698,10 @@
 </script>
 
 <svelte:head>
-  <title>Deslopper - Read-Only Product Alpha</title>
+  <title>Deslopper - Owner Mode</title>
   <meta
     name="description"
-    content="A privacy-conscious, read-only Windows configuration inspector."
+    content="A privacy-conscious Windows configuration inspector with verified, undoable current-user controls."
   />
 </svelte:head>
 
@@ -418,9 +719,9 @@
         <div class="logo" aria-hidden="true">D</div>
         <div>
           <strong>Deslopper</strong><span
-            >{productInfo.buildMode === 'internal mutation-alpha compile'
+            >{productInfo.buildMode === 'engineering mutation-alpha harness'
               ? 'Internal Mutation Alpha'
-              : 'Read-Only Product Alpha'}</span
+              : productInfo.releaseLabel}</span
           >
         </div>
       </div>
@@ -437,15 +738,17 @@
         {/each}
       </nav>
       <div class="sidebar-spacer"></div>
-      {#if productInfo.buildMode === 'internal mutation-alpha compile'}
+      {#if productInfo.buildMode === 'engineering mutation-alpha harness'}
         <section class="safety-note internal" aria-label="Build safety status">
           <strong><span aria-hidden="true">●</span> Internal build</strong>
           <p>Mutation remains unavailable unless every backend safety gate passes.</p>
         </section>
       {:else}
         <section class="safety-note" aria-label="Build safety status">
-          <strong><span aria-hidden="true">●</span> Read-only</strong>
-          <p>I inspect and explain. I do not apply Windows changes in this build.</p>
+          <strong><span aria-hidden="true">●</span> Owner mode</strong>
+          <p>
+            Current-user changes are explicit, verified, recorded locally, and undoable when safe.
+          </p>
         </section>
       {/if}
     </aside>
@@ -487,8 +790,8 @@
               </div>
             </div>
             <div class="read-only-seal">
-              <span aria-hidden="true">✓</span><strong>Read-only Product Alpha</strong><small
-                >No UAC. No silent changes. Local history.</small
+              <span aria-hidden="true">✓</span><strong>Owner Mode M4</strong><small
+                >Verified current-user settings and exact AppX package removal. No UAC.</small
               >
             </div>
           </header>
@@ -602,8 +905,10 @@
                 <li>Export a privacy-reviewed diagnostic file only when you ask.</li>
               </ul>
               <div class="boundary">
-                <strong>Automatic restoration is not available in this build.</strong><span
-                  >Preview records create no approval nonce or mutation transaction.</span
+                <strong>Restore is offered only when captured package state proves it safe.</strong
+                ><span
+                  >Preference previews remain non-executable; package removal requires one explicit
+                  click.</span
                 >
               </div>
             </section>
@@ -747,109 +1052,422 @@
                     <p>{selectedComponent.gamingNotes} {selectedComponent.enterpriseNotes}</p>
                   </article>
                 </div>
+                {#if selectedOwnerOperation}
+                  <section class="owner-action" aria-labelledby="owner-control-title">
+                    <div class="section-heading">
+                      <div>
+                        <span class="eyebrow">Owner control</span>
+                        <h3 id="owner-control-title">Control {selectedOwnerLabel}</h3>
+                        <p>
+                          Current-user scope. Deslopper checks the latest state, records the exact
+                          pre-state, applies one fixed setting, verifies it, and preserves Undo only
+                          when restoration is safe.
+                        </p>
+                      </div>
+                      <span class="badge">Undo supported</span>
+                    </div>
+                    {#if !platform.snapshot}
+                      <div class="validation invalid">
+                        <strong>Fresh scan required</strong>
+                        <p>Run an inspection before applying a {selectedOwnerLabel} change.</p>
+                      </div>
+                    {:else if selectedOwnerActionability}
+                      <div
+                        class="validation"
+                        class:invalid={selectedOwnerActionability.status !== 'ready'}
+                      >
+                        <strong>{selectedOwnerActionability.status.replaceAll('_', ' ')}</strong>
+                        <p>
+                          {selectedOwnerActionability.status === 'managed'
+                            ? 'Managed by Windows policy. Deslopper will not override it.'
+                            : selectedOwnerActionability.reason}
+                        </p>
+                        <small>Scope: {selectedOwnerActionability.scope.replaceAll('_', ' ')}</small
+                        >
+                      </div>
+                    {:else}
+                      <div class="validation invalid">
+                        <strong>Action unavailable</strong>
+                        <p>
+                          {ownerFeedback ||
+                            'Run a fresh inspection to establish the current state.'}
+                        </p>
+                      </div>
+                    {/if}
+                    {#if latestOwnerAttention && ownerResult?.transaction.transactionId !== latestOwnerAttention.transactionId}
+                      <div class="owner-result needs-attention" role="alert">
+                        <strong>Needs attention</strong>
+                        <p>
+                          {latestOwnerAttention.recoveryRequirement ??
+                            latestOwnerAttention.errorSummary ??
+                            `The latest ${selectedOwnerLabel} transaction requires review before another change.`}
+                        </p>
+                      </div>
+                    {/if}
+                    <div class="button-row">
+                      {#each selectedOwnerActionability?.availableTargets ?? [] as target (target)}
+                        <button
+                          class="primary"
+                          disabled={ownerBusy || selectedOwnerActionability?.status !== 'ready'}
+                          onclick={() => void applyOwnerChange(target)}
+                        >
+                          {ownerActionLabel(selectedOwnerOperation, target)}
+                        </button>
+                      {/each}
+                      {#if latestOwnerUndo}
+                        <button
+                          class="secondary"
+                          disabled={ownerBusy}
+                          onclick={() => void undoOwnerChange()}
+                          >Undo last {selectedOwnerLabel} change</button
+                        >
+                      {/if}
+                    </div>
+                    {#if ownerBusy}
+                      <div class="owner-progress" aria-live="polite">
+                        <strong>
+                          {ownerPhase === 'checking'
+                            ? 'Checking current state...'
+                            : ownerPhase === 'applying'
+                              ? `Applying ${selectedOwnerLabel} setting...`
+                              : 'Verifying result...'}
+                        </strong>
+                        <span>Keep Deslopper open while this local operation completes.</span>
+                      </div>
+                    {:else if ownerFeedback}
+                      <div
+                        class="owner-result"
+                        class:needs-attention={ownerResult?.outcome === 'needs_attention'}
+                        aria-live="polite"
+                      >
+                        <strong
+                          >{ownerResult?.outcome.replaceAll('_', ' ') ??
+                            `${selectedOwnerLabel} status`}</strong
+                        >
+                        <p>{ownerFeedback}</p>
+                        {#if ownerResult?.note}<small>{ownerResult.note}</small>{/if}
+                      </div>
+                    {/if}
+                    {#if latestOwnerChange}
+                      <div class="owner-result" aria-label="Latest Deslopper change">
+                        <strong>Latest Deslopper change</strong>
+                        <p>
+                          {latestOwnerChange.status.replaceAll('_', ' ')} ·
+                          {displayTime(
+                            latestOwnerChange.completedAt ??
+                              latestOwnerChange.startedAt ??
+                              latestOwnerChange.createdAt
+                          )}
+                        </p>
+                        <small>
+                          {ownerRepresentationText(latestOwnerChange.preState)} →
+                          {ownerRepresentationText(
+                            latestOwnerChange.rollback.complete
+                              ? latestOwnerChange.rollbackState
+                              : latestOwnerChange.postState
+                          )} · Undo
+                          {latestOwnerChange.rollback.available ? 'available' : 'not available'}
+                        </small>
+                      </div>
+                    {/if}
+                    {#if ownerResult || latestOwnerAttention || latestOwnerUndo || latestOwnerChange}
+                      <details class="technical">
+                        <summary>Technical details</summary>
+                        {#if ownerTechnicalTransaction}
+                          <article>
+                            <strong>Transaction {ownerTechnicalTransaction.transactionId}</strong>
+                            <span
+                              >Status: {ownerTechnicalTransaction.status.replaceAll('_', ' ')}</span
+                            >
+                            <span>Target: {ownerTechnicalTransaction.targetState}</span>
+                            <span>
+                              Exact pre-state: {JSON.stringify(
+                                ownerTechnicalTransaction.preState?.representation ?? null
+                              )}
+                            </span>
+                            {#if ownerResult?.note}<small>{ownerResult.note}</small>{/if}
+                            <small>
+                              {ownerTechnicalTransaction.errorSummary ??
+                                ownerTechnicalTransaction.verificationResult ??
+                                'No error recorded.'}
+                            </small>
+                          </article>
+                        {/if}
+                      </details>
+                    {/if}
+                  </section>
+                {/if}
+                {#if selectedPackageOperation}
+                  <section class="owner-action" aria-labelledby="package-control-title">
+                    <div class="section-heading">
+                      <div>
+                        <span class="eyebrow">Current-user package</span>
+                        <h3 id="package-control-title">Remove from this account</h3>
+                        <p>
+                          This removes only this Windows account's registration. It does not remove
+                          provisioning, affect other users, or completely remove the app from
+                          Windows.
+                        </p>
+                      </div>
+                      <span class="badge">
+                        {selectedPackageActionability?.restoreCapability.replaceAll('_', ' ') ??
+                          'Checking'}
+                      </span>
+                    </div>
+                    {#if selectedPackageActionability}
+                      <div
+                        class="validation"
+                        class:invalid={selectedPackageActionability.status !== 'ready'}
+                      >
+                        <strong>{selectedPackageActionability.status.replaceAll('_', ' ')}</strong>
+                        <p>{selectedPackageActionability.reason}</p>
+                        <small>
+                          Exact identity: {selectedPackageActionability.exactPackageName} · Current user
+                          only
+                        </small>
+                      </div>
+                      <div class="boundary">
+                        <strong>Removing this app may also remove local app data.</strong>
+                        <span>
+                          {selectedPackageActionability.restoreCapability === 'restore_available'
+                            ? 'Automatic Restore is available only while the captured staged identity remains safe.'
+                            : 'Automatic Restore is not available. Reinstalling may require Microsoft Store or Windows servicing.'}
+                        </span>
+                      </div>
+                      <p class="plain-status">
+                        {selectedPackageActionability.provisioned
+                          ? 'Still provisioned by Windows; it may be registered for new user accounts.'
+                          : 'No exact provisioned identity was observed. Provisioning is never changed by this action.'}
+                      </p>
+                    {:else}
+                      <div class="validation invalid">
+                        <strong>Fresh package check required</strong>
+                        <p>
+                          Run an inspection before removing this package from the current account.
+                        </p>
+                      </div>
+                    {/if}
+                    {#if latestPackageAttention}
+                      <div class="owner-result needs-attention" role="alert">
+                        <strong>Needs attention</strong>
+                        <p>
+                          {latestPackageAttention.recoveryRequirement ??
+                            latestPackageAttention.errorSummary ??
+                            'The latest package transaction requires review.'}
+                        </p>
+                      </div>
+                    {/if}
+                    <div class="button-row">
+                      {#if selectedPackageActionability?.status === 'ready'}
+                        <button
+                          class="primary"
+                          disabled={packageBusy}
+                          onclick={() => void removeSelectedPackage()}
+                          >Remove from this account</button
+                        >
+                      {/if}
+                      {#if latestPackageRestore}
+                        <button
+                          class="secondary"
+                          disabled={packageBusy}
+                          onclick={() => void restoreSelectedPackage()}>Restore</button
+                        >
+                      {/if}
+                    </div>
+                    {#if packageBusy}
+                      <div class="owner-progress" aria-live="polite">
+                        <strong>
+                          {packagePhase === 'checking'
+                            ? 'Checking package state...'
+                            : packagePhase === 'removing'
+                              ? 'Removing from this account...'
+                              : packagePhase === 'restoring'
+                                ? 'Restoring current-user registration...'
+                                : 'Verifying package inventory and detector...'}
+                        </strong>
+                        <span>Keep Deslopper open while Windows deployment completes.</span>
+                      </div>
+                    {:else if packageFeedback}
+                      <div
+                        class="owner-result"
+                        class:needs-attention={packageResult?.transaction.status.includes(
+                          'attention'
+                        ) ||
+                          packageResult?.transaction.status.includes('ambiguous') ||
+                          packageResult?.transaction.status.includes('failed')}
+                        aria-live="polite"
+                      >
+                        <strong>
+                          {packageResult?.transaction.status.replaceAll('_', ' ') ??
+                            'Package status'}
+                        </strong>
+                        <p>{packageFeedback}</p>
+                      </div>
+                    {/if}
+                    {#if latestPackageChange}
+                      <div class="owner-result" aria-label="Latest package change">
+                        <strong>Latest package change</strong>
+                        <p>
+                          {latestPackageChange.status.replaceAll('_', ' ')} ·
+                          {displayTime(
+                            latestPackageChange.completedAt ?? latestPackageChange.createdAt
+                          )}
+                        </p>
+                        <small>
+                          {latestPackageChange.preState?.target?.name ??
+                            selectedPackageActionability?.exactPackageName} ·
+                          {latestPackageChange.preState?.target?.version ?? 'version unavailable'} ·
+                          {latestPackageChange.restoreCapability.replaceAll('_', ' ')}
+                        </small>
+                      </div>
+                      <details class="technical">
+                        <summary>Technical package identity</summary>
+                        <article>
+                          <strong
+                            >{latestPackageChange.preState?.target?.packageFullName ??
+                              'Package absent'}</strong
+                          >
+                          <span>
+                            Family: {latestPackageChange.preState?.target?.packageFamilyName ??
+                              'Unavailable'}
+                          </span>
+                          <span>
+                            Architecture: {latestPackageChange.preState?.target?.architecture ??
+                              'Unavailable'} · Status: {latestPackageChange.preState?.target
+                              ?.status ?? 'Unavailable'}
+                          </span>
+                          <span>
+                            Dependencies: {latestPackageChange.preState?.target?.dependencies
+                              .map((item) => item.packageFullName)
+                              .join(', ') || 'None reported'}
+                          </span>
+                          <small>
+                            Unexpected disappeared packages: {latestPackageChange.disappearedPackageFullNames.join(
+                              ', '
+                            ) || 'None'}
+                          </small>
+                        </article>
+                      </details>
+                    {/if}
+                  </section>
+                {/if}
                 <section class="support-strip" aria-label="Product support levels">
                   <span><strong>Observe</strong> Supported</span><span
                     ><strong>Preview</strong>
-                    {desiredOptions.length
-                      ? 'Available with complete evidence'
-                      : 'Unavailable for current evidence'}</span
-                  ><span><strong>Apply</strong> Unavailable in Product Alpha</span>
+                    {selectedOwnerOperation || selectedPackageOperation
+                      ? 'Not shown for actionable components'
+                      : desiredOptions.length
+                        ? 'Available with complete evidence'
+                        : 'Unavailable for current evidence'}</span
+                  ><span
+                    ><strong>Apply</strong>
+                    {selectedOwnerOperation || selectedPackageOperation
+                      ? selectedOwnerActionability?.status === 'ready' ||
+                        selectedPackageActionability?.status === 'ready'
+                        ? 'Available'
+                        : 'Unavailable for current evidence'
+                      : 'Inspection only'}</span
+                  >
                 </section>
-                <section class="desired-editor">
-                  <div class="section-heading">
-                    <div>
-                      <h3>Desired state and preview</h3>
-                      <p>Saving a preference changes only Deslopper's local database.</p>
-                    </div>
-                    {#if selectedDesired}<button
-                        class="text-button danger"
-                        onclick={() => void clearDesired()}>Clear desired state</button
-                      >{/if}
-                  </div>
-                  {#if desiredOptions.length}
-                    <label
-                      >Desired state<select
-                        bind:value={desiredStateKey}
-                        onchange={() => void validateDesired()}
-                        >{#each desiredOptions as option (option.key)}<option value={option.key}
-                            >{option.label}</option
-                          >{/each}</select
-                      ></label
-                    >
-                    <label
-                      >Optional local note<textarea
-                        bind:value={desiredNote}
-                        maxlength="500"
-                        placeholder="Why this state matters to you"></textarea></label
-                    >
-                    {#if desiredValidation}<div
-                        class="validation"
-                        class:invalid={!desiredValidation.valid}
-                      >
-                        <strong>{desiredValidation.status.replaceAll('_', ' ')}</strong>
-                        <p>{desiredValidation.reason}</p>
-                        {#each desiredValidation.warnings as warning (warning)}<small
-                            >{warning}</small
-                          >{/each}
-                      </div>{/if}
-                    <div class="button-row">
-                      <button class="primary" onclick={() => void saveDesired()}
-                        >Save and generate preview</button
-                      >{#if selectedDesired}<button
-                          class="secondary"
-                          onclick={() => void generatePreview()}>Regenerate preview</button
+                {#if !selectedOwnerOperation && !selectedPackageOperation}
+                  <section class="desired-editor">
+                    <div class="section-heading">
+                      <div>
+                        <h3>Desired state and preview</h3>
+                        <p>Saving a preference changes only Deslopper's local database.</p>
+                      </div>
+                      {#if selectedDesired}<button
+                          class="text-button danger"
+                          onclick={() => void clearDesired()}>Clear desired state</button
                         >{/if}
                     </div>
-                  {:else}<p class="plain-status">
-                      A preview is unavailable until current applicability and evidence are
-                      sufficient. Unknown does not mean broken.
-                    </p>{/if}
-                </section>
-                {#if preview}
-                  <section class="preview-card">
-                    <div>
-                      <span class="eyebrow">Preview only · not yet applied</span>
-                      <h3>What would be reviewed</h3>
-                    </div>
-                    <dl class="facts">
-                      <div>
-                        <dt>Current</dt>
-                        <dd>{stateText(preview.currentState as Record<string, unknown>)}</dd>
-                      </div>
-                      <div>
-                        <dt>Desired</dt>
-                        <dd>{stateText(preview.desiredState as Record<string, unknown>)}</dd>
-                      </div>
-                      <div>
-                        <dt>Required authority</dt>
-                        <dd>{String(preview.authority ?? 'Unknown')}</dd>
-                      </div>
-                      <div>
-                        <dt>Expected representation</dt>
-                        <dd>{String(preview.mechanism ?? 'Research required')}</dd>
-                      </div>
-                      <div>
-                        <dt>Restart</dt>
-                        <dd>{String(preview.restart ?? 'Unknown')}</dd>
-                      </div>
-                      <div>
-                        <dt>Rollback concept</dt>
-                        <dd>{String(preview.rollback ?? 'A verified source would be required')}</dd>
-                      </div>
-                    </dl>
-                    <div class="boundary">
-                      <strong
-                        >{previewIsNonExecutable(preview)
-                          ? 'This preview cannot execute.'
-                          : 'Preview safety state is incomplete.'}</strong
-                      ><span
-                        >{String(
-                          preview.cannotExecute ??
-                            'Automatic restoration is not available in this build.'
-                        )}</span
+                    {#if desiredOptions.length}
+                      <label
+                        >Desired state<select
+                          bind:value={desiredStateKey}
+                          onchange={() => void validateDesired()}
+                          >{#each desiredOptions as option (option.key)}<option value={option.key}
+                              >{option.label}</option
+                            >{/each}</select
+                        ></label
                       >
-                    </div>
+                      <label
+                        >Optional local note<textarea
+                          bind:value={desiredNote}
+                          maxlength="500"
+                          placeholder="Why this state matters to you"></textarea></label
+                      >
+                      {#if desiredValidation}<div
+                          class="validation"
+                          class:invalid={!desiredValidation.valid}
+                        >
+                          <strong>{desiredValidation.status.replaceAll('_', ' ')}</strong>
+                          <p>{desiredValidation.reason}</p>
+                          {#each desiredValidation.warnings as warning (warning)}<small
+                              >{warning}</small
+                            >{/each}
+                        </div>{/if}
+                      <div class="button-row">
+                        <button class="primary" onclick={() => void saveDesired()}
+                          >Save and generate preview</button
+                        >{#if selectedDesired}<button
+                            class="secondary"
+                            onclick={() => void generatePreview()}>Regenerate preview</button
+                          >{/if}
+                      </div>
+                    {:else}<p class="plain-status">
+                        A preview is unavailable until current applicability and evidence are
+                        sufficient. Unknown does not mean broken.
+                      </p>{/if}
                   </section>
+                  {#if preview}
+                    <section class="preview-card">
+                      <div>
+                        <span class="eyebrow">Preview only · not yet applied</span>
+                        <h3>What would be reviewed</h3>
+                      </div>
+                      <dl class="facts">
+                        <div>
+                          <dt>Current</dt>
+                          <dd>{stateText(preview.currentState as Record<string, unknown>)}</dd>
+                        </div>
+                        <div>
+                          <dt>Desired</dt>
+                          <dd>{stateText(preview.desiredState as Record<string, unknown>)}</dd>
+                        </div>
+                        <div>
+                          <dt>Required authority</dt>
+                          <dd>{String(preview.authority ?? 'Unknown')}</dd>
+                        </div>
+                        <div>
+                          <dt>Expected representation</dt>
+                          <dd>{String(preview.mechanism ?? 'Research required')}</dd>
+                        </div>
+                        <div>
+                          <dt>Restart</dt>
+                          <dd>{String(preview.restart ?? 'Unknown')}</dd>
+                        </div>
+                        <div>
+                          <dt>Rollback concept</dt>
+                          <dd>
+                            {String(preview.rollback ?? 'A verified source would be required')}
+                          </dd>
+                        </div>
+                      </dl>
+                      <div class="boundary">
+                        <strong
+                          >{previewIsNonExecutable(preview)
+                            ? 'This preview cannot execute.'
+                            : 'Preview safety state is incomplete.'}</strong
+                        ><span
+                          >{String(
+                            preview.cannotExecute ??
+                              'Automatic restoration is not available in this build.'
+                          )}</span
+                        >
+                      </div>
+                    </section>
+                  {/if}
                 {/if}
                 <details class="technical">
                   <summary>Redacted technical evidence</summary>{#if selectedObservation}<p>
@@ -1024,13 +1642,77 @@
           <header class="page-header">
             <div>
               <span class="eyebrow">Persisted locally</span>
-              <h1 id="history-title">Inspection history</h1>
-              <p>
-                Review duration, Windows build, completion state, and component-level differences.
-              </p>
+              <h1 id="history-title">History</h1>
+              <p>Review Owner Mode setting changes, package removals, and saved inspections.</p>
             </div>
             <span class="badge">{inspectionHistory.length} saved</span>
           </header>
+          <section class="surface" aria-labelledby="owner-history-title">
+            <div class="section-heading">
+              <div>
+                <span class="eyebrow">Owner Mode</span>
+                <h2 id="owner-history-title">Changes on this account</h2>
+                <p>
+                  Preference transactions and current-user package deployment share this history.
+                </p>
+              </div>
+              <span class="badge">{ownerHistory.length + packageHistory.length} changes</span>
+            </div>
+            <div class="history-list">
+              {#each ownerHistory as transaction (transaction.transactionId)}
+                <article>
+                  <div>
+                    <strong>{componentName(transaction.subjectId)}</strong>
+                    <span class="status-text">{transaction.status.replaceAll('_', ' ')}</span>
+                  </div>
+                  <p>
+                    Current-user setting ·
+                    {displayTime(
+                      transaction.completedAt ?? transaction.startedAt ?? transaction.createdAt
+                    )}
+                  </p>
+                  <small>
+                    {ownerRepresentationText(transaction.preState)} →
+                    {ownerRepresentationText(
+                      transaction.rollback.complete
+                        ? transaction.rollbackState
+                        : transaction.postState
+                    )} · Undo {transaction.rollback.available ? 'available' : 'not available'}
+                  </small>
+                </article>
+              {/each}
+              {#each packageHistory as transaction (transaction.transactionId)}
+                <article>
+                  <div>
+                    <strong>{componentName(transaction.componentId)}</strong>
+                    <span class="status-text">{transaction.status.replaceAll('_', ' ')}</span>
+                  </div>
+                  <p>
+                    {transaction.status === 'restored' ||
+                    transaction.status === 'restored_newer_version'
+                      ? 'Restored for this account'
+                      : transaction.status === 'already_absent'
+                        ? 'Already absent from this account'
+                        : transaction.status === 'removed'
+                          ? 'Removed from this account'
+                          : 'Current-user package operation'} ·
+                    {displayTime(transaction.completedAt ?? transaction.createdAt)}
+                  </p>
+                  <small>
+                    {transaction.preState?.target?.name ?? transaction.operationId} ·
+                    {transaction.preState?.target?.version ?? 'version unavailable'} ·
+                    {transaction.restoreCapability.replaceAll('_', ' ')}
+                  </small>
+                </article>
+              {/each}
+              {#if ownerHistory.length + packageHistory.length === 0}
+                <div class="empty">
+                  <strong>No Owner Mode changes yet</strong>
+                  <p>Verified setting changes and package removals will persist here.</p>
+                </div>
+              {/if}
+            </div>
+          </section>
           {#if inspectionHistory.length >= 2}<section class="compare surface">
               <div class="section-heading">
                 <div>
@@ -1197,14 +1879,15 @@
                 </li>
                 <li>Machine identity and the development-host denylist never enter diagnostics.</li>
                 <li>
-                  The normal capability set has no filesystem, shell, network, updater, or mutation
-                  permission.
+                  Owner Mode has no filesystem, shell, network, or updater permission. Its Windows
+                  writes are limited to six fixed current-user settings and four exact current-user
+                  package deployment operations.
                 </li>
               </ul>
             </section>
           </div>
         </section>
-      {:else if productInfo.buildMode === 'internal mutation-alpha compile'}
+      {:else if productInfo.buildMode === 'engineering mutation-alpha harness'}
         <MutationAlphaPanel
           buildMode={productInfo.buildMode}
           sourceInspectionId={platform.snapshot?.id ?? null}
@@ -1217,11 +1900,12 @@
     <div class="scrim">
       <dialog use:modalDialog class="onboarding" aria-labelledby="onboarding-title">
         <div class="logo" aria-hidden="true">D</div>
-        <span class="eyebrow">Welcome to the Product Alpha</span>
+        <span class="eyebrow">Welcome to Owner Mode</span>
         <h1 id="onboarding-title">Understand Windows before deciding what you want.</h1>
         <p>
           Deslopper gives you a careful local record of supported settings, packages, policy,
-          uncertainty, and change over time.
+          uncertainty, and change over time, plus fixed current-user settings and exact package
+          removal with honest restore classification.
         </p>
         <ul>
           {#each onboardingPrinciples as principle (principle)}<li>
@@ -1806,6 +2490,36 @@
     padding: var(--space-4);
     border-radius: var(--radius-control);
     background: var(--color-surface-tonal);
+  }
+  .owner-action {
+    display: grid;
+    gap: var(--space-3);
+    margin-top: var(--space-4);
+    padding: var(--space-5);
+    border: 1px solid var(--color-primary);
+    border-radius: var(--radius-card);
+    background: color-mix(in srgb, var(--color-primary-container) 42%, var(--color-surface));
+  }
+  .owner-action .section-heading p,
+  .owner-result p {
+    margin-bottom: 0;
+  }
+  .owner-progress,
+  .owner-result {
+    display: grid;
+    gap: 4px;
+    padding: var(--space-4);
+    border-radius: var(--radius-control);
+    background: var(--color-success-container);
+  }
+  .owner-progress span,
+  .owner-result p,
+  .owner-result small {
+    color: var(--color-text-secondary);
+    font-size: var(--type-supporting);
+  }
+  .owner-result.needs-attention {
+    background: var(--color-warning-container);
   }
   .support-strip {
     display: flex;

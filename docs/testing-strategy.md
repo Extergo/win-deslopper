@@ -14,8 +14,9 @@ Vitest covers the typed command contract, progress subscription, cancellation,
 history/timeline/package routing, desired-state validation/save payloads,
 onboarding copy, honest status summaries, catalogue filters, freshness,
 permission-limited display, non-executable previews, diagnostics/save
-boundaries, keyboard-native controls, and the absence of Product Alpha mutation
-calls. Svelte checking, ESLint, Prettier, static production build, Rust
+boundaries, keyboard-native controls, the closed Widgets and Task View owner
+requests, and the absence of Show Desktop or arbitrary registry input in normal UI.
+Svelte checking, ESLint, Prettier, static production build, Rust
 formatting/check/Clippy/tests, normal and all-feature compile/test, debug and
 release Tauri builds, installer packaging, interactive launch, and visual
 review remain release gates.
@@ -50,15 +51,26 @@ and must state that no live write occurred. Fault injection is Rust-test-only.
 All-feature test or compile commands must never be paired with mutation runtime
 flags on the development host.
 
+Default-feature Rust tests exercise Owner Mode entirely through fake backends.
+They cover Widgets/Task View-only registration, unsupported/managed/unknown refusal,
+no-op behavior, durable pre-state before write, exact apply and detector
+verification, actual-state capture after write errors, automatic restoration,
+rollback failure, unusable-Undo prevention, exact DWORD/absence restoration,
+conflict refusal, relaunch then Undo, tamper resistance, and stable
+machine-plus-user scope. Task View tests cover hidden/shown/default/invalid and
+policy-controlled detection, apply, relaunch-safe Undo, and exact restoration.
+Widgets tests cover PermissionDenied unchanged classification and scope-local
+capability suppression. Automated tests never write the live registry.
+
 Vitest also exercises the internal UI workflow with a mocked typed backend:
 feature-off and development-host denial, missing approval, Widgets-enabled-only
 scope, single-operation plan defense, expiry/elevation/Explorer-termination
 rejection, exact phrase approval, journaled execution phases, manual visual
 confirmation without a second write, transaction-bound absence rollback,
 terminal reuse prevention, history redaction, and plain-language safety errors.
-The Product Alpha source regression confirms that the entry point is selected
-only by exact Rust build metadata and that the normal page makes no direct
-mutation command call.
+The Owner Mode source regression confirms that the engineering entry point is
+selected only by exact Rust build metadata and that the normal page calls only
+the closed Widgets and Task View Apply/Undo APIs.
 
 Live-validation hardening tests cover the separate gate, development-host
 refusal, scenario/machine/checkpoint/database mismatch, validation maturity,
@@ -111,5 +123,54 @@ Widgets-enabled scope plus one-plan/one-execution limits. It creates no plan,
 transaction, nonce, approval, or live manifest.
 
 `tools/scan-mutation-boundary.ps1` rejects generic registry/process surfaces and
-prohibited Windows operations. Live apply/rollback testing follows
-`docs/vm-mutation-protocol.md`; CI never performs mutation.
+prohibited Windows operations, proves the default production feature is Owner
+Mode, checks the normal command registration, and verifies that raw registry
+tokens and non-product operations do not enter the normal page. The first
+physical Owner Mode M2 Task View sequence passed live Apply, direct and detector
+verification, process-exit persistence, relaunch, durable Undo, exact
+restoration, and independent final verification; its evidence is recorded in
+`docs/owner-mode-m2-physical-validation.md`. CI never performs mutation. The
+separate engineering harness continues to follow `docs/vm-mutation-protocol.md`.
+
+Owner Mode M3 adds parameterized fake-backend coverage for each accepted cleanup
+operation: exact DWORD 0/1 interpretation, missing and invalid refusal, policy
+ownership, both Apply directions, no-op, persisted pre/post state, direct and
+detector verification, rejected unchanged writes, ambiguous outcomes,
+automatic rollback, failed recovery, exact conflict-safe Undo, relaunch,
+owner-scope binding, operation-scoped direct-change-unavailable behavior, and
+duplicate-submit locking. Detector tests separately prove the fixed value and
+policy names and the opposite preference/policy DWORD interpretation. No test
+opens a writable live registry key.
+
+The separate installed-product M3 physical run validated Tips and suggestions
+and Notification suggestions from DWORD 1 through Apply to DWORD 0, complete
+process exit, relaunch, durable Undo, and exact DWORD 1 restoration. Independent
+same-state writes established ordinary-user writability before Deslopper Apply.
+Welcome experience and Suggested content in Settings were absent before and
+after testing, confirming that the run did not create unsupported missing
+representations. The authoritative evidence is
+`docs/owner-mode-m3-physical-validation.md`; the retained protocol is
+`docs/owner-mode-m3-current-user-cleanup-smoke-test.md`. Automated tests and CI
+remain fake-backend only and perform no live mutation.
+
+Owner Mode M4 adds a separate fake deployment backend. Every accepted package
+operation is covered for exact identity resolution, absent/present/multiple
+versions, protected refusal, dependency capture, durable pre-state, current-user
+remove success, rejected unchanged, ambiguous result, detector disagreement,
+unexpected collateral disappearance, provisioning drift, relaunch history,
+restore classification, deterministic Restore, restore failure, same-family
+newer-version semantics, owner-scope binding, cross-process locking, and
+frontend duplicate-submit prevention. Request-shape and boundary tests prove the
+frontend cannot submit a package identity, wildcard, script, all-user option, or
+provisioning operation. No automated command invokes live AppX deployment.
+
+The M4.1 lock regression suite additionally proves that one package mutation
+reaches the fake deployment backend without self-contention, a live registry or
+package mutation blocks a second package mutation, and ownership is released
+after completed, restored, rejected, ambiguous/failed, and startup-reconciled
+transactions. A real completed/restored `owner-cleanup.3` transaction is written
+to the shared test database before a package operation, reproducing the
+historical lock-file condition without any live Windows mutation. Windows-only
+lock tests prove an existing unopened rendezvous file is stale-safe while two
+simultaneous exclusive handles remain impossible; a child test executable also
+proves exclusion and subsequent release across an actual process boundary.
